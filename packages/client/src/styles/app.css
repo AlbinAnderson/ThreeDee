@@ -2317,3 +2317,136 @@ button.active {
 .skill-add button {
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------- abilities & toggles (Epic 6) */
+.abilities {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.combat-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0;
+}
+.toggle-chip.active {
+  background: var(--accent-2);
+  border-color: var(--accent);
+  color: #fff;
+}
+.pool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pool-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pool-head button {
+  min-width: 24px;
+  padding: 0 6px;
+}
+.pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+}
+.pip-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #40c057;
+}
+.pip-dot.spent {
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.pool-add {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.pool-add input:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pool-add input[type='number'] {
+  flex: 0 0 56px;
+  width: 56px;
+  min-width: 56px;
+}
+.pool-add select {
+  flex: 0 0 auto;
+  width: auto;
+}
+.pool-add button {
+  white-space: nowrap;
+}
+.ability-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+.ability-filters button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ability-group {
+  margin-bottom: 8px;
+}
+.ability-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ability-list > li {
+  border-bottom: 1px solid var(--border);
+}
+.ability-list > li.open {
+  background: var(--panel-2);
+}
+.ability-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 4px 2px;
+}
+.ability-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ability-group-name {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ability-detail {
+  padding: 4px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+/* Character tabs: wrap onto two rows in the narrow sidebar instead of overlapping. */
+.sheet-tabs {
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.sheet-tabs button {
+  flex: 1 0 auto;
+  border-radius: var(--radius) !important;
+}

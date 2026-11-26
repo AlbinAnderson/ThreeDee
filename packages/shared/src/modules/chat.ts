@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { Draft } from 'immer';
 import { defineAction, type AuthContext, type AuthResult, type Redactor } from '../actions/define';
 import { isGm, requireGm } from '../actions/auth';
-import { CHAT_HISTORY_LIMIT, ChatWhisperSchema, IdSchema, type ChatMessage, type ChatWhisper, type User } from '../state';
+import { CHAT_HISTORY_LIMIT, ChatCardSchema, ChatWhisperSchema, IdSchema, type ChatMessage, type ChatWhisper, type User } from '../state';
 import { DiceError, parseDice, rollDice, RollResultSchema } from '../dice';
 
 export function pushMessage(chat: Draft<ChatMessage[]>, msg: ChatMessage) {
@@ -85,6 +85,15 @@ export const chatActions = {
       },
     },
   ),
+
+  /** A card (an ability, an item...) posted to chat; follows the chat mode like any message. */
+  card: defineAction('chat/card', z.object({ id: IdSchema, card: ChatCardSchema, whisper: ChatWhisperSchema.optional() }), {
+    authorize: (ctx, { whisper }) => validateWhisper(ctx, whisper),
+    audience: chatAudience,
+    apply(draft, { id, card, whisper }, meta) {
+      pushMessage(draft.chat, { id, userId: meta.userId, ts: meta.ts, text: '', card, ...(whisper ? { whisper } : {}) });
+    },
+  }),
 
   clear: defineAction('chat/clear', z.object({}), {
     authorize: requireGm,

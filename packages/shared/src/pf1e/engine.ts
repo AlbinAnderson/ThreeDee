@@ -4,9 +4,10 @@
  * Pure and deterministic, shared by client (sheet) and server (token sync).
  */
 import type { Character, ItemArmor } from '../entities/pf1e';
-import { carryingCapacity, sizedDamage, type CarryingCapacity } from './gear';
+import { baseGearName, carryingCapacity, sizedDamage, type CarryingCapacity } from './gear';
 import { activeLoadout, carriedWeight, itemsInSlot, type LoadWeight } from './inventory';
 import { sumModifiers, type Modifier, type StatLine } from './modifiers';
+import { acrobaticsRanks, activeToggles, toggleStep, type ToggleId } from './toggles';
 import {
   babFor,
   baseSaveFor,
@@ -69,6 +70,8 @@ export interface CharacterStats {
   };
   load: { weight: LoadWeight; capacity: CarryingCapacity; level: LoadLevel };
   attacks: WeaponAttack[];
+  /** Active combat toggles (see pf1e/toggles.ts); total defense means no attacks this round. */
+  toggles: ToggleId[];
   /** Full-attack bonuses when fighting with a weapon in each hand. */
   twoWeapon: { primary: number[]; offHand: number[]; primaryName: string; offHandName: string } | null;
   /** Things the user should fill in on the sheet for accurate numbers. */
@@ -215,6 +218,35 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const misc = (k: keyof typeof sheet.misc, source = 'Misc (sheet)'): Modifier[] =>
     sheet.misc[k] ? [{ value: sheet.misc[k]!, type: 'untyped', source }] : [];
 
+  // Weapon feats chosen for a weapon: Weapon Focus / Specialization (and Greater) with their targets.
+  const weaponFeats = new Map<string, string[]>();
+  const addWeaponFeat = (name: string, targets: string[]) => {
+    const k = featKey(name);
+    if (!['weaponfocus', 'greaterweaponfocus', 'weaponspecialization', 'greaterweaponspecialization'].includes(k)) return;
+    weaponFeats.set(k, [...(weaponFeats.get(k) ?? []), ...targets.map((t) => baseGearName(t)).filter(Boolean)]);
+  };
+  for (const a of build.abilities) addWeaponFeat(a.key, a.appliedTo);
+  for (const f of [...build.legacyFeats, ...build.virtualFeats]) {
+    const m = /\((.+)\)\s*$/.exec(f);
+    if (m) addWeaponFeat(f, [m[1]!]);
+  }
+  const hasWeaponFeat = (k: string, itemName: string) => {
+    const item = ` ${baseGearName(itemName)} `;
+    return (weaponFeats.get(k) ?? []).some((t) => item.includes(` ${t} `));
+  };
+
+  // Combat toggles: dodge bonuses to AC (and CMD, which dodge bonuses also raise).
+  const toggles = activeToggles(c);
+  const step = toggleStep(bab.total);
+  const acro3 = acrobaticsRanks(c) >= 3;
+  const dodgeToggle = (value: number, source: string) => {
+    extra.ac.push({ value, type: 'dodge', source });
+    extra.cmd.push({ value, type: 'dodge', source });
+  };
+  if (toggles.has('combatExpertise')) dodgeToggle(step, 'Combat Expertise');
+  if (toggles.has('fightDefensively')) dodgeToggle(acro3 ? 3 : 2, 'Fighting defensively');
+  if (toggles.has('totalDefense')) dodgeToggle(acro3 ? 6 : 4, 'Total defense');
+
   const saves = {} as Record<SaveKey, StatLine>;
   for (const s of ['fort', 'ref', 'will'] as SaveKey[]) {
     saves[s] = sumModifiers([
@@ -349,11 +381,41 @@ export function computeCharacterStats(c: Character): CharacterStats {
         : weapon.masterwork
           ? [{ value: 1, type: 'enhancement', source: 'Masterwork' }]
           : [];
+      // Combat toggles: attack penalties and damage bonuses.
+      const melee = mode === 'melee';
+      const piranhaOk = melee && (weapon.hands === 'light' || weapon.finesse);
+      const togglePenalties: Modifier[] = [];
+      const toggleDamage: Modifier[] = [];
+      const on = (id: ToggleId) => toggles.has(id);
+      if (on('powerAttack') && melee) {
+        togglePenalties.push({ value: -step, type: 'untyped', source: 'Power Attack' });
+        const twoHanded = hand === 'bothHands' && weapon.hands !== 'light';
+        toggleDamage.push({ value: hand === 'offHand' ? step : twoHanded ? 3 * step : 2 * step, type: 'untyped', source: 'Power Attack' });
+      }
+      if (on('piranhaStrike') && piranhaOk) {
+        togglePenalties.push({ value: -step, type: 'untyped', source: 'Piranha Strike' });
+        toggleDamage.push({ value: hand === 'offHand' ? step : 2 * step, type: 'untyped', source: 'Piranha Strike' });
+      }
+      if (on('deadlyAim') && !melee) {
+        togglePenalties.push({ value: -step, type: 'untyped', source: 'Deadly Aim' });
+        toggleDamage.push({ value: 2 * step, type: 'untyped', source: 'Deadly Aim' });
+      }
+      if (on('combatExpertise') && melee) togglePenalties.push({ value: -step, type: 'untyped', source: 'Combat Expertise' });
+      if (on('fightDefensively')) togglePenalties.push({ value: -4, type: 'untyped', source: 'Fighting defensively' });
+      const featAttack: Modifier[] = [];
+      const featDamage: Modifier[] = [];
+      if (hasWeaponFeat('weaponfocus', item.name)) featAttack.push({ value: 1, type: 'untyped', source: 'Weapon Focus' });
+      if (hasWeaponFeat('greaterweaponfocus', item.name)) featAttack.push({ value: 1, type: 'untyped', source: 'Greater Weapon Focus' });
+      if (hasWeaponFeat('weaponspecialization', item.name)) featDamage.push({ value: 2, type: 'untyped', source: 'Weapon Specialization' });
+      if (hasWeaponFeat('greaterweaponspecialization', item.name)) featDamage.push({ value: 2, type: 'untyped', source: 'Greater Weapon Specialization' });
+
       const attack = sumModifiers([
         { value: bab.total, type: 'base', source: 'BAB' },
         attackAbility,
         { value: SIZE_MOD[size], type: 'size', source: size },
         ...weaponBonus,
+        ...featAttack,
+        ...togglePenalties,
       ]);
 
       // Strength to damage: x1.5 two-handed (not light weapons), x0.5 off hand; penalties always apply in full.
@@ -375,14 +437,19 @@ export function computeCharacterStats(c: Character): CharacterStats {
       const damage = sumModifiers([
         ...(strDamage ? [{ value: strDamage, type: 'ability' as const, source: strSource }] : []),
         ...(weapon.enhancement ? [{ value: weapon.enhancement, type: 'enhancement' as const, source: `+${weapon.enhancement} weapon` }] : []),
+        ...featDamage,
+        ...toggleDamage,
       ]);
+      let fullAttack = mode === 'thrown' ? [attack.total] : iteratives(bab.total, attack.total);
+      // Rapid Shot: one extra ranged attack at the highest bonus, every attack at -2.
+      if (on('rapidShot') && !melee) fullAttack = [attack.total - 2, ...fullAttack.map((n) => n - 2)];
       attacks.push({
         itemId: item.id,
         name: item.name,
         mode,
         hand,
         attack,
-        fullAttack: mode === 'thrown' ? [attack.total] : iteratives(bab.total, attack.total),
+        fullAttack,
         dice: sizedDamage(weapon.damage, size),
         damage,
         crit: critText(weapon.critRange, weapon.critMult),
@@ -426,6 +493,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
     armor: { worn: effectiveWorn.map((w) => w.name), maxDex, acp, asf, heavyArmor },
     load: { weight, capacity, level: loadLevel },
     attacks,
+    toggles: [...toggles],
     twoWeapon,
     warnings,
   };

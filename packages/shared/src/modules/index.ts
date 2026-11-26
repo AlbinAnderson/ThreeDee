@@ -62,5 +62,5 @@ export { canControlCombatant, combatantName, compareCombatants, isCombatantHidde
 export { canDeleteTemplate, templateCells, templateContains } from './templates';
 export { canSeeHandout } from './handouts';
 export { canManageCharacter, canSeeCharacter } from './pf1e/characters';
-export { characterResources } from './pf1e/turns';
+export { characterPools, characterResources, type ResourcePool } from './pf1e/turns';
 export { formatGpValue, isUnidentifiedLoot, parseGpValue } from './pf1e/inventory';

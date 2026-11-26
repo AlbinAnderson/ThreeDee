@@ -28,6 +28,7 @@ import {
 } from '@vtt/shared';
 import { create } from 'zustand';
 import { rollCheck } from '../characters/characterActions';
+import { CombatToggles } from '../characters/CombatToggles';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { useUi } from '../state/uiStore';
@@ -154,6 +155,7 @@ export function ActionsPanel() {
         </div>
       )}
       {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size); action 🎲 buttons use your wielded weapon when one is equipped.</p>}
+      {stats && actor.character && <CombatToggles character={actor.character} stats={stats} />}
 
       {resources.length > 0 && (
         <section>

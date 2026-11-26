@@ -147,6 +147,37 @@ export const pf1eTurnActions = {
     },
   }),
 
+  /**
+   * Spend (+) or restore (−) uses of one resource pool: a class resource or a
+   * custom pool. Clamped to 0..max, where max comes from the same rules the UI shows.
+   */
+  adjustUse: defineAction(
+    'pf1e/adjustUse',
+    z.object({ characterId: IdSchema, key: z.string().min(1).max(120), delta: z.number().int().min(-1000).max(1000) }),
+    {
+      authorize(ctx, { characterId, key }) {
+        const c = ctx.state.characters[characterId];
+        if (!c) return 'Character not found';
+        if (!canManageCharacter(ctx.user, c)) return "You don't control that character";
+        return characterPools(c).some((p) => p.key === key) || 'Unknown resource';
+      },
+      audience: (viewer, { characterId }, { state }) => {
+        const c = state.characters[characterId];
+        return !!c && (isGm(viewer) || c.ownerId === viewer.id || c.shared);
+      },
+      apply(draft, { characterId, key, delta }, meta) {
+        const c = draft.characters[characterId];
+        if (!c) return;
+        const pool = characterPools(c as Character).find((p) => p.key === key);
+        if (!pool) return;
+        const next = Math.max(0, Math.min(pool.max, (c.runtime.uses[key] ?? 0) + delta));
+        if (next) c.runtime.uses[key] = next;
+        else delete c.runtime.uses[key];
+        c.updatedAt = meta.ts;
+      },
+    },
+  ),
+
   /** Restore daily resources (after 8 hours of rest). */
   resetUses: defineAction('pf1e/resetUses', z.object({ characterId: IdSchema }), {
     authorize(ctx, { characterId }) {
@@ -186,4 +217,34 @@ export function characterResources(c: Character) {
       return { key, set, def, level, used: c.runtime.uses[key] ?? 0, max: resourceMax(c, def, level, stats) };
     }),
   );
+}
+
+export interface ResourcePool {
+  /** Key under runtime.uses. */
+  key: string;
+  name: string;
+  unit: string;
+  used: number;
+  max: number;
+  /** Class name for class resources; null for custom pools. */
+  className: string | null;
+  custom: boolean;
+}
+
+/** Every resource pool of a character: class resources, then custom pools from the sheet. */
+export function characterPools(c: Character): ResourcePool[] {
+  const fromClasses = characterResources(c).map((r) => ({
+    key: r.key,
+    name: r.def.name,
+    unit: r.def.unit,
+    used: r.used,
+    max: r.max,
+    className: r.set.className,
+    custom: false,
+  }));
+  const custom = c.sheet.customPools.map((p) => {
+    const key = `custom.${p.id}`;
+    return { key, name: p.name, unit: p.unit, used: c.runtime.uses[key] ?? 0, max: p.max, className: null, custom: true };
+  });
+  return [...fromClasses, ...custom];
 }

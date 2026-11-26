@@ -17,6 +17,7 @@ import {
 } from '@vtt/shared';
 import { applyHpDelta } from '../components/TokenStatusEditors';
 import { rollToChat } from '../panels/ChatPanel';
+import { CombatToggles } from './CombatToggles';
 import { useGame, useSelf } from '../state/hooks';
 import { rollCheck, rollInitiative, setHp, syncLinkedToken, updateRuntime } from './characterActions';
 
@@ -122,6 +123,7 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
       </div>
       <p className="muted small-text">Click a highlighted number to roll it (uses your chat mode). Hover for the breakdown.</p>
 
+      <CombatToggles character={c} stats={stats} />
       <Attacks character={c} stats={stats} />
       <div className="muted small-text">
         {[

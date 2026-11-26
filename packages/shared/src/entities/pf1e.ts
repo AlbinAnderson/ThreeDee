@@ -44,10 +44,12 @@ export const CharacterRuntimeSchema = z.object({
   abilityDrain: NonNegStatAdjustSchema,
   /** Temporary score changes from spells/items not modelled yet (e.g. Bull's Strength +4). */
   abilityTemp: StatAdjustSchema,
+  /** Active combat options (Power Attack, Fight defensively...), keyed by toggle id; see pf1e/toggles.ts. */
+  toggles: z.record(z.string().max(40), z.boolean()).refine((r) => Object.keys(r).length <= 30, 'Too many toggles'),
 });
 export type CharacterRuntime = z.infer<typeof CharacterRuntimeSchema>;
 
-export const EMPTY_RUNTIME: CharacterRuntime = { hp: null, uses: {}, abilityDamage: {}, abilityDrain: {}, abilityTemp: {} };
+export const EMPTY_RUNTIME: CharacterRuntime = { hp: null, uses: {}, abilityDamage: {}, abilityDrain: {}, abilityTemp: {}, toggles: {} };
 
 /** Progression for a class the rules tables don't know (prestige or homebrew). */
 export const ClassChassisSchema = z.object({
@@ -60,6 +62,16 @@ export const ClassChassisSchema = z.object({
 /** Sheet-only numbers that aren't modelled yet. */
 export const MiscTargetSchema = z.enum(['hp', 'ac', 'natural', 'deflection', 'initiative', 'fort', 'ref', 'will', 'cmb', 'cmd']);
 export type MiscTarget = z.infer<typeof MiscTargetSchema>;
+
+/** A resource pool the rules tables don't model (Ki at higher levels, a homebrew feature...). Spent uses live in runtime.uses under `custom.<id>`. */
+export const CustomPoolSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(40),
+  max: z.number().int().min(0).max(999),
+  unit: z.enum(['uses', 'rounds', 'points', 'minutes']),
+});
+export type CustomPool = z.infer<typeof CustomPoolSchema>;
+export const MAX_CUSTOM_POOLS = 30;
 
 /** Sheet-side changes to one skill (kept on re-import). */
 export const SkillOverrideSchema = z.object({
@@ -100,6 +112,8 @@ export const CharacterSheetSchema = z.object({
   skills: z
     .record(z.string().trim().min(1).max(80), SkillOverrideSchema)
     .refine((r) => Object.keys(r).length <= MAX_SKILL_OVERRIDES, `At most ${MAX_SKILL_OVERRIDES} skill entries`),
+  /** Extra resource pools added on the sheet. */
+  customPools: z.array(CustomPoolSchema).max(MAX_CUSTOM_POOLS),
 });
 export type CharacterSheet = z.infer<typeof CharacterSheetSchema>;
 
@@ -114,6 +128,7 @@ export const EMPTY_SHEET: CharacterSheet = {
   darkvision: null,
   misc: {},
   skills: {},
+  customPools: [],
 };
 
 // ------------------------------------------------------------------ inventory

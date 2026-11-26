@@ -123,11 +123,11 @@ describe('encumbrance, armor and attacks', () => {
     const c = character();
     const s = computeCharacterStats(c);
     const sword = s.attacks.find((x) => x.name === 'Longsword (Masterwork)')!;
-    assert.equal(sword.attack.total, 2 + 3 + 1, 'BAB 2 + Str 3 + masterwork 1');
+    assert.equal(sword.attack.total, 2 + 3 + 1 + 1, 'BAB 2 + Str 3 + masterwork 1 + Weapon Focus (Longsword) 1');
     assert.equal(sword.dice, '1d8');
     assert.equal(sword.damage.total, 3);
     assert.equal(sword.crit, '19-20/×2');
-    assert.deepEqual(sword.fullAttack, [6], 'BAB 2: one attack');
+    assert.deepEqual(sword.fullAttack, [7], 'BAB 2: one attack');
 
     c.inventory.loadouts[0]!.slots[c.inventory.items[0]!.id] = 'bothHands';
     assert.equal(computeCharacterStats(c).attacks[0]!.damage.total, 4, 'floor(3 x 1.5)');

@@ -84,6 +84,20 @@ const migrations: Record<number, Migration> = {
       ),
     };
   },
+  // Epic 6: combat toggles and custom resource pools.
+  8: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 9,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => [
+          id,
+          { ...c, sheet: { customPools: [], ...(c.sheet as object) }, runtime: { toggles: {}, ...(c.runtime as object) } },
+        ]),
+      ),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {
