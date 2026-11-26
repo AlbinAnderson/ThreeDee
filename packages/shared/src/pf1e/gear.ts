@@ -164,6 +164,31 @@ export function baseGearName(name: string): string {
     .toLowerCase();
 }
 
+const CANONICAL_WEAPON_KEY: Record<string, string> = {
+  shortsword: 'short sword',
+  'composite longbow': 'longbow',
+  'composite shortbow': 'shortbow',
+};
+
+/**
+ * Canonical weapon key for matching weapon feats (Weapon Focus / Specialization).
+ * Resolves known weapons longest-name-first so "Punching Dagger" won't match "Dagger"
+ * and "Sword (Short)" / "Shortsword" or "Composite Longbow" / "Longbow" match cleanly.
+ */
+export function weaponKey(name: string): string {
+  const base = baseGearName(name);
+  if (!base) return '';
+  const padded = ` ${base} `;
+  const hit = WEAPON_TABLE.find(([n]) => {
+    const key = n.toLowerCase();
+    if (!padded.includes(` ${key} `)) return false;
+    if (key === 'acid' && base !== 'acid') return false;
+    return true;
+  });
+  const key = hit ? hit[0].toLowerCase() : base;
+  return CANONICAL_WEAPON_KEY[key] ?? key;
+}
+
 export function lookupWeapon(name: string): W | undefined {
   if (NON_WEAPON_PREFIX.test(name)) return undefined;
   const base = ` ${baseGearName(name)} `;

@@ -263,6 +263,15 @@ export const characterSheetActions = {
       const c = draft.characters[id];
       if (!c) return;
       Object.assign(c.sheet, changes);
+      if (changes.customPools) {
+        const byKey = new Map(c.sheet.customPools.map((p) => [`custom.${p.id}`, p.max]));
+        for (const k of Object.keys(c.runtime.uses)) {
+          if (!k.startsWith('custom.')) continue;
+          const max = byKey.get(k);
+          if (max === undefined || max <= 0) delete c.runtime.uses[k];
+          else if ((c.runtime.uses[k] ?? 0) > max) c.runtime.uses[k] = max;
+        }
+      }
       c.updatedAt = meta.ts;
     },
   }),

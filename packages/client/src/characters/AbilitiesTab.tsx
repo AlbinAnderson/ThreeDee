@@ -121,19 +121,21 @@ function Resources({ character: c, manage }: { character: Character; manage: boo
 
 function AddPool({ character: c }: { character: Character }) {
   const [name, setName] = useState('');
-  const [max, setMax] = useState(3);
+  const [maxText, setMaxText] = useState('3');
   const [unit, setUnit] = useState<CustomPool['unit']>('uses');
   const add = () => {
     const n = name.trim().slice(0, 40);
     if (!n) return;
     if (c.sheet.customPools.some((p) => p.name.toLowerCase() === n.toLowerCase())) return notify(`${n} is already tracked`);
-    const pool: CustomPool = { id: newId(), name: n, max: Math.max(0, Math.min(999, Math.round(max))), unit };
+    const parsed = Number(maxText);
+    const max = Number.isFinite(parsed) ? Math.max(0, Math.min(999, Math.round(parsed))) : 0;
+    const pool: CustomPool = { id: newId(), name: n, max, unit };
     if (dispatch(characterSheetActions.updateSheet.create({ id: c.id, changes: { customPools: [...c.sheet.customPools, pool] } }))) setName('');
   };
   return (
     <div className="pool-add">
       <input placeholder="New pool (e.g. Ki)" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-      <input type="number" min={0} max={999} value={max} aria-label="Maximum" onChange={(e) => setMax(Number(e.target.value) || 0)} />
+      <input type="number" min={0} max={999} value={maxText} aria-label="Maximum" onChange={(e) => setMaxText(e.target.value)} />
       <select value={unit} onChange={(e) => setUnit(e.target.value as CustomPool['unit'])} aria-label="Unit">
         <option value="uses">uses</option>
         <option value="rounds">rounds</option>

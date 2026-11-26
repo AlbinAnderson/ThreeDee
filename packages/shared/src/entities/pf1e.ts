@@ -38,7 +38,7 @@ export const CharacterRuntimeSchema = z.object({
     })
     .nullable(),
   /** Spent uses of daily/per-round resources and spell slots, keyed by resource id (Epics 6-7). */
-  uses: z.record(z.string().max(120), z.number().int().min(0).max(100000)),
+  uses: z.record(z.string().max(120), z.number().int().min(0).max(100000)).refine((r) => Object.keys(r).length <= 200, 'Too many tracked uses'),
   /** Ability damage (lowers the modifier) and drain (lowers the score). */
   abilityDamage: NonNegStatAdjustSchema,
   abilityDrain: NonNegStatAdjustSchema,
@@ -113,7 +113,10 @@ export const CharacterSheetSchema = z.object({
     .record(z.string().trim().min(1).max(80), SkillOverrideSchema)
     .refine((r) => Object.keys(r).length <= MAX_SKILL_OVERRIDES, `At most ${MAX_SKILL_OVERRIDES} skill entries`),
   /** Extra resource pools added on the sheet. */
-  customPools: z.array(CustomPoolSchema).max(MAX_CUSTOM_POOLS),
+  customPools: z
+    .array(CustomPoolSchema)
+    .max(MAX_CUSTOM_POOLS)
+    .refine((arr) => new Set(arr.map((p) => p.id)).size === arr.length, 'Duplicate custom pool id'),
 });
 export type CharacterSheet = z.infer<typeof CharacterSheetSchema>;
 

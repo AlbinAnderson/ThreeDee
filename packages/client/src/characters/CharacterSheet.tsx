@@ -173,27 +173,37 @@ function Attacks({ character: c, stats }: { character: Character; stats: Charact
     <section className="sheet-attacks">
       <h3>Attacks</h3>
       <ul>
-        {stats.attacks.map((a) => (
-          <li key={`${a.itemId}-${a.mode}`}>
-            <span className="sheet-attack-name">{label(a)}</span>
-            <button type="button" className="small rollable" title={`Attack: ${describeLine(a.attack)}. Click to roll.`} onClick={() => rollCheck(c, `${label(a)} attack`, a.attack.total)}>
-              {signed(a.attack.total)}
-              {a.fullAttack.length > 1 ? ` (${a.fullAttack.slice(1).map(signed).join('/')})` : ''}
-            </button>
-            <button
-              type="button"
-              className="small"
-              title={`Damage: ${a.dice}${a.damage.parts.length ? ` + ${describeLine(a.damage)}` : ''}. Click to roll.`}
-              onClick={() => rollToChat(dmg(a), `${c.name}: ${label(a)} damage`.slice(0, 100))}
-            >
-              {dmg(a)}
-            </button>
-            <span className="muted small-text">
-              {a.crit}
-              {a.range ? ` · ${a.range} ft` : ''}
-            </span>
-          </li>
-        ))}
+        {stats.attacks.map((a) => {
+          const fullDiffers = a.fullAttack.length > 1 && a.fullAttack[0] !== a.attack.total;
+          const fullSuffix =
+            a.fullAttack.length > 1
+              ? fullDiffers
+                ? ` · full ${a.fullAttack.map(signed).join('/')}`
+                : ` (${a.fullAttack.slice(1).map(signed).join('/')})`
+              : '';
+          const attackTitle = `Attack: ${describeLine(a.attack)}${fullDiffers ? `. Full attack: ${a.fullAttack.map(signed).join('/')}` : ''}. Click to roll.`;
+          return (
+            <li key={`${a.itemId}-${a.mode}`}>
+              <span className="sheet-attack-name">{label(a)}</span>
+              <button type="button" className="small rollable" title={attackTitle} onClick={() => rollCheck(c, `${label(a)} attack`, a.attack.total)}>
+                {signed(a.attack.total)}
+                {fullSuffix}
+              </button>
+              <button
+                type="button"
+                className="small"
+                title={`Damage: ${a.dice}${a.damage.parts.length ? ` + ${describeLine(a.damage)}` : ''}. Click to roll.`}
+                onClick={() => rollToChat(dmg(a), `${c.name}: ${label(a)} damage`.slice(0, 100))}
+              >
+                {dmg(a)}
+              </button>
+              <span className="muted small-text">
+                {a.crit}
+                {a.range ? ` · ${a.range} ft` : ''}
+              </span>
+            </li>
+          );
+        })}
       </ul>
       {stats.twoWeapon && (
         <p className="small-text muted">

@@ -32,7 +32,7 @@ export const TOGGLES: ToggleDef[] = [
     label: 'Piranha Strike',
     feat: 'piranhastrike',
     excludes: ['powerAttack'],
-    describe: (n) => `Light or finesse melee weapons: −${n} attack, +${2 * n} damage (+${n} off hand)`,
+    describe: (n) => `Light melee weapons: −${n} attack, +${2 * n} damage (+${n} off hand)`,
   },
   {
     id: 'deadlyAim',
@@ -45,7 +45,7 @@ export const TOGGLES: ToggleDef[] = [
     id: 'combatExpertise',
     label: 'Combat Expertise',
     feat: 'combatexpertise',
-    excludes: [],
+    excludes: ['totalDefense'],
     describe: (n) => `Melee: −${n} attack, +${n} dodge AC`,
   },
   {
@@ -59,7 +59,7 @@ export const TOGGLES: ToggleDef[] = [
     id: 'totalDefense',
     label: 'Total defense',
     feat: null,
-    excludes: ['fightDefensively'],
+    excludes: ['fightDefensively', 'combatExpertise'],
     describe: (_n, ranks) => `No attacks this round, +${ranks >= 3 ? 6 : 4} dodge AC`,
   },
   {
@@ -80,7 +80,7 @@ function featKeys(c: Character): Set<string> {
 
 /** Ranks in Acrobatics (sheet override or file): 3+ improves fighting defensively and total defense. */
 export function acrobaticsRanks(c: Character): number {
-  const override = c.sheet.skills.Acrobatics?.ranks;
+  const override = Object.entries(c.sheet.skills).find(([k]) => k.trim().toLowerCase() === 'acrobatics')?.[1]?.ranks;
   if (override !== null && override !== undefined) return override;
   return Math.floor(c.build.skills.find((s) => s.name.trim().toLowerCase() === 'acrobatics')?.totalRanks ?? 0);
 }
@@ -91,10 +91,33 @@ export function availableToggles(c: Character): ToggleDef[] {
   return TOGGLES.filter((t) => t.feat === null || keys.has(t.feat));
 }
 
-/** Active toggles, ignoring any the character can no longer use (feat retrained away). */
+/** Active toggles, ignoring any the character can no longer use and enforcing mutual exclusions. */
 export function activeToggles(c: Character): Set<ToggleId> {
   const allowed = new Set(availableToggles(c).map((t) => t.id));
-  return new Set(Object.entries(c.runtime.toggles ?? {}).flatMap(([id, on]) => (on && allowed.has(id as ToggleId) ? [id as ToggleId] : [])));
+  const active = new Set(Object.entries(c.runtime.toggles ?? {}).flatMap(([id, on]) => (on && allowed.has(id as ToggleId) ? [id as ToggleId] : [])));
+  // Enforce mutual exclusion even if runtime.toggles was edited directly (Total defense beats fightDefensively/combatExpertise; Power Attack beats Piranha Strike).
+  if (active.has('totalDefense')) {
+    active.delete('fightDefensively');
+    active.delete('combatExpertise');
+  }
+  if (active.has('powerAttack')) active.delete('piranhaStrike');
+  return active;
+}
+
+/** Net attack-roll penalty from active combat toggles for generic melee or ranged rolls. */
+export function toggleAttackPenalty(toggles: Iterable<ToggleId>, bab: number, melee: boolean): number {
+  const set = toggles instanceof Set ? toggles : new Set(toggles);
+  const step = toggleStep(bab);
+  let penalty = 0;
+  if (melee) {
+    if (set.has('powerAttack')) penalty -= step;
+    else if (set.has('piranhaStrike')) penalty -= step;
+    if (set.has('combatExpertise')) penalty -= step;
+  } else if (set.has('deadlyAim')) {
+    penalty -= step;
+  }
+  if (set.has('fightDefensively')) penalty -= 4;
+  return penalty;
 }
 
 /** New toggles map after switching one on/off (switching on turns off whatever it excludes). */

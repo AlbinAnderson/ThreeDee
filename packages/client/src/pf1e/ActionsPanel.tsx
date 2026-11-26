@@ -9,6 +9,7 @@ import {
   canControlCombatant,
   canManageCharacter,
   canSpend,
+  characterPools,
   characterResources,
   classActionSetsFor,
   combatActions,
@@ -21,6 +22,7 @@ import {
   pf1eTurnActions,
   SIZE_MOD,
   signed,
+  toggleAttackPenalty,
   type ActionGroup,
   type Character,
   type EffectiveTurn,
@@ -97,6 +99,7 @@ export function ActionsPanel() {
   const stats = useMemo(() => (actor?.character ? computeCharacterStats(actor.character) : null), [actor?.character]);
   const classSets = useMemo(() => (actor?.character ? classActionSetsFor(actor.character.build.classes) : []), [actor?.character]);
   const resources = useMemo(() => (actor?.character ? characterResources(actor.character) : []), [actor?.character]);
+  const pools = useMemo(() => (actor?.character ? characterPools(actor.character) : []), [actor?.character]);
 
   if (!actor) {
     return (
@@ -111,17 +114,18 @@ export function ActionsPanel() {
   const matches = (a: Pf1Action) => !q || a.name.toLowerCase().includes(q) || a.notes.toLowerCase().includes(q);
   const act = (a: Pf1Action) =>
     dispatch(pf1eTurnActions.act.create({ actionId: a.id, combatantId: actor.combatantId, characterId: actor.combatantId ? undefined : actor.character?.id, chatId: newId() }));
+  const genericMelee = stats ? stats.bab.total + stats.abilities.STR.mod + SIZE_MOD[stats.size] + toggleAttackPenalty(stats.toggles, stats.bab.total, true) : 0;
+  const genericRanged = stats ? stats.bab.total + stats.abilities.DEX.mod + SIZE_MOD[stats.size] + toggleAttackPenalty(stats.toggles, stats.bab.total, false) : 0;
   const roll = stats
     ? (a: Pf1Action) => {
-        const size = SIZE_MOD[stats.size];
         if (a.roll === 'cmb') return rollCheck(actor.character!, `${a.name} (CMB)`, stats.cmb.total);
-        // Use the wielded weapon when there is one (Inventory tab), else a bare BAB + ability roll.
+        // Use the wielded weapon when there is one (Inventory tab), else a bare BAB + ability + toggle roll.
         const ranged = a.roll === 'ranged';
         const weapon = stats.attacks.find((x) => (ranged ? x.mode !== 'melee' : x.mode === 'melee') && x.hand !== 'offHand');
         const charge = a.id === 'g.charge' ? 2 : 0;
         if (weapon) return rollCheck(actor.character!, `${a.name} (${weapon.name})`, weapon.attack.total + charge);
-        if (ranged) rollCheck(actor.character!, `${a.name} (ranged)`, stats.bab.total + stats.abilities.DEX.mod + size);
-        else rollCheck(actor.character!, `${a.name} (melee)`, stats.bab.total + stats.abilities.STR.mod + size + charge);
+        if (ranged) rollCheck(actor.character!, `${a.name} (ranged)`, genericRanged);
+        else rollCheck(actor.character!, `${a.name} (melee)`, genericMelee + charge);
       }
     : null;
 
@@ -143,21 +147,21 @@ export function ActionsPanel() {
 
       {stats && (
         <div className="button-row">
-          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Melee attack', stats.bab.total + stats.abilities.STR.mod + SIZE_MOD[stats.size])}>
-            🎲 Melee {signed(stats.bab.total + stats.abilities.STR.mod + SIZE_MOD[stats.size])}
+          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Melee attack', genericMelee)}>
+            🎲 Melee {signed(genericMelee)}
           </button>
-          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Ranged attack', stats.bab.total + stats.abilities.DEX.mod + SIZE_MOD[stats.size])}>
-            🎲 Ranged {signed(stats.bab.total + stats.abilities.DEX.mod + SIZE_MOD[stats.size])}
+          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Ranged attack', genericRanged)}>
+            🎲 Ranged {signed(genericRanged)}
           </button>
           <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Combat maneuver (CMB)', stats.cmb.total)}>
             🎲 CMB {signed(stats.cmb.total)}
           </button>
         </div>
       )}
-      {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size); action 🎲 buttons use your wielded weapon when one is equipped.</p>}
+      {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size + toggles); action 🎲 buttons use your wielded weapon when one is equipped.</p>}
       {stats && actor.character && <CombatToggles character={actor.character} stats={stats} />}
 
-      {resources.length > 0 && (
+      {pools.length > 0 && (
         <section>
           <div className="section-header">
             <h3>Resources</h3>
@@ -173,17 +177,43 @@ export function ActionsPanel() {
             )}
           </div>
           <ul className="resource-list">
-            {resources.map((r) => (
-              <li key={r.key} title={`${r.set.className} ${r.level}`}>
-                <span className="flex1">{r.def.name}</span>
-                <span className={r.used >= r.max ? 'warn-text' : ''}>
-                  {Math.max(0, r.max - r.used)}/{r.max} {r.def.unit}
-                </span>
-                <span className="resource-bar">
-                  <span style={{ width: `${r.max ? Math.max(0, (r.max - r.used) / r.max) * 100 : 0}%` }} />
-                </span>
-              </li>
-            ))}
+            {pools.map((p) => {
+              const left = Math.max(0, p.max - p.used);
+              const manage = canManageCharacter(self, actor.character!);
+              return (
+                <li key={p.key} title={p.className ? `${p.className} class resource` : 'Custom pool'}>
+                  <span className="flex1">{p.name}</span>
+                  <span className={left === 0 ? 'warn-text' : ''}>
+                    {left}/{p.max} {p.unit}
+                  </span>
+                  <span className="resource-bar">
+                    <span style={{ width: `${p.max ? (left / p.max) * 100 : 0}%` }} />
+                  </span>
+                  {manage && (
+                    <>
+                      <button
+                        type="button"
+                        className="small"
+                        aria-label={`Use 1 ${p.name}`}
+                        disabled={left === 0}
+                        onClick={() => dispatch(pf1eTurnActions.adjustUse.create({ characterId: actor.character!.id, key: p.key, delta: 1 }))}
+                      >
+                        −
+                      </button>
+                      <button
+                        type="button"
+                        className="small"
+                        aria-label={`Restore 1 ${p.name}`}
+                        disabled={p.used === 0}
+                        onClick={() => dispatch(pf1eTurnActions.adjustUse.create({ characterId: actor.character!.id, key: p.key, delta: -1 }))}
+                      >
+                        +
+                      </button>
+                    </>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

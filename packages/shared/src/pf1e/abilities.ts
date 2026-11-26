@@ -48,9 +48,10 @@ function featGroup(types: string[]): string {
 }
 
 function categorize(category: string, pool: string): AbilityCategory {
-  if (/^feat$/i.test(category) || /feat/i.test(pool)) return 'feat';
-  if (/trait|drawback/i.test(pool) || /trait/i.test(category)) return 'trait';
-  if (/background|region|racial|race/i.test(category) || /region|racial|race/i.test(pool)) return 'racial';
+  if (/^feat$/i.test(category) || /\bfeats?\b/i.test(pool)) return 'feat';
+  if (/racial/i.test(category) || /racial/i.test(pool)) return 'racial';
+  if (/\b(traits?|drawbacks?)\b/i.test(pool) || /\b(traits?|drawbacks?)\b/i.test(category)) return 'trait';
+  if (/\b(background|region|race)\b/i.test(category) || /\b(background|region|race)\b/i.test(pool)) return 'racial';
   return 'class';
 }
 
@@ -61,10 +62,14 @@ export function characterAbilities(c: Character): AbilityEntry[] {
   const out: AbilityEntry[] = [];
   const seen = new Set<string>();
   const add = (e: Omit<AbilityEntry, 'id'>) => {
-    const key = `${e.category}|${e.group}|${e.name}|${e.appliedTo.join(',')}`.toLowerCase();
+    // Deduplicate feats across build.abilities and legacyFeats/virtualFeats regardless of group label.
+    const key = (e.category === 'feat'
+      ? `${e.category}|${e.name}|${e.appliedTo.join(',')}`
+      : `${e.category}|${e.group}|${e.name}|${e.appliedTo.join(',')}`
+    ).toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ ...e, id: `a${out.length}` });
+    out.push({ ...e, id: key });
   };
 
   for (const a of c.build.abilities) {
@@ -85,9 +90,19 @@ export function characterAbilities(c: Character): AbilityEntry[] {
     [c.build.legacyFeats, 'NORMAL'],
     [c.build.virtualFeats, 'VIRTUAL'],
   ] as const) {
-    for (const f of list) {
+    for (const raw of list) {
+      const f = raw.trim();
+      if (!f) continue;
       const m = /^(.*?)\s*\((.+)\)\s*$/.exec(f);
-      add({ category: 'feat', name: m ? m[1]! : f, group: 'Feat', nature, appliedTo: m ? [m[2]!] : [], description: null, source: 'pcg' });
+      add({
+        category: 'feat',
+        name: m ? m[1]!.trim() : f,
+        group: 'Feat',
+        nature,
+        appliedTo: m ? m[2]!.split(',').map((t) => t.trim()).filter(Boolean) : [],
+        description: null,
+        source: 'pcg',
+      });
     }
   }
 

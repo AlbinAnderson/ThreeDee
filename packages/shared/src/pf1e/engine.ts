@@ -4,7 +4,7 @@
  * Pure and deterministic, shared by client (sheet) and server (token sync).
  */
 import type { Character, ItemArmor } from '../entities/pf1e';
-import { baseGearName, carryingCapacity, sizedDamage, type CarryingCapacity } from './gear';
+import { carryingCapacity, sizedDamage, weaponKey, type CarryingCapacity } from './gear';
 import { activeLoadout, carriedWeight, itemsInSlot, type LoadWeight } from './inventory';
 import { sumModifiers, type Modifier, type StatLine } from './modifiers';
 import { acrobaticsRanks, activeToggles, toggleStep, type ToggleId } from './toggles';
@@ -219,20 +219,28 @@ export function computeCharacterStats(c: Character): CharacterStats {
     sheet.misc[k] ? [{ value: sheet.misc[k]!, type: 'untyped', source }] : [];
 
   // Weapon feats chosen for a weapon: Weapon Focus / Specialization (and Greater) with their targets.
-  const weaponFeats = new Map<string, string[]>();
+  const weaponFeats = new Map<string, Set<string>>();
   const addWeaponFeat = (name: string, targets: string[]) => {
     const k = featKey(name);
     if (!['weaponfocus', 'greaterweaponfocus', 'weaponspecialization', 'greaterweaponspecialization'].includes(k)) return;
-    weaponFeats.set(k, [...(weaponFeats.get(k) ?? []), ...targets.map((t) => baseGearName(t)).filter(Boolean)]);
+    let set = weaponFeats.get(k);
+    if (!set) {
+      set = new Set();
+      weaponFeats.set(k, set);
+    }
+    for (const t of targets) {
+      const wk = weaponKey(t);
+      if (wk) set.add(wk);
+    }
   };
   for (const a of build.abilities) addWeaponFeat(a.key, a.appliedTo);
   for (const f of [...build.legacyFeats, ...build.virtualFeats]) {
     const m = /\((.+)\)\s*$/.exec(f);
-    if (m) addWeaponFeat(f, [m[1]!]);
+    if (m) addWeaponFeat(f, m[1]!.split(','));
   }
   const hasWeaponFeat = (k: string, itemName: string) => {
-    const item = ` ${baseGearName(itemName)} `;
-    return (weaponFeats.get(k) ?? []).some((t) => item.includes(` ${t} `));
+    const wk = weaponKey(itemName);
+    return !!wk && (weaponFeats.get(k)?.has(wk) ?? false);
   };
 
   // Combat toggles: dodge bonuses to AC (and CMD, which dodge bonuses also raise).
@@ -326,10 +334,16 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const cmbAbility: StatKey = useDexCmb ? 'DEX' : 'STR';
   const cmbSource = !useDexCmb ? 'Str' : isTinyOrSmaller ? `Dex (${size})` : 'Dex (Agile Maneuvers)';
   const specialSize: Modifier = { value: SPECIAL_SIZE_MOD[size], type: 'size', source: size };
+  const cmbTogglePenalties: Modifier[] = [];
+  if (toggles.has('powerAttack')) cmbTogglePenalties.push({ value: -step, type: 'untyped', source: 'Power Attack' });
+  if (toggles.has('piranhaStrike')) cmbTogglePenalties.push({ value: -step, type: 'untyped', source: 'Piranha Strike' });
+  if (toggles.has('combatExpertise')) cmbTogglePenalties.push({ value: -step, type: 'untyped', source: 'Combat Expertise' });
+  if (toggles.has('fightDefensively')) cmbTogglePenalties.push({ value: -4, type: 'untyped', source: 'Fighting defensively' });
   const cmb = sumModifiers([
     { value: bab.total, type: 'base', source: 'BAB' },
     { value: mod(cmbAbility), type: 'ability', source: cmbSource },
     specialSize,
+    ...cmbTogglePenalties,
     ...misc('cmb'),
   ]);
   const dctBab = has(FEAT_FLAGS.defensiveCombatTraining) ? Math.max(bab.total, hitDice) : bab.total;
@@ -383,7 +397,8 @@ export function computeCharacterStats(c: Character): CharacterStats {
           : [];
       // Combat toggles: attack penalties and damage bonuses.
       const melee = mode === 'melee';
-      const piranhaOk = melee && (weapon.hands === 'light' || weapon.finesse);
+      // PF1e Piranha Strike applies only to light melee weapons (not one-/two-handed finesse weapons).
+      const piranhaOk = melee && weapon.hands === 'light';
       const togglePenalties: Modifier[] = [];
       const toggleDamage: Modifier[] = [];
       const on = (id: ToggleId) => toggles.has(id);

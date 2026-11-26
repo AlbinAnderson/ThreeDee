@@ -82,7 +82,8 @@ describe('[Epic 6] combat toggles', () => {
     assert.equal(s.attacks[0]!.attack.total, base.attacks[0]!.attack.total - 1 - 4);
     c.runtime.toggles = setToggle(c.runtime.toggles, 'totalDefense', true);
     assert.equal(c.runtime.toggles.fightDefensively, undefined, 'total defense replaces fighting defensively');
-    assert.equal(computeCharacterStats(c).ac.normal.total, base.ac.normal.total + 1 + 4);
+    assert.equal(c.runtime.toggles.combatExpertise, undefined, 'total defense cannot combine with Combat Expertise');
+    assert.equal(computeCharacterStats(c).ac.normal.total, base.ac.normal.total + 4);
   });
 
   test('Deadly Aim and Rapid Shot on a bow', () => {
