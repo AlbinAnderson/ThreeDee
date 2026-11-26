@@ -199,3 +199,43 @@ export function TextAreaField({
     </Field>
   );
 }
+
+/** A number that may be left blank (null = automatic / not set). */
+export function OptionalNumberField({
+  label,
+  value,
+  onCommit,
+  disabled,
+  min,
+  max,
+  placeholder,
+}: FieldProps<number | null> & { min?: number; max?: number; placeholder?: string }) {
+  const id = useId();
+  const [draft, setDraft] = useState(value === null ? '' : String(value));
+  useEffect(() => setDraft(value === null ? '' : String(value)), [value]);
+  const commit = () => {
+    if (draft.trim() === '') return value !== null && onCommit(null);
+    let n = Math.round(Number(draft));
+    if (!Number.isFinite(n)) return setDraft(value === null ? '' : String(value));
+    if (min !== undefined) n = Math.max(min, n);
+    if (max !== undefined) n = Math.min(max, n);
+    setDraft(String(n));
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <Field label={label} id={id}>
+      <input
+        id={id}
+        type="number"
+        value={draft}
+        min={min}
+        max={max}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+      />
+    </Field>
+  );
+}

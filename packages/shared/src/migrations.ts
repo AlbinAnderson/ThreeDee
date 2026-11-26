@@ -40,6 +40,23 @@ const migrations: Record<number, Migration> = {
     };
   },
   3: (raw) => ({ ...raw, schemaVersion: 4, characters: {} }),
+  4: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 5,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => [
+          id,
+          {
+            ...c,
+            sheet: { racialChoice: null, classChassis: {}, armorBonus: null, shieldBonus: null, maxDex: null, size: null, speed: null, darkvision: null, misc: {} },
+            runtime: { abilityDamage: {}, abilityDrain: {}, abilityTemp: {}, ...(c.runtime as object) },
+          },
+        ]),
+      ),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {

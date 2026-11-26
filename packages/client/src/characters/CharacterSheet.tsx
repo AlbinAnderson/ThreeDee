@@ -1,0 +1,275 @@
+/** The core PF1e character sheet: live numbers with breakdowns and one-click rolls. */
+import { useMemo, useState } from 'react';
+import {
+  canManageCharacter,
+  characterHp,
+  classSummary,
+  computeCharacterStats,
+  describeLine,
+  saveName,
+  signed,
+  STAT_KEYS,
+  type Character,
+  type CharacterStats,
+  type SaveKey,
+  type StatLine,
+} from '@vtt/shared';
+import { applyHpDelta } from '../components/TokenStatusEditors';
+import { useGame, useSelf } from '../state/hooks';
+import { rollCheck, rollInitiative, setHp, syncLinkedToken, updateRuntime } from './characterActions';
+
+const STAT_NAMES: Record<string, string> = { STR: 'Strength', DEX: 'Dexterity', CON: 'Constitution', INT: 'Intelligence', WIS: 'Wisdom', CHA: 'Charisma' };
+
+export function CharacterSheet({ character: c, onOpenSettings }: { character: Character; onOpenSettings: () => void }) {
+  const self = useSelf();
+  const tokens = useGame((s) => s.tokens);
+  const stats = useMemo(() => computeCharacterStats(c), [c]);
+  const manage = canManageCharacter(self, c);
+  const b = c.build;
+  const token = c.tokenId ? tokens[c.tokenId] : undefined;
+  const tokenOutOfDate = !!token && (token.hp?.max !== Math.max(1, stats.hp.total) || token.name !== c.name);
+
+  return (
+    <div className="sheet">
+      <div className="sheet-identity">
+        <div>
+          <strong>{[b.attributes.race, classSummary(b)].filter(Boolean).join(' · ')}</strong>
+        </div>
+        <div className="muted small-text">
+          {[
+            b.attributes.alignment,
+            b.attributes.deity?.name,
+            stats.size,
+            `Speed ${stats.speed.total} ft`,
+            stats.senses.darkvision ? `Darkvision ${stats.senses.darkvision} ft` : null,
+            stats.senses.lowLight ? 'Low-light vision' : null,
+            b.experience.xp !== null ? `${b.experience.xp} XP` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </div>
+      </div>
+
+      {stats.warnings.length > 0 && (
+        <div className="sheet-warnings">
+          {stats.warnings.map((w, i) => (
+            <div key={i}>⚠ {w}</div>
+          ))}
+          {manage && (
+            <button type="button" className="link-button" onClick={onOpenSettings}>
+              Open sheet settings →
+            </button>
+          )}
+        </div>
+      )}
+
+      <HpBlock character={c} stats={stats} manage={manage} />
+      {manage && tokenOutOfDate && (
+        <button type="button" className="small sync-hint" onClick={() => syncLinkedToken(c)}>
+          ↻ Update token (max HP / name)
+        </button>
+      )}
+
+      <div className="sheet-abilities">
+        {STAT_KEYS.map((k) => {
+          const a = stats.abilities[k];
+          return (
+            <button
+              key={k}
+              type="button"
+              className={`sheet-ability${a.damage ? ' damaged' : ''}`}
+              title={`${STAT_NAMES[k]}: ${describeLine(a.line)}${a.damage ? `, ${a.damage} damage` : ''}. Click to roll a ${k} check.`}
+              onClick={() => rollCheck(c, `${STAT_NAMES[k]} check`, a.mod)}
+            >
+              <span className="sheet-ability-name">{k}</span>
+              <span className="sheet-ability-mod">{signed(a.mod)}</span>
+              <span className="sheet-ability-score">{a.score}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="sheet-grid">
+        <Stat label="AC" line={stats.ac.normal} />
+        <Stat label="Touch" line={stats.ac.touch} />
+        <Stat label="Flat-footed" line={stats.ac.flatFooted} />
+        <Stat label="CMD" line={stats.cmd} />
+      </div>
+      <div className="sheet-grid">
+        {(['fort', 'ref', 'will'] as SaveKey[]).map((s) => (
+          <Stat key={s} label={saveName(s)} line={stats.saves[s]} roll={() => rollCheck(c, `${saveName(s)} save`, stats.saves[s].total)} bonus />
+        ))}
+      </div>
+      <div className="sheet-grid">
+        <Stat label="BAB" line={stats.bab} bonus />
+        <Stat label="CMB" line={stats.cmb} bonus roll={() => rollCheck(c, 'Combat maneuver (CMB)', stats.cmb.total)} />
+        <Stat label="Initiative" line={stats.initiative} bonus roll={() => rollInitiative(c, stats.initiative.total)} />
+      </div>
+      <p className="muted small-text">Click a highlighted number to roll it (uses your chat mode). Hover for the breakdown.</p>
+
+      <details className="inspector-section">
+        <summary>Class progression</summary>
+        <ul className="sheet-classes">
+          {stats.classes.map((k) => (
+            <li key={k.name}>
+              <strong>
+                {k.name} {k.level}
+              </strong>{' '}
+              {k.chassis ? (
+                <span className="muted small-text">
+                  d{k.chassis.hd} · {k.chassis.bab === 'full' ? 'full' : k.chassis.bab === 'threeQuarter' ? '¾' : '½'} BAB · good{' '}
+                  {k.chassis.goodSaves.map(saveName).join(', ') || 'none'}
+                  {k.chassis.prestige ? ' · prestige' : ''}
+                  {k.chassisSource === 'sheet' ? ' (set on sheet)' : ''}
+                </span>
+              ) : (
+                <span className="warn-text small-text">progression unknown, set it in Settings</span>
+              )}
+            </li>
+          ))}
+        </ul>
+        {stats.armor.worn.length > 0 && <p className="small-text muted">Wearing: {stats.armor.worn.join(', ')}</p>}
+      </details>
+
+      {manage && <AbilityAdjustments character={c} />}
+    </div>
+  );
+}
+
+function Stat({ label, line, roll, bonus }: { label: string; line: StatLine; roll?: () => void; bonus?: boolean }) {
+  const value = bonus ? signed(line.total) : String(line.total);
+  const title = `${label}: ${describeLine(line)}${roll ? '. Click to roll.' : ''}`;
+  return roll ? (
+    <button type="button" className="sheet-stat rollable" title={title} onClick={roll}>
+      <span className="sheet-stat-label">{label}</span>
+      <span className="sheet-stat-value">{value}</span>
+    </button>
+  ) : (
+    <div className="sheet-stat" title={title}>
+      <span className="sheet-stat-label">{label}</span>
+      <span className="sheet-stat-value">{value}</span>
+    </div>
+  );
+}
+
+function HpBlock({ character: c, stats, manage }: { character: Character; stats: CharacterStats; manage: boolean }) {
+  const tokens = useGame((s) => s.tokens);
+  const max = Math.max(1, stats.hp.total);
+  const hp = characterHp({ tokens }, c, max);
+  const [amount, setAmount] = useState('');
+
+  function apply(sign: 1 | -1) {
+    const n = Math.abs(Math.round(Number(amount)));
+    if (!n) return;
+    const next = applyHpDelta({ value: hp.current, max, temp: hp.temp }, sign * n);
+    setHp(c, { current: next.value, temp: next.temp, nonlethal: hp.nonlethal }, max);
+    setAmount('');
+  }
+
+  const pct = Math.max(0, Math.min(100, (hp.current / max) * 100));
+  return (
+    <div className="sheet-hp" title={`Max HP: ${describeLine(stats.hp)}`}>
+      <div className="sheet-hp-numbers">
+        <span className="sheet-hp-current">{hp.current}</span>
+        <span className="muted"> / {max} HP</span>
+        {hp.temp > 0 && <span className="temp-hp"> +{hp.temp} temp</span>}
+        {hp.nonlethal > 0 && <span className="warn-text"> · {hp.nonlethal} nonlethal</span>}
+        {hp.fromToken && <span className="muted small-text"> · on token</span>}
+      </div>
+      <div className="hp-bar-html">
+        <div style={{ width: `${pct}%`, background: pct > 50 ? '#40c057' : pct > 25 ? '#fab005' : '#fa5252' }} />
+      </div>
+      {manage && (
+        <div className="field-row hp-quick">
+          <input
+            type="number"
+            min={0}
+            placeholder="Amount"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && apply(-1)}
+          />
+          <button type="button" className="small danger" onClick={() => apply(-1)}>
+            Damage
+          </button>
+          <button type="button" className="small" onClick={() => apply(1)}>
+            Heal
+          </button>
+          <button
+            type="button"
+            className="small"
+            title="Temporary HP"
+            onClick={() => {
+              const n = Math.abs(Math.round(Number(amount)));
+              if (n) setHp(c, { ...hp, temp: n }, max);
+              setAmount('');
+            }}
+          >
+            Temp
+          </button>
+          <button
+            type="button"
+            className="small"
+            title="Nonlethal damage"
+            onClick={() => {
+              const n = Math.round(Number(amount));
+              if (Number.isFinite(n)) setHp(c, { ...hp, nonlethal: Math.max(0, hp.nonlethal + n) }, max);
+              setAmount('');
+            }}
+          >
+            NL
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AbilityAdjustments({ character: c }: { character: Character }) {
+  const kinds = [
+    ['abilityTemp', 'Temp ±', 'Temporary changes to the score (spells, items)'],
+    ['abilityDamage', 'Damage', 'Ability damage: lowers the modifier'],
+    ['abilityDrain', 'Drain', 'Ability drain: lowers the score'],
+  ] as const;
+  return (
+    <details className="inspector-section">
+      <summary>Ability damage &amp; temporary changes</summary>
+      <table className="sheet-adjust">
+        <thead>
+          <tr>
+            <th />
+            {kinds.map(([, label, title]) => (
+              <th key={label} title={title}>
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {STAT_KEYS.map((k) => (
+            <tr key={k}>
+              <td>{k}</td>
+              {kinds.map(([field]) => (
+                <td key={field}>
+                  <input
+                    type="number"
+                    value={c.runtime[field][k] ?? 0}
+                    min={field === 'abilityTemp' ? -50 : 0}
+                    max={50}
+                    onChange={(e) => {
+                      const v = Math.round(Number(e.target.value) || 0);
+                      const next = { ...c.runtime[field] };
+                      if (v) next[k] = v;
+                      else delete next[k];
+                      updateRuntime(c, { [field]: next });
+                    }}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
+}

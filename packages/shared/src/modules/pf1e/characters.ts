@@ -12,7 +12,19 @@ import { defineAction, type AuthContext, type AuthResult, type Redactor } from '
 import { canControlToken, isGm } from '../../actions/auth';
 import { PcgenCharacterSchema } from '../../pcgen/schema';
 import { mergeReimport } from '../../pf1e/characters';
-import { CharacterSchema, IdSchema, MAX_CHARACTERS_PER_ROOM, type Character, type GameState, type User } from '../../state';
+import { computeCharacterStats } from '../../pf1e/engine';
+import { tokenSyncFor } from '../../pf1e/tokenSync';
+import {
+  CharacterRuntimeSchema,
+  CharacterSchema,
+  CharacterSheetSchema,
+  IdSchema,
+  MAX_CHARACTERS_PER_ROOM,
+  TokenSchema,
+  type Character,
+  type GameState,
+  type User,
+} from '../../state';
 
 const MAX_TOKEN_OWNERS = 50;
 
@@ -42,6 +54,22 @@ function putFull(draft: Draft<GameState>, id: string, full: Character | undefine
 }
 
 const CharacterChangesSchema = CharacterSchema.pick({ name: true, shared: true }).partial();
+
+/** Token fields a character sync may set. */
+const TokenSyncSchema = TokenSchema.pick({ name: true, hp: true, darkvision: true, size: true });
+
+/** Apply a sync to the token and to its combatants' initiative modifier. */
+function applySync(draft: Draft<GameState>, tokenId: string, sync: z.infer<typeof TokenSyncSchema> | undefined, initiative: number | undefined) {
+  const token = draft.tokens[tokenId];
+  if (token && sync) Object.assign(token, sync);
+  if (initiative !== undefined) for (const c of draft.combat.combatants) if (c.tokenId === tokenId) c.modifier = initiative;
+}
+
+/** When a character leaves a token, keep the token's live HP on the character. */
+function copyHpBack(draft: Draft<GameState>, c: Draft<Character>) {
+  const hp = c.tokenId ? draft.tokens[c.tokenId]?.hp : null;
+  if (hp) c.runtime.hp = { current: hp.value, temp: hp.temp, nonlethal: c.runtime.hp?.nonlethal ?? 0 };
+}
 
 export const characterActions = {
   /** Save a parsed character into the room. Players import characters for themselves. */
@@ -131,6 +159,9 @@ export const characterActions = {
       tokenId: IdSchema.nullable(),
       /** Filled in by the server: player to add to the token's owners. */
       grantOwnerId: IdSchema.nullable().optional(),
+      /** Filled in by the server: the character's stats pushed onto the token. */
+      sync: TokenSyncSchema.optional(),
+      initiative: z.number().int().optional(),
     }),
     {
       authorize(ctx, { id, tokenId }) {
@@ -147,18 +178,32 @@ export const characterActions = {
           token && c.ownerId && isGm(ctx.user) && !token.ownerIds.includes(c.ownerId) && token.ownerIds.length < MAX_TOKEN_OWNERS
             ? c.ownerId
             : null;
-        return { id, tokenId, grantOwnerId: grant };
+        if (!token) return { id, tokenId, grantOwnerId: grant };
+        return {
+          id,
+          tokenId,
+          grantOwnerId: grant,
+          sync: tokenSyncFor(ctx.state, c, token),
+          initiative: computeCharacterStats(c).initiative.total,
+        };
       },
       // Everyone gets it: the token (public) may change. The payload holds no private data.
-      apply(draft, { id, tokenId, grantOwnerId }, meta) {
+      apply(draft, { id, tokenId, grantOwnerId, sync, initiative }, meta) {
+        const c = draft.characters[id];
+        if (c && c.tokenId && c.tokenId !== tokenId) copyHpBack(draft, c);
         if (tokenId) {
-          for (const other of Object.values(draft.characters)) if (other.tokenId === tokenId && other.id !== id) other.tokenId = null;
+          for (const other of Object.values(draft.characters)) {
+            if (other.tokenId === tokenId && other.id !== id) {
+              copyHpBack(draft, other);
+              other.tokenId = null;
+            }
+          }
           const token = draft.tokens[tokenId];
           if (token && grantOwnerId && !token.ownerIds.includes(grantOwnerId) && token.ownerIds.length < MAX_TOKEN_OWNERS) {
             token.ownerIds.push(grantOwnerId);
           }
+          applySync(draft, tokenId, sync, initiative);
         }
-        const c = draft.characters[id];
         if (c) {
           c.tokenId = tokenId;
           c.updatedAt = meta.ts;
@@ -182,12 +227,71 @@ export const characterActions = {
   ),
 };
 
+export const characterSheetActions = {
+  /**
+   * Sheet settings and overrides (racial choice, unknown class progressions, armor, misc bonuses...).
+   * Like updateRuntime, this can't change who sees the character, so only the changes travel:
+   * everyone it's delivered to already has the character.
+   */
+  updateSheet: defineAction('character/updateSheet', z.object({ id: IdSchema, changes: CharacterSheetSchema.partial() }), {
+    authorize: (ctx, { id }) => requireManage(ctx, id),
+    audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
+    apply(draft, { id, changes }, meta) {
+      const c = draft.characters[id];
+      if (!c) return;
+      Object.assign(c.sheet, changes);
+      c.updatedAt = meta.ts;
+    },
+  }),
+
+  /** Table state: HP when not linked to a token, ability damage/drain/temp, spent uses. */
+  updateRuntime: defineAction('character/updateRuntime', z.object({ id: IdSchema, changes: CharacterRuntimeSchema.partial() }), {
+    authorize: (ctx, { id }) => requireManage(ctx, id),
+    audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
+    apply(draft, { id, changes }, meta) {
+      const c = draft.characters[id];
+      if (!c) return;
+      Object.assign(c.runtime, changes);
+      c.updatedAt = meta.ts;
+    },
+  }),
+
+  /** Push the character's current numbers onto its linked token (max HP, name, size, darkvision, initiative). */
+  syncToken: defineAction(
+    'character/syncToken',
+    z.object({ id: IdSchema, tokenId: IdSchema.optional(), sync: TokenSyncSchema.optional(), initiative: z.number().int().optional() }),
+    {
+      authorize(ctx, { id }) {
+        const ok = requireManage(ctx, id);
+        if (ok !== true) return ok;
+        const c = ctx.state.characters[id]!;
+        const token = c.tokenId ? ctx.state.tokens[c.tokenId] : undefined;
+        if (!token) return 'Link a token first';
+        return canControlToken(ctx.user, token) || "You don't control that token";
+      },
+      prepare(ctx, { id }) {
+        const c = ctx.state.characters[id]!;
+        const token = ctx.state.tokens[c.tokenId!]!;
+        return { id, tokenId: token.id, sync: tokenSyncFor(ctx.state, c, token), initiative: computeCharacterStats(c).initiative.total };
+      },
+      // The token is public, so everyone applies it; the payload only carries token-visible values.
+      apply(draft, { tokenId, sync, initiative }) {
+        if (tokenId) applySync(draft, tokenId, sync, initiative);
+      },
+    },
+  ),
+};
+
 export const redactCharacters: Redactor = (draft, viewer) => {
   if (isGm(viewer)) return;
   for (const c of Object.values(draft.characters)) if (!canSeeCharacter(viewer, c as Character)) delete draft.characters[c.id];
 };
 
-/** Called when a token is deleted: drop links to it. */
+/** Called when a token is deleted: keep its HP on the character and drop the link. */
 export function unlinkToken(draft: Draft<GameState>, tokenId: string) {
-  for (const c of Object.values(draft.characters)) if (c.tokenId === tokenId) c.tokenId = null;
+  for (const c of Object.values(draft.characters)) {
+    if (c.tokenId !== tokenId) continue;
+    copyHpBack(draft, c);
+    c.tokenId = null;
+  }
 }

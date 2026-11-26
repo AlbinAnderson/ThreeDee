@@ -1,5 +1,5 @@
 /** Pure helpers for PF1e characters (shared by client UI and server tests). */
-import { EMPTY_RUNTIME, type Character } from '../entities/pf1e';
+import { EMPTY_RUNTIME, EMPTY_SHEET, type Character } from '../entities/pf1e';
 import type { PcgenCharacter } from '../pcgen/schema';
 
 /** Character name from a parsed file, with a sensible fallback. */
@@ -34,6 +34,7 @@ export function createCharacterFromPcg(
     shared: false,
     source: { kind: 'pcgen', fileName: opts.fileName.slice(0, 255), importedAt: opts.now, importedBy: opts.importedBy },
     build,
+    sheet: structuredClone(EMPTY_SHEET),
     runtime: structuredClone(EMPTY_RUNTIME),
     createdAt: opts.now,
     updatedAt: opts.now,

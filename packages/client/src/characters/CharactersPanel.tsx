@@ -11,6 +11,9 @@ import { CheckboxField, TextField } from '../components/fields';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { useUi } from '../state/uiStore';
+import { syncLinkedToken } from './characterActions';
+import { CharacterSettings } from './CharacterSettings';
+import { CharacterSheet } from './CharacterSheet';
 import { CharacterSummary } from './CharacterSummary';
 import { openImport } from './ImportDialog';
 import { useCharactersUi } from './store';
@@ -118,7 +121,40 @@ export function CharactersPanel() {
   );
 }
 
+type CharacterTab = 'sheet' | 'imported' | 'settings' | 'manage';
+
 function CharacterView({ character: c, onBack }: { character: Character; onBack: () => void }) {
+  const self = useSelf();
+  const manage = canManageCharacter(self, c);
+  const [tab, setTab] = useState<CharacterTab>('sheet');
+  const tabs: [CharacterTab, string][] = [
+    ['sheet', 'Sheet'],
+    ['imported', 'Imported'],
+    ...(manage ? ([['settings', 'Settings'], ['manage', 'Manage']] as [CharacterTab, string][]) : []),
+  ];
+
+  return (
+    <section>
+      <button type="button" className="link-button" onClick={onBack}>
+        ← All characters
+      </button>
+      <h2 className="character-title">{c.name}</h2>
+      <div className="segmented sheet-tabs">
+        {tabs.map(([id, label]) => (
+          <button key={id} type="button" className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'sheet' && <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} />}
+      {tab === 'imported' && <CharacterSummary build={c.build} />}
+      {tab === 'settings' && manage && <CharacterSettings character={c} />}
+      {tab === 'manage' && manage && <ManageCharacter character={c} onBack={onBack} />}
+    </section>
+  );
+}
+
+function ManageCharacter({ character: c, onBack }: { character: Character; onBack: () => void }) {
   const self = useSelf();
   const gm = isGm(self);
   const users = useGame((s) => s.users);
@@ -126,7 +162,6 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
   const scenes = useGame((s) => s.scenes);
   const activeSceneId = useGame((s) => s.activeSceneId);
   const viewedSceneId = useUi((s) => s.viewedSceneId);
-  const manage = canManageCharacter(self, c);
   const players = useMemo(() => Object.values(users).filter((u) => u.role !== 'gm'), [users]);
   const ownerUser = c.ownerId ? users[c.ownerId] : undefined;
   const linkable = useMemo(
@@ -150,79 +185,80 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
   }
 
   return (
-    <section>
-      <button type="button" className="link-button" onClick={onBack}>
-        ← All characters
-      </button>
-      <h2 className="character-title">{c.name}</h2>
-      {manage ? (
-        <>
-          <TextField label="Name in the VTT" value={c.name} onCommit={(name) => name.trim() && dispatch(characterActions.update.create({ id: c.id, changes: { name } }))} />
-          <div className="field">
-            <label>Played by</label>
-            {gm ? (
-              <select value={c.ownerId ?? ''} onChange={(e) => dispatch(characterActions.setOwner.create({ id: c.id, ownerId: e.target.value || null }))}>
-                <option value="">GM (NPC)</option>
-                {ownerUser && ownerUser.role === 'gm' && <option value={ownerUser.id}>{ownerUser.name} (GM)</option>}
-                {players.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span>{c.ownerId ? users[c.ownerId]?.name : 'GM (NPC)'}</span>
-            )}
-          </div>
-          <div className="field">
-            <label>Token on the map</label>
-            <select value={c.tokenId ?? ''} onChange={(e) => dispatch(characterActions.linkToken.create({ id: c.id, tokenId: e.target.value || null }))}>
-              <option value="">Not linked</option>
-              {linkable.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name || '(unnamed)'} · {scenes[t.sceneId]?.name ?? '?'}
-                </option>
-              ))}
-            </select>
-          </div>
-          {linked && (
-            <button
-              type="button"
-              className="small"
-              disabled={!gm && linkedOnOtherScene}
-              title={!gm && linkedOnOtherScene ? `Token is on ${scenes[linked.sceneId]?.name ?? 'another scene'}` : undefined}
-              onClick={selectLinkedToken}
-            >
-              {gm && linkedOnOtherScene ? `Jump to token (${scenes[linked.sceneId]?.name ?? 'other scene'})` : 'Select token on map'}
-            </button>
-          )}
-          <CheckboxField
-            label="Share with the party"
-            value={c.shared}
-            onCommit={(shared) => dispatch(characterActions.update.create({ id: c.id, changes: { shared } }))}
-          />
-          <div className="button-row">
-            <PcgFileButton label="Re-import .pcg…" targetId={c.id} className="small" />
-            <button
-              type="button"
-              className="small danger"
-              onClick={() => {
-                if (confirm(`Delete ${c.name}? Its token stays on the map.`) && dispatch(characterActions.remove.create({ id: c.id }))) {
-                  onBack();
-                }
-              }}
-            >
-              Delete
-            </button>
-          </div>
-        </>
-      ) : (
-        <p className="muted small-text">Played by {c.ownerId ? users[c.ownerId]?.name : 'the GM'} · shared with the party</p>
+    <div>
+      <TextField
+        label="Name in the VTT"
+        value={c.name}
+        onCommit={(name) => {
+          if (name.trim() && dispatch(characterActions.update.create({ id: c.id, changes: { name } }))) syncLinkedToken({ ...c, name });
+        }}
+      />
+      <div className="field">
+        <label>Played by</label>
+        {gm ? (
+          <select value={c.ownerId ?? ''} onChange={(e) => dispatch(characterActions.setOwner.create({ id: c.id, ownerId: e.target.value || null }))}>
+            <option value="">GM (NPC)</option>
+            {ownerUser && ownerUser.role === 'gm' && <option value={ownerUser.id}>{ownerUser.name} (GM)</option>}
+            {players.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span>{c.ownerId ? users[c.ownerId]?.name : 'GM (NPC)'}</span>
+        )}
+      </div>
+      <div className="field">
+        <label>Token on the map</label>
+        <select value={c.tokenId ?? ''} onChange={(e) => dispatch(characterActions.linkToken.create({ id: c.id, tokenId: e.target.value || null }))}>
+          <option value="">Not linked</option>
+          {linkable.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name || '(unnamed)'} · {scenes[t.sceneId]?.name ?? '?'}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="muted small-text">
+        Linking copies max HP, name, size, darkvision and the initiative modifier to the token. While linked, the token holds the live HP.
+      </p>
+      {linked && (
+        <div className="button-row">
+          <button
+            type="button"
+            className="small"
+            disabled={!gm && linkedOnOtherScene}
+            title={!gm && linkedOnOtherScene ? `Token is on ${scenes[linked.sceneId]?.name ?? 'another scene'}` : undefined}
+            onClick={selectLinkedToken}
+          >
+            {gm && linkedOnOtherScene ? `Jump to token (${scenes[linked.sceneId]?.name ?? 'other scene'})` : 'Select token on map'}
+          </button>
+          <button type="button" className="small" onClick={() => syncLinkedToken(c)}>
+            ↻ Sync token now
+          </button>
+        </div>
       )}
+      <CheckboxField
+        label="Share with the party"
+        value={c.shared}
+        onCommit={(shared) => dispatch(characterActions.update.create({ id: c.id, changes: { shared } }))}
+      />
+      <div className="button-row">
+        <PcgFileButton label="Re-import .pcg…" targetId={c.id} className="small" />
+        <button
+          type="button"
+          className="small danger"
+          onClick={() => {
+            if (confirm(`Delete ${c.name}? Its token stays on the map.`) && dispatch(characterActions.remove.create({ id: c.id }))) onBack();
+          }}
+        >
+          Delete
+        </button>
+      </div>
       <p className="muted small-text">
         From {c.source.fileName}, imported {new Date(c.source.importedAt).toLocaleString()}.
       </p>
-      <CharacterSummary build={c.build} />
-    </section>
+    </div>
   );
 }

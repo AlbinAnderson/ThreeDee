@@ -15,7 +15,7 @@ import { handoutActions, redactHandouts } from './handouts';
 import { lootActions, redactLoot } from './loot';
 import { macroActions } from './macros';
 import { notesActions, redactNotes } from './notes';
-import { characterActions, redactCharacters } from './pf1e/characters';
+import { characterActions, characterSheetActions, redactCharacters } from './pf1e/characters';
 import { sceneActions } from './scenes';
 import { redactTables, tableActions } from './tables';
 import { templateActions } from './templates';
@@ -43,6 +43,7 @@ export const gameModules = {
   lights: { actions: lightActions },
   // ---- PF1e
   characters: { actions: characterActions, redact: redactCharacters },
+  characterSheets: { actions: characterSheetActions },
 } satisfies Record<string, GameModule>;
 
 type Modules = typeof gameModules;
@@ -50,7 +51,7 @@ type Modules = typeof gameModules;
 /** Union of every action the game understands. */
 export type GameAction = { [K in keyof Modules]: ModuleActions<Modules[K]['actions']> }[keyof Modules];
 
-export { audioActions, characterActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
+export { audioActions, characterActions, characterSheetActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
 export { canDeleteDrawing } from './drawings';
 export { canSeeMessage, chatAudience, pushMessage, validateWhisper } from './chat';
 export { canControlCombatant, combatantName, compareCombatants, isCombatantHidden } from './combat';
