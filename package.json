@@ -11,7 +11,12 @@
     "start": "npm run start -w @vtt/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "vtt": "npm run --silent cli -w @vtt/server --",
-    "test": "npm run test -w @vtt/server"
+    "test": "npm run test -w @vtt/server",
+    "test:unit": "npm run test:unit -w @vtt/server",
+    "test:feature": "npm run test:feature -w @vtt/server",
+    "test:regression": "npm run test:regression -w @vtt/server",
+    "test:fast": "npm run test:fast -w @vtt/server",
+    "ci": "npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
     "concurrently": "^10.0.7",

@@ -94,10 +94,11 @@ export const tokenActions = {
   remove: defineAction('token/delete', z.object({ id: IdSchema }), {
     authorize: (ctx, { id }) => requireTokenControl(ctx, id),
     apply(draft, { id }) {
-      delete draft.tokens[id];
-      // A deleted token leaves the turn order too, and characters lose their link to it.
-      for (const c of [...draft.combat.combatants]) if (c.tokenId === id) removeCombatant(draft, c.id);
+      // Save live HP back onto any linked character before removing the token.
       unlinkToken(draft, id);
+      delete draft.tokens[id];
+      // A deleted token leaves the turn order too.
+      for (const c of [...draft.combat.combatants]) if (c.tokenId === id) removeCombatant(draft, c.id);
     },
   }),
 };

@@ -47,10 +47,10 @@ export const sceneActions = {
       draft.sceneOrder = draft.sceneOrder.filter((s) => s !== id);
       for (const token of Object.values(draft.tokens)) {
         if (token.sceneId === id) {
-          delete draft.tokens[token.id];
-          // Same cleanup as deleting the token directly.
-          for (const c of [...draft.combat.combatants]) if (c.tokenId === token.id) removeCombatant(draft, c.id);
+          // Same cleanup as deleting the token directly: save live HP before deleting the token.
           unlinkToken(draft, token.id);
+          delete draft.tokens[token.id];
+          for (const c of [...draft.combat.combatants]) if (c.tokenId === token.id) removeCombatant(draft, c.id);
         }
       }
       if (draft.activeSceneId === id) draft.activeSceneId = draft.sceneOrder[0] ?? null;
