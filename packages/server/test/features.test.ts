@@ -7,8 +7,10 @@ import {
   chatActions,
   combatActions,
   createInitialState,
+  combatantName,
   createToken,
   deckActions,
+  isCombatantHidden,
   handoutActions,
   newId,
   tableActions,
@@ -110,6 +112,32 @@ describe('turn tracker', () => {
     act(a, combatActions.next.create({}));
     assert.equal(room.currentState.combat.currentId, 'cg');
     assert.equal(room.currentState.combat.round, 2);
+  });
+});
+
+describe('turn tracker follows its tokens', () => {
+  test('renaming, hiding and deleting a token update the turn order', () => {
+    const { room, g, act } = setup();
+    act(g, tokenActions.create.create({ token: createToken({ id: 'tg', sceneId: 'scene1', x: 0, y: 0, name: 'Goblin' }) }));
+    act(g, tokenActions.create.create({ token: createToken({ id: 'to', sceneId: 'scene1', x: 70, y: 0, name: 'Orc' }) }));
+    act(g, combatActions.add.create({ combatant: { id: 'cg', name: 'Goblin', tokenId: 'tg', initiative: 20, modifier: 0, hidden: false } }));
+    act(g, combatActions.add.create({ combatant: { id: 'co', name: 'Orc', tokenId: 'to', initiative: 10, modifier: 0, hidden: false } }));
+    act(g, combatActions.start.create({}));
+
+    act(g, tokenActions.update.create({ id: 'tg', changes: { name: 'Goblin Boss' } }));
+    const cg = () => room.currentState.combat.combatants.find((c) => c.id === 'cg')!;
+    assert.equal(cg().name, 'Goblin Boss', 'stored name follows the token');
+    assert.equal(combatantName(room.currentState, cg()), 'Goblin Boss');
+
+    act(g, tokenActions.update.create({ id: 'tg', changes: { hidden: true } }));
+    assert.equal(isCombatantHidden(room.currentState, cg()), true, 'hiding the token hides its entry');
+    act(g, tokenActions.update.create({ id: 'tg', changes: { hidden: false } }));
+    assert.equal(isCombatantHidden(room.currentState, cg()), false, 'and revealing it reveals the entry');
+
+    assert.equal(room.currentState.combat.currentId, 'cg');
+    act(g, tokenActions.remove.create({ id: 'tg' }));
+    assert.deepEqual(room.currentState.combat.combatants.map((c) => c.id), ['co'], 'deleted token leaves the turn order');
+    assert.equal(room.currentState.combat.currentId, 'co', 'and the turn passes on');
   });
 });
 

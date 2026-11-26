@@ -18,6 +18,28 @@ export function canControlCombatant(state: GameState, user: User, c: Combatant):
   return !!token && canControlToken(user, token);
 }
 
+/** Hidden if the GM hid the entry, or if its token is hidden. */
+export function isCombatantHidden(state: GameState, c: Combatant): boolean {
+  return c.hidden || (!!c.tokenId && !!state.tokens[c.tokenId]?.hidden);
+}
+
+/** Display name: the linked token's current name, falling back to the stored one. */
+export function combatantName(state: GameState, c: Combatant): string {
+  const token = c.tokenId ? state.tokens[c.tokenId] : undefined;
+  return token?.name.trim() || c.name;
+}
+
+/** Remove a combatant, passing the turn on if it was theirs. */
+export function removeCombatant(combat: Draft<Combat>, id: string) {
+  const idx = combat.combatants.findIndex((c) => c.id === id);
+  if (idx === -1) return;
+  if (combat.currentId === id) {
+    const next = combat.combatants[idx + 1] ?? combat.combatants[0];
+    combat.currentId = next && next.id !== id ? next.id : null;
+  }
+  combat.combatants.splice(idx, 1);
+}
+
 function requireCombatant(ctx: AuthContext, id: string): AuthResult {
   const c = ctx.state.combat.combatants.find((x) => x.id === id);
   if (!c) return 'Not in the turn order';
@@ -89,14 +111,7 @@ export const combatActions = {
   remove: defineAction('combat/remove', z.object({ id: IdSchema }), {
     authorize: (ctx, { id }) => requireCombatant(ctx, id),
     apply(draft, { id }) {
-      const combat = draft.combat;
-      const idx = combat.combatants.findIndex((c) => c.id === id);
-      if (idx === -1) return;
-      if (combat.currentId === id) {
-        const next = combat.combatants[idx + 1] ?? combat.combatants[0];
-        combat.currentId = next && next.id !== id ? next.id : null;
-      }
-      combat.combatants.splice(idx, 1);
+      removeCombatant(draft.combat, id);
     },
   }),
 
@@ -152,10 +167,10 @@ export const combatActions = {
             id: r.chatId,
             userId: meta.userId,
             ts: meta.ts,
-            text: `${c.name}: initiative`,
+            text: `${combatantName(draft, c)}: initiative`,
             roll: r.roll,
             // Hidden combatants' rolls are GM-only.
-            ...(c.hidden ? { whisper: { mode: 'gm' as const, to: [] } } : {}),
+            ...(isCombatantHidden(draft, c) ? { whisper: { mode: 'gm' as const, to: [] } } : {}),
           });
         }
         if (!combat.active) sortCombat(combat);

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { canControlCombatant, canControlToken, combatActions, newId, type Combatant } from '@vtt/shared';
+import { canControlCombatant, canControlToken, combatantName, combatActions, isCombatantHidden, newId, type Combatant } from '@vtt/shared';
 import { NumberField } from '../components/fields';
 import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
@@ -26,7 +26,8 @@ export function addSelectedToCombat() {
           tokenId: token.id,
           initiative: null,
           modifier: 0,
-          hidden: token.hidden,
+          // Follows the token's own hidden flag; this is only the GM's extra override.
+          hidden: false,
         },
       }),
     );
@@ -41,7 +42,7 @@ export function CombatPanel() {
   const self = useSelf();
   const gm = useIsGm();
 
-  const visible = useMemo(() => combat.combatants.filter((c) => gm || !c.hidden), [combat.combatants, gm]);
+  const visible = useMemo(() => combat.combatants.filter((c) => gm || !isCombatantHidden(state, c)), [combat.combatants, gm, state]);
   const current = combat.combatants.find((c) => c.id === combat.currentId);
   const myTurn = !!current && combat.active && canControlCombatant(state, self, current);
   const unrolled = combat.combatants.filter((c) => c.initiative === null && canControlCombatant(state, self, c));
@@ -93,6 +94,9 @@ export function CombatPanel() {
             <CombatRow
               key={c.id}
               combatant={c}
+              name={combatantName(state, c)}
+              hidden={isCombatantHidden(state, c)}
+              tokenHidden={isCombatantHidden(state, c) && !c.hidden}
               isCurrent={combat.active && c.id === combat.currentId}
               canEdit={canControlCombatant(state, self, c)}
               gm={gm}
@@ -133,6 +137,9 @@ export function CombatPanel() {
 
 function CombatRow({
   combatant: c,
+  name,
+  hidden,
+  tokenHidden,
   isCurrent,
   canEdit,
   gm,
@@ -141,6 +148,10 @@ function CombatRow({
   isLast,
 }: {
   combatant: Combatant;
+  name: string;
+  hidden: boolean;
+  /** Hidden because its token is hidden (not via the tracker's own toggle). */
+  tokenHidden: boolean;
   isCurrent: boolean;
   canEdit: boolean;
   gm: boolean;
@@ -151,13 +162,13 @@ function CombatRow({
   const update = (changes: Parameters<typeof combatActions.update.create>[0]['changes']) =>
     dispatch(combatActions.update.create({ id: c.id, changes }));
   return (
-    <li className={`combat-row${isCurrent ? ' current' : ''}${c.hidden ? ' hidden-entry' : ''}`}>
+    <li className={`combat-row${isCurrent ? ' current' : ''}${hidden ? ' hidden-entry' : ''}`}>
       <div className="combat-main">
-        <span className="combat-name" title={c.name}>
+        <span className="combat-name" title={name}>
           {isCurrent && '▶ '}
-          {c.name}
+          {name}
         </span>
-        {c.hidden && <span className="badge subtle">hidden</span>}
+        {hidden && <span className="badge subtle" title={tokenHidden ? 'Its token is hidden' : undefined}>hidden</span>}
       </div>
       <div className="combat-fields">
         {canEdit ? (
@@ -193,8 +204,14 @@ function CombatRow({
             ↓
           </button>
           {gm && (
-            <button type="button" className="icon-button" title={c.hidden ? 'Reveal to players' : 'Hide from players'} onClick={() => update({ hidden: !c.hidden })}>
-              {c.hidden ? '👁' : '◌'}
+            <button
+              type="button"
+              className="icon-button"
+              disabled={tokenHidden}
+              title={tokenHidden ? 'Hidden because its token is hidden' : c.hidden ? 'Reveal to players' : 'Hide from players'}
+              onClick={() => update({ hidden: !c.hidden })}
+            >
+              {hidden ? '👁' : '◌'}
             </button>
           )}
           <button type="button" className="icon-button" title="Remove" onClick={() => dispatch(combatActions.remove.create({ id: c.id }))}>

@@ -3,6 +3,7 @@ import { defineAction, type AuthContext, type AuthResult } from '../actions/defi
 import { canControlToken, isGm } from '../actions/auth';
 import { IdSchema, TokenSchema } from '../state';
 import { blockingSegments, isPathBlocked } from '../visibility';
+import { removeCombatant } from './combat';
 
 const CoordSchema = TokenSchema.shape.x;
 
@@ -80,7 +81,12 @@ export const tokenActions = {
     },
     apply(draft, { id, changes }) {
       const token = draft.tokens[id];
-      if (token) Object.assign(token, changes);
+      if (!token) return;
+      Object.assign(token, changes);
+      // Keep the turn tracker's stored name in step (it's used if the token is later deleted).
+      if (changes.name !== undefined) {
+        for (const c of draft.combat.combatants) if (c.tokenId === id) c.name = token.name.trim() || 'Token';
+      }
     },
   }),
 
@@ -88,6 +94,8 @@ export const tokenActions = {
     authorize: (ctx, { id }) => requireTokenControl(ctx, id),
     apply(draft, { id }) {
       delete draft.tokens[id];
+      // A deleted token leaves the turn order too.
+      for (const c of [...draft.combat.combatants]) if (c.tokenId === id) removeCombatant(draft.combat, c.id);
     },
   }),
 };

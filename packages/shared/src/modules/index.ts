@@ -50,6 +50,6 @@ export type GameAction = { [K in keyof Modules]: ModuleActions<Modules[K]['actio
 export { audioActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
 export { canDeleteDrawing } from './drawings';
 export { canSeeMessage, chatAudience, pushMessage, validateWhisper } from './chat';
-export { canControlCombatant, compareCombatants } from './combat';
+export { canControlCombatant, combatantName, compareCombatants, isCombatantHidden } from './combat';
 export { canDeleteTemplate, templateCells, templateContains } from './templates';
 export { canSeeHandout } from './handouts';
