@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
 import {
+  buffActions,
   characterActions,
   CharacterRuntimeSchema,
   combatActions,
@@ -15,10 +16,11 @@ import {
   newId,
   pf1eTurnActions,
   sceneActions,
+  spellActions,
   tokenActions,
   tokenSyncFor,
 } from '@vtt/shared';
-import { ALICE, createRoomFixture, makePcgCharacter, SAMPLE_PCG, type RoomFixture } from '../helpers/harness';
+import { ALICE, assertNoWireLeak, casterPcg, createRoomFixture, makePcgCharacter, SAMPLE_PCG, spellLine, type RoomFixture } from '../helpers/harness';
 
 let fx: RoomFixture | null = null;
 afterEach(async () => {
@@ -92,6 +94,26 @@ describe('regression: schema migrations (v1 -> latest) & schema bounds invariant
     act(alice, characterActions.linkToken.create({ id: 'extreme', tokenId: 'tok' }));
     act(alice, pf1eTurnActions.act.create({ actionId: 'g.startfull', combatantId: 'cb', chatId: newId() }));
 
+    // Extreme buffs (sizeSteps +50, casterLevel +50) and extreme spell card roll bonuses stay schema-valid.
+    act(
+      alice,
+      buffActions.add.create({
+        characterId: 'extreme',
+        buff: {
+          id: 'bExtreme',
+          presetId: null,
+          name: 'B'.repeat(60),
+          effects: [
+            { target: 'sizeSteps', value: 50, type: 'size' },
+            { target: 'casterLevel', value: 50, type: 'untyped' },
+          ],
+          note: 'N'.repeat(300),
+          active: true,
+          roundsLeft: 10000,
+        },
+      }),
+    );
+
     const tok = room.currentState.tokens.tok!;
     assert.equal(tok.name.length, 60);
     assert.equal(tok.darkvision, 200);
@@ -134,5 +156,63 @@ describe('regression: schema migrations (v1 -> latest) & schema bounds invariant
     act(alice, tokenActions.remove.create({ id: 't1' }));
     assert.equal(room.currentState.characters.c1!.tokenId, null);
     assert.deepEqual(room.currentState.characters.c1!.runtime.hp, { current: 7, temp: 4, nonlethal: 0 });
+  });
+
+  test('wire-privacy invariant: private actions never leak secret names or cards over WebSocket to excluded players', () => {
+    fx = createRoomFixture();
+    const { room, gm, alice, bob, act } = fx;
+
+    // 1. Shared caster casting a GM-only spell: Bob sees slot sync, never the spell name or card.
+    const sharedSorc = {
+      ...makePcgCharacter(
+        casterPcg({ classes: ['CLASS:Sorcerer|LEVEL:3|SKILLPOOL:0'], stats: { CHA: 16 }, spells: [spellLine('Burning Hands', 'Sorcerer', 1)] }),
+        { id: 'shSorc' },
+      ),
+      shared: true,
+    };
+    act(alice, characterActions.import.create({ character: sharedSorc }));
+
+    // 2. Unshared caster preparing spells and adding a buff: Bob gets nothing.
+    const privateWiz = makePcgCharacter(
+      casterPcg({ classes: ['CLASS:Wizard|LEVEL:3|SKILLPOOL:0'], stats: { INT: 16 }, spells: [spellLine('Shield', 'Wizard', 1)] }),
+      { id: 'privWiz' },
+    );
+    act(alice, characterActions.import.create({ character: privateWiz }));
+
+    // 3. Hidden NPC combatant acting in combat: Bob gets nothing.
+    act(gm, tokenActions.create.create({ token: createToken({ id: 'tHid', sceneId: 'scene1', name: 'AssassinBoss', x: 0, y: 0, hidden: true }) }));
+    act(gm, combatActions.add.create({ combatant: { id: 'cHid', name: 'AssassinBoss', tokenId: 'tHid', initiative: 20, modifier: 0, hidden: true } }));
+
+    const bobMark = bob.inbox.length;
+    act(
+      alice,
+      spellActions.cast.create({
+        characterId: 'shSorc',
+        className: 'Sorcerer',
+        spellName: 'Burning Hands',
+        level: 1,
+        chatId: newId(),
+        whisper: { mode: 'gm', to: [] },
+      }),
+    );
+    act(
+      alice,
+      spellActions.prepare.create({
+        characterId: 'privWiz',
+        className: 'Wizard',
+        spells: [{ id: 'p1', name: 'Shield', level: 1, metamagic: [], slot: 'normal' }],
+      }),
+    );
+    act(
+      alice,
+      buffActions.add.create({
+        characterId: 'privWiz',
+        buff: { id: 'b1', presetId: null, name: 'SecretBuff', effects: [{ target: 'ac', value: 2, type: 'luck' }], note: 'classified', active: true, roundsLeft: 3 },
+      }),
+    );
+    act(gm, pf1eTurnActions.act.create({ actionId: 'g.attack', combatantId: 'cHid', chatId: newId() }));
+
+    assertNoWireLeak(bob, bobMark, /Burning Hands|SecretBuff|classified|AssassinBoss|"card"|"whisper"/);
+    assert.doesNotThrow(() => GameStateSchema.parse(room.currentState));
   });
 });

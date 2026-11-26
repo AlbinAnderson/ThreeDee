@@ -3,6 +3,7 @@
  * Keeps Room / SqliteRoomStore setup, client inbox inspection and fixture
  * loading uniform so tests stay concise and never leak timers or temp dirs.
  */
+import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -49,6 +50,16 @@ export function createTestClient(): TestClient {
     actions: () => inbox.filter((m): m is Extract<ServerMessage, { t: 'action' }> => m.t === 'action'),
     json: () => JSON.stringify(inbox),
   };
+}
+
+/**
+ * Assert that none of the raw WebSocket messages sent to `client` after
+ * `sinceIdx` contain `forbidden`. Catches wire-privacy leaks that client-side
+ * `redactState` would otherwise mask in UI/snapshot tests.
+ */
+export function assertNoWireLeak(client: TestClient, sinceIdx: number, forbidden: RegExp, message?: string): void {
+  const wire = JSON.stringify(client.inbox.slice(sinceIdx));
+  assert.doesNotMatch(wire, forbidden, message ?? `Unexpected private data leaked over the wire to ${client.user?.name ?? client.id}`);
 }
 
 export function withPcgLines(pcg: string, ...lines: string[]): string {
