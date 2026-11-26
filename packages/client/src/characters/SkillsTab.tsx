@@ -6,6 +6,7 @@
 import { useMemo, useState } from 'react';
 import {
   canManageCharacter,
+  characterSheetActions,
   computeCharacterStats,
   computeSkills,
   describeLine,
@@ -26,7 +27,6 @@ import { rollToChat } from '../panels/ChatPanel';
 import { dispatch } from '../state/dispatch';
 import { useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
-import { updateSheet } from './characterActions';
 
 type Filter = 'all' | 'trained' | 'usable' | 'favorites';
 const FILTERS: [Filter, string][] = [
@@ -38,14 +38,14 @@ const FILTERS: [Filter, string][] = [
 const GM_ONLY: ChatWhisper = { mode: 'gm', to: [] };
 const DEFAULT_OVERRIDE: SkillOverride = { ranks: null, misc: 0, classSkill: null, favorite: false, custom: false };
 
-/** Change one skill's override; entries back at their defaults are dropped. */
+/** Change one skill's override; entries back at their defaults are dropped. Skips token sync since skills never affect tokens. */
 function setOverride(c: Character, name: string, patch: Partial<SkillOverride>) {
   const next = { ...c.sheet.skills };
   const merged = { ...DEFAULT_OVERRIDE, ...next[name], ...patch };
   const isDefault = merged.ranks === null && merged.misc === 0 && merged.classSkill === null && !merged.favorite && !merged.custom;
   if (isDefault) delete next[name];
   else next[name] = merged;
-  updateSheet(c, { skills: next });
+  dispatch(characterSheetActions.updateSheet.create({ id: c.id, changes: { skills: next } }));
 }
 
 function roll(c: Character, row: SkillRow, opts: { take?: 10 | 20; whisper?: ChatWhisper; extras?: (number | string)[]; labelExtra?: string } = {}) {
@@ -175,12 +175,20 @@ function SkillDetail({ character: c, stats, row, manage }: { character: Characte
       <div className="small-text">{describeLine(row.total) || 'No modifiers'}</div>
       {situational.length > 0 && (
         <div className="skill-situational">
-          {situational.map((x) => (
-            <label key={x.id} className="checkbox-row">
-              <input type="checkbox" checked={!!on[x.id]} onChange={(e) => setOn({ ...on, [x.id]: e.target.checked })} />
-              {x.label} ({typeof x.bonus === 'number' ? signed(x.bonus) : `+${x.bonus}`})
-            </label>
-          ))}
+          {situational.map((x) => {
+            const cantSpend = !manage && !!x.spendActionId;
+            return (
+              <label key={x.id} className="checkbox-row" title={cantSpend ? 'Only the owner or GM can spend class resources' : undefined}>
+                <input
+                  type="checkbox"
+                  disabled={cantSpend}
+                  checked={!cantSpend && !!on[x.id]}
+                  onChange={(e) => setOn({ ...on, [x.id]: e.target.checked })}
+                />
+                {x.label} ({typeof x.bonus === 'number' ? signed(x.bonus) : `+${x.bonus}`})
+              </label>
+            );
+          })}
         </div>
       )}
       <div className="field-row">
@@ -189,7 +197,10 @@ function SkillDetail({ character: c, stats, row, manage }: { character: Characte
       <div className="button-row">
         <button type="button" className="primary" onClick={() => go({})}>
           Roll {signed(row.total.total + extras.filter((e): e is number => typeof e === 'number').reduce((a, b) => a + b, 0))}
-          {extras.some((e) => typeof e === 'string') ? '+1d6' : ''}
+          {extras
+            .filter((e): e is string => typeof e === 'string')
+            .map((s) => `+${s}`)
+            .join('')}
         </button>
         <button type="button" onClick={() => go({ take: 10 })} title="Take 10: when not threatened or distracted">
           Take 10
@@ -232,7 +243,7 @@ function SkillDetail({ character: c, stats, row, manage }: { character: Characte
           onClick={() => {
             const next = { ...c.sheet.skills };
             delete next[row.name];
-            updateSheet(c, { skills: next });
+            dispatch(characterSheetActions.updateSheet.create({ id: c.id, changes: { skills: next } }));
           }}
         >
           Remove {row.name}
@@ -263,7 +274,7 @@ function AddSubSkill({ character: c, existing }: { character: Character; existin
         ))}
       </select>
       <input placeholder="e.g. Sailor, Weapons, Sing" value={sub} maxLength={60} onChange={(e) => setSub(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-      <button type="button" onClick={add} disabled={!sub.trim()}>
+      <button type="button" onClick={add} disabled={!sub.trim().replace(/[()]/g, '')}>
         + Add
       </button>
     </div>

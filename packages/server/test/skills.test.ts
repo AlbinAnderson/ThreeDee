@@ -114,4 +114,45 @@ describe('PF1e skills', () => {
     assert.equal(migrated.schemaVersion, CURRENT_SCHEMA_VERSION);
     assert.deepEqual(Object.values(migrated.characters)[0]!.sheet.skills, {});
   });
+
+  test('deduplicates duplicate feats, floors fractional ranks, merges skill casing, and respects class/race rules', () => {
+    // Duplicate Alertness (ABILITY + VFEAT) and Skill Focus (ABILITY + FEAT) only count once.
+    const dup = character(
+      withLines(
+        SAMPLE,
+        'ABILITY:FEAT|TYPE:NORMAL|CATEGORY:FEAT|KEY:Alertness',
+        'VFEAT:Alertness',
+        'ABILITY:FEAT|TYPE:NORMAL|CATEGORY:FEAT|KEY:Skill Focus|APPLIEDTO:Knowledge(Arcana)',
+        'FEAT:Skill Focus (Knowledge (Arcana))',
+        'SKILL:Knowledge (arcana)|OUTPUTORDER:13|CLASSBOUGHT:[CLASS:Wizard|RANKS:0.5|COST:1|CLASSSKILL:Y]',
+      ),
+    );
+    const arcanaRows = skills(dup).rows.filter((r) => r.name.toLowerCase() === 'knowledge (arcana)');
+    assert.equal(arcanaRows.length, 1, 'case-differing Knowledge (arcana) merges into Knowledge (Arcana)');
+    assert.equal(row(dup, 'Perception').total.parts.filter((p) => p.source === 'Alertness').length, 1);
+    assert.equal(row(dup, 'Knowledge (Arcana)').total.parts.filter((p) => p.source === 'Skill Focus').length, 1);
+    assert.equal(skillRollExpression(3.5, []), '1d20+3', 'truncates fractional totals');
+
+    // Hunter does not get Track at level 1, gains it at level 2.
+    const hunter1 = character(SAMPLE.replace('CLASS:Wizard|LEVEL:1', 'CLASS:Hunter|LEVEL:1').replace('CLASSABILITIESLEVEL:Wizard=1', 'CLASSABILITIESLEVEL:Hunter=1'));
+    assert.equal(situationalFor(hunter1, computeCharacterStats(hunter1), row(hunter1, 'Survival')).some((x) => x.id === 'track'), false);
+    const hunter2 = character(SAMPLE.replace('CLASS:Wizard|LEVEL:1', 'CLASS:Hunter|LEVEL:2').replace('CLASSABILITIESLEVEL:Wizard=1', 'CLASSABILITIESLEVEL:Hunter=2'));
+    assert.equal(situationalFor(hunter2, computeCharacterStats(hunter2), row(hunter2, 'Survival')).some((x) => x.id === 'track'), true);
+
+    // Inquisitor with Wis <= 10 does not get a +0/negative Monster Lore toggle.
+    const lowWisInq = character(
+      SAMPLE.replace('CLASS:Wizard|LEVEL:1', 'CLASS:Inquisitor|LEVEL:1')
+        .replace('CLASSABILITIESLEVEL:Wizard=1', 'CLASSABILITIESLEVEL:Inquisitor=1')
+        .replace('STAT:WIS|SCORE:12', 'STAT:WIS|SCORE:8'),
+    );
+    assert.equal(situationalFor(lowWisInq, computeCharacterStats(lowWisInq), row(lowWisInq, 'Knowledge (Arcana)')).some((x) => x.id === 'monsterlore'), false);
+
+    // Racial skill bonuses: Ratfolk surfaces Craft (Alchemy); Grippli has no always-on racial Stealth; Tengu gets +4 Linguistics.
+    const rat = character(SAMPLE.replace('RACE:Human', 'RACE:Ratfolk'));
+    assert.equal(row(rat, 'Craft (Alchemy)').total.parts.find((p) => p.source === 'Ratfolk')?.value, 2);
+    const grippli = character(SAMPLE.replace('RACE:Human', 'RACE:Grippli'));
+    assert.equal(row(grippli, 'Stealth').total.parts.find((p) => p.source === 'Grippli'), undefined);
+    const tengu = character(SAMPLE.replace('RACE:Human', 'RACE:Tengu'));
+    assert.equal(row(tengu, 'Linguistics').total.parts.find((p) => p.source === 'Tengu')?.value, 4);
+  });
 });

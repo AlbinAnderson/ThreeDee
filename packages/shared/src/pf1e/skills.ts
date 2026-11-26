@@ -6,7 +6,7 @@
 import type { Character, SkillOverride } from '../entities/pf1e';
 import type { CharacterStats } from './engine';
 import { sumModifiers, type Modifier, type StatLine } from './modifiers';
-import { featKey, lookupRace, type SizeName, type StatKey } from './rules';
+import { featKey, lookupRace, normalizeName, type SizeName, type StatKey } from './rules';
 
 export interface SkillDef {
   name: string;
@@ -92,22 +92,23 @@ const PAIR_FEATS: Record<string, [string, string]> = {
   stealthy: ['Escape Artist', 'Stealth'],
 };
 
-const classLevel = (c: Character, ...names: string[]) =>
-  c.build.classes.filter((k) => names.some((n) => k.name.toLowerCase().replace(/[^a-z]/g, '').includes(n))).reduce((sum, k) => sum + k.level, 0);
+const classLevel = (c: Character, ...keys: string[]) =>
+  c.build.classes.filter((k) => keys.includes(normalizeName(k.name))).reduce((sum, k) => sum + k.level, 0);
 const halfLevel = (lvl: number) => Math.max(1, Math.floor(lvl / 2));
 
 /** Always-on class features that change skill totals. */
 function classSkillBonuses(c: Character, skill: string): Modifier[] {
   const [base] = splitSkillName(skill);
+  const lower = skill.toLowerCase();
   const out: Modifier[] = [];
   const bard = classLevel(c, 'bard', 'skald');
-  if (bard && base === 'Knowledge') out.push({ value: halfLevel(bard), type: 'untyped', source: 'Bardic knowledge' });
+  if (bard && base.toLowerCase() === 'knowledge') out.push({ value: halfLevel(bard), type: 'untyped', source: 'Bardic knowledge' });
   const druid = classLevel(c, 'druid');
-  if (druid && (skill === 'Knowledge (Nature)' || skill === 'Survival')) out.push({ value: 2, type: 'untyped', source: 'Nature sense' });
+  if (druid && (lower === 'knowledge (nature)' || lower === 'survival')) out.push({ value: 2, type: 'untyped', source: 'Nature sense' });
   const inquisitor = classLevel(c, 'inquisitor');
-  if (inquisitor && (skill === 'Intimidate' || skill === 'Sense Motive')) out.push({ value: halfLevel(inquisitor), type: 'morale', source: 'Stern gaze' });
+  if (inquisitor && (lower === 'intimidate' || lower === 'sense motive')) out.push({ value: halfLevel(inquisitor), type: 'morale', source: 'Stern gaze' });
   const mesmerist = classLevel(c, 'mesmerist');
-  if (mesmerist && skill === 'Bluff') out.push({ value: halfLevel(mesmerist), type: 'untyped', source: 'Consummate liar' });
+  if (mesmerist && lower === 'bluff') out.push({ value: halfLevel(mesmerist), type: 'untyped', source: 'Consummate liar' });
   return out;
 }
 
@@ -146,27 +147,62 @@ export interface SkillSummary {
   warnings: string[];
 }
 
+/** Canonicalize known skill/Knowledge names so "Knowledge (arcana)" merges cleanly with "Knowledge (Arcana)". */
+function canonicalSkillName(raw: string): string {
+  const trimmed = raw.trim();
+  const [base, sub] = splitSkillName(trimmed);
+  const def = skillDef(base);
+  if (!def) return trimmed;
+  if (!sub) return def.name;
+  if (def.name === 'Knowledge') {
+    const known = KNOWLEDGES.find((k) => k.toLowerCase() === sub.toLowerCase());
+    if (known) return `Knowledge (${known})`;
+  }
+  return `${def.name} (${sub})`;
+}
+
 /** Every skill row: core skills, the ten Knowledges, sub-skills from the file or added on the sheet. */
 export function computeSkills(c: Character, stats: CharacterStats): SkillSummary {
+  const race = lookupRace(c.build.attributes.race);
+  const racialByLower = new Map<string, { name: string; bonus: number }>();
+  if (race?.skills) {
+    for (const [k, v] of Object.entries(race.skills)) racialByLower.set(k.toLowerCase(), { name: k, bonus: v });
+  }
+
+  const canonical = (raw: string) => {
+    const cName = canonicalSkillName(raw);
+    return racialByLower.get(cName.toLowerCase())?.name ?? cName;
+  };
+
   const fileRanks = new Map<string, { ranks: number; classSkill: boolean }>();
   const fileNames: string[] = [];
   for (const sk of c.build.skills) {
-    const name = sk.name.trim();
-    if (isPseudoSkill(name) && sk.totalRanks <= 0) continue;
-    fileRanks.set(name, { ranks: sk.totalRanks, classSkill: sk.classBought.some((b) => b.classSkill === true) });
+    const name = canonical(sk.name);
+    const ranks = Math.max(0, Math.floor(sk.totalRanks));
+    if (isPseudoSkill(name) && ranks <= 0) continue;
+    const prev = fileRanks.get(name);
+    fileRanks.set(name, {
+      ranks: Math.max(prev?.ranks ?? 0, ranks),
+      classSkill: (prev?.classSkill ?? false) || sk.classBought.some((b) => b.classSkill === true),
+    });
     fileNames.push(name);
   }
   const overrides = c.sheet.skills;
+  const overrideByLower = new Map<string, SkillOverride>();
+  for (const [k, v] of Object.entries(overrides)) overrideByLower.set(canonical(k).toLowerCase(), v);
 
   const names = new Set<string>();
   for (const d of SKILLS) if (!d.family) names.add(d.name);
   for (const k of KNOWLEDGES) names.add(`Knowledge (${k})`);
   names.add('Craft');
   names.add('Perform');
+  if (race?.skills) for (const n of Object.keys(race.skills)) names.add(n);
   for (const n of fileNames) if (!isPseudoSkill(n) || (fileRanks.get(n)?.ranks ?? 0) > 0) names.add(n);
-  for (const [n, o] of Object.entries(overrides)) if (o.custom || skillDef(n)) names.add(n);
+  for (const [n, o] of Object.entries(overrides)) {
+    const cn = canonical(n);
+    if (o.custom || skillDef(cn)) names.add(cn);
+  }
 
-  const race = lookupRace(c.build.attributes.race);
   const feats = featsWithTargets(c);
   const bardic = classLevel(c, 'bard', 'skald') > 0;
   const hd = Math.max(1, stats.hitDice);
@@ -175,7 +211,7 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
   const rows: SkillRow[] = [...names].map((name) => {
     const def = skillDef(name) ?? null;
     const file = fileRanks.get(name);
-    const o = overrides[name];
+    const o = overrides[name] ?? overrideByLower.get(name.toLowerCase());
     const ranks = o?.ranks ?? file?.ranks ?? 0;
     const classSkill = o?.classSkill ?? file?.classSkill ?? false;
     const ability = def?.ability ?? null;
@@ -183,14 +219,20 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
     if (ranks) mods.push({ value: ranks, type: 'base', source: 'Ranks' });
     if (classSkill && ranks >= 1) mods.push({ value: 3, type: 'untyped', source: 'Class skill' });
     if (ability) mods.push({ value: stats.abilities[ability].mod, type: 'ability', source: ability.charAt(0) + ability.slice(1).toLowerCase() });
-    const racial = race?.skills?.[name] ?? (def ? race?.skills?.[def.name] : undefined);
+    const racial = racialByLower.get(name.toLowerCase())?.bonus ?? (def ? racialByLower.get(def.name.toLowerCase())?.bonus : undefined);
     if (racial) mods.push({ value: racial, type: 'racial', source: c.build.attributes.race ?? 'Race' });
+    const normName = normalizeName(name);
+    const appliedFeats = new Set<string>();
     for (const f of feats) {
-      if (f.key === 'skillfocus' && f.targets.some((t) => t.toLowerCase() === name.toLowerCase())) {
+      if (f.key === 'skillfocus' && !appliedFeats.has('skillfocus') && f.targets.some((t) => normalizeName(t) === normName)) {
+        appliedFeats.add('skillfocus');
         mods.push({ value: ranks >= 10 ? 6 : 3, type: 'untyped', source: 'Skill Focus' });
       }
       const pair = PAIR_FEATS[f.key];
-      if (pair?.includes(def?.name ?? name)) mods.push({ value: ranks >= 10 ? 4 : 2, type: 'untyped', source: f.name.replace(/\s*\(.*\)$/, '') });
+      if (pair && !appliedFeats.has(f.key) && pair.includes(def?.name ?? name)) {
+        appliedFeats.add(f.key);
+        mods.push({ value: ranks >= 10 ? 4 : 2, type: 'untyped', source: f.name.replace(/\s*\(.*\)$/, '') });
+      }
     }
     mods.push(...classSkillBonuses(c, name));
     if (def?.name === 'Stealth' && STEALTH_SIZE[stats.size]) mods.push({ value: STEALTH_SIZE[stats.size], type: 'size', source: stats.size });
@@ -236,7 +278,7 @@ export interface Situational {
 export function situationalFor(c: Character, stats: CharacterStats, row: SkillRow): Situational[] {
   const out: Situational[] = [];
   const name = row.def?.name ?? row.name;
-  const trap = classLevel(c, 'rogue', 'investigator');
+  const trap = classLevel(c, 'rogue', 'rogueunchained', 'unchainedrogue', 'investigator');
   if (trap && (name === 'Perception' || name === 'Disable Device')) {
     out.push({ id: 'trapfinding', label: 'Trapfinding (traps)', bonus: halfLevel(trap), spendActionId: null });
   }
@@ -244,9 +286,11 @@ export function situationalFor(c: Character, stats: CharacterStats, row: SkillRo
   if (alchemist && row.name.toLowerCase() === 'craft (alchemy)') {
     out.push({ id: 'alchemy', label: 'Alchemy (creating an alchemical item)', bonus: alchemist, spendActionId: null });
   }
-  const tracker = classLevel(c, 'ranger', 'slayer', 'hunter');
+  const hunterLvl = classLevel(c, 'hunter');
+  // Hunter gains Track at 2nd level; Ranger and Slayer gain it at 1st.
+  const tracker = classLevel(c, 'ranger', 'slayer') + (hunterLvl >= 2 ? hunterLvl : 0);
   if (tracker && name === 'Survival') out.push({ id: 'track', label: 'Track (following tracks)', bonus: halfLevel(tracker), spendActionId: null });
-  if (classLevel(c, 'inquisitor') && name === 'Knowledge') {
+  if (classLevel(c, 'inquisitor') && name === 'Knowledge' && stats.abilities.WIS.mod > 0) {
     out.push({ id: 'monsterlore', label: 'Monster lore (identify creatures)', bonus: stats.abilities.WIS.mod, spendActionId: null });
   }
   if (classLevel(c, 'investigator')) {
@@ -267,6 +311,7 @@ export function skillRollExpression(total: number, extras: (number | string)[], 
     if (typeof e === 'number') flat += e;
     else expr += `+${e}`;
   }
+  flat = Math.trunc(flat);
   if (flat) expr += flat > 0 ? `+${flat}` : `${flat}`;
   return expr;
 }
