@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react';
 import {
   activeLoadout,
+  canControlToken,
   canManageCharacter,
   coinsValue,
   computeCharacterStats,
@@ -13,12 +14,14 @@ import {
   inventoryActions,
   isGm,
   isUnidentifiedLoot,
+  litLight,
   lootActions,
   makeItem,
   newId,
   payFromPurse,
   SLOT_LABELS,
   slotOf,
+  tokenActions,
   wouldCycle,
   type Character,
   type Coins,
@@ -30,6 +33,7 @@ import {
 } from '@vtt/shared';
 import { CheckboxField, NumberField, OptionalNumberField, SelectField, TextAreaField, TextField } from '../components/fields';
 import { dispatch } from '../state/dispatch';
+import { getSelf, useGameStore } from '../state/gameStore';
 import { useGame, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { syncLinkedToken } from './characterActions';
@@ -38,12 +42,38 @@ const SLOT_OPTIONS = (Object.keys(SLOT_LABELS) as InventorySlot[]).map((value) =
 const lb = (n: number) => `${Math.round(n * 100) / 100} lb`;
 const gp = (n: number) => `${Math.round(n * 100) / 100} gp`;
 
-/** Dispatch an inventory action, then refresh the linked token (carried light). */
+/** Dispatch an inventory action, then refresh the linked token's carried light only when it changed. */
 function useInventoryDispatch(c: Character) {
   return (action: GameAction) => {
+    const beforeLit = litLight(c.inventory);
     const ok = dispatch(action);
-    if (ok && c.inventory.items.some((i) => i.light)) syncLinkedToken(c);
-    return ok;
+    if (!ok) return false;
+    if (action.type === 'inventory/setCoins' || action.type === 'inventory/renameLoadout') return true;
+    const after = useGameStore.getState().view?.characters[c.id];
+    const lightItemsBefore = c.inventory.items.filter((i) => i.light);
+    const removedLastLitViaGive =
+      action.type === 'inventory/giveToLoot' &&
+      lightItemsBefore.length === 1 &&
+      lightItemsBefore[0]!.id === action.payload.itemId &&
+      lightItemsBefore[0]!.lit &&
+      action.payload.quantity >= lightItemsBefore[0]!.quantity;
+    const removedLastLit = !!beforeLit && (removedLastLitViaGive || (action.type !== 'inventory/giveToLoot' && !!after && !after.inventory.items.some((i) => i.light)));
+    if (removedLastLit && c.tokenId) {
+      const state = useGameStore.getState().view;
+      const self = getSelf();
+      const token = state?.tokens[c.tokenId];
+      if (token && self && canControlToken(self, token) && token.light) {
+        dispatch(tokenActions.update.create({ id: token.id, changes: { light: null } }));
+      }
+      return true;
+    }
+    const afterLit = after ? litLight(after.inventory) : null;
+    const litChanged =
+      action.type === 'inventory/giveToLoot'
+        ? !!beforeLit
+        : (beforeLit?.bright ?? null) !== (afterLit?.bright ?? null) || (beforeLit?.dim ?? null) !== (afterLit?.dim ?? null);
+    if (litChanged) syncLinkedToken(c);
+    return true;
   };
 }
 
@@ -76,14 +106,20 @@ export function InventoryTab({ character: c }: { character: Character }) {
     }
   }
 
-  const renderItems = (parent: string | null, depth: number): React.ReactNode =>
-    (children.get(parent) ?? []).map((item) => (
-      <li key={item.id} className={openId === item.id ? 'open' : ''}>
-        <ItemRow character={c} item={item} depth={depth} manage={manage} open={openId === item.id} onToggle={() => setOpenId(openId === item.id ? null : item.id)} act={act} />
-        {openId === item.id && <ItemEditor character={c} item={item} manage={manage} act={act} />}
-        {item.container && (children.get(item.id)?.length ?? 0) > 0 && <ul className="inv-children">{renderItems(item.id, depth + 1)}</ul>}
-      </li>
-    ));
+  const renderItems = (parent: string | null, depth: number, seen = new Set<string>()): React.ReactNode =>
+    (children.get(parent) ?? [])
+      .filter((item) => !seen.has(item.id))
+      .map((item) => {
+        const nextSeen = new Set(seen);
+        nextSeen.add(item.id);
+        return (
+          <li key={item.id} className={openId === item.id ? 'open' : ''}>
+            <ItemRow character={c} item={item} depth={depth} manage={manage} open={openId === item.id} onToggle={() => setOpenId(openId === item.id ? null : item.id)} act={act} />
+            {openId === item.id && <ItemEditor character={c} item={item} manage={manage} act={act} />}
+            {item.container && (children.get(item.id)?.length ?? 0) > 0 && <ul className="inv-children">{renderItems(item.id, depth + 1, nextSeen)}</ul>}
+          </li>
+        );
+      });
 
   return (
     <div className="inventory">
@@ -183,7 +219,7 @@ function LoadoutBar({ character: c, manage, act }: { character: Character; manag
 
 function LoadMeter({ stats }: { stats: ReturnType<typeof computeCharacterStats> }) {
   const { weight, capacity, level } = stats.load;
-  const pct = Math.min(100, (weight.total / Math.max(1, capacity.heavy)) * 100);
+  const pct = capacity.heavy > 0 ? Math.min(100, (weight.total / capacity.heavy) * 100) : weight.total > 0 ? 100 : 0;
   const color = level === 'light' ? '#40c057' : level === 'medium' ? '#fab005' : '#fa5252';
   const effects =
     level === 'light'
@@ -223,7 +259,12 @@ function Purse({ character: c, manage, act }: { character: Character; manage: bo
     if (!Number.isFinite(n) || n <= 0) return;
     const cp = Math.round(n * 100);
     if (sign > 0) {
-      setCoins({ ...coins, gp: coins.gp + Math.floor(cp / 100), sp: coins.sp + Math.floor((cp % 100) / 10), cp: coins.cp + (cp % 10) });
+      setCoins({
+        ...coins,
+        gp: Math.min(1e9, coins.gp + Math.floor(cp / 100)),
+        sp: Math.min(1e9, coins.sp + Math.floor((cp % 100) / 10)),
+        cp: Math.min(1e9, coins.cp + (cp % 10)),
+      });
     } else {
       const next = payFromPurse(coins, cp);
       if (!next) return notify(`Not enough coins (you have ${gp(coinsValue(coins))})`);
@@ -448,14 +489,16 @@ function ItemEditor({ character: c, item, manage, act }: { character: Character;
           className="inv-give-qty"
           min={1}
           max={Math.max(1, item.quantity)}
-          value={giveQty}
+          value={Math.max(1, Math.min(Math.max(1, item.quantity), giveQty))}
+          disabled={item.quantity <= 0}
           aria-label="Quantity to give"
           onChange={(e) => setGiveQty(Math.max(1, Math.min(Math.max(1, item.quantity), Math.round(Number(e.target.value) || 1))))}
         />
         <button
           type="button"
-          title="Move to the shared party Loot"
-          onClick={() => act(inventoryActions.giveToLoot.create({ characterId: c.id, itemId: item.id, quantity: Math.min(giveQty, Math.max(1, item.quantity)), newLootId: newId() }))}
+          disabled={item.quantity <= 0}
+          title={item.quantity <= 0 ? 'Nothing left to move' : 'Move to the shared party Loot'}
+          onClick={() => act(inventoryActions.giveToLoot.create({ characterId: c.id, itemId: item.id, quantity: Math.max(1, Math.min(giveQty, item.quantity)), newLootId: newId() }))}
         >
           → Party loot
         </button>
@@ -497,7 +540,7 @@ function ItemRules({ item, update }: { item: InventoryItem; update: (changes: Pa
       {w && (
         <>
           <div className="field-row">
-            <TextField label="Damage (Medium)" value={w.damage} onCommit={(damage) => /^\d{1,2}d\d{1,3}$/.test(damage.trim()) ? setW({ damage: damage.trim() }) : notify('Damage like 1d8')} />
+            <TextField label="Damage (Medium)" value={w.damage} onCommit={(damage) => /^[1-9]\d?d[1-9]\d{0,2}$/.test(damage.trim()) ? setW({ damage: damage.trim() }) : notify('Damage like 1d8')} />
             <NumberField label="Threat from" value={w.critRange} min={2} max={20} step={1} onCommit={(critRange) => setW({ critRange: Math.round(critRange) })} />
             <NumberField label="Crit ×" value={w.critMult} min={2} max={6} step={1} onCommit={(critMult) => setW({ critMult: Math.round(critMult) })} />
           </div>

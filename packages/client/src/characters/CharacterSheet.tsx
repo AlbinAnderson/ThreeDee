@@ -31,13 +31,18 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
   const b = c.build;
   const token = c.tokenId ? tokens[c.tokenId] : undefined;
   const expectedSync = useMemo(() => (token ? tokenSyncFor({ scenes }, c, token) : null), [scenes, c, token]);
+  const lightOutOfDate =
+    expectedSync?.light !== undefined &&
+    ((token?.light?.bright ?? null) !== (expectedSync.light?.bright ?? null) ||
+      (token?.light?.dim ?? null) !== (expectedSync.light?.dim ?? null));
   const tokenOutOfDate =
     !!token &&
     !!expectedSync &&
     (token.hp?.max !== expectedSync.hp.max ||
       token.name !== expectedSync.name ||
       token.darkvision !== expectedSync.darkvision ||
-      token.size !== expectedSync.size);
+      token.size !== expectedSync.size ||
+      lightOutOfDate);
 
   return (
     <div className="sheet">

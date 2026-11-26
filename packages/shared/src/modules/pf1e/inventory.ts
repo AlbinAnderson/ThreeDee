@@ -90,13 +90,23 @@ function conflictingSlots(slot: InventorySlot): InventorySlot[] {
   }
 }
 
-/** "250 gp", "12.5", "3 pp 4 sp" -> gold pieces. */
+/** "250 gp", "2,315 gp", "12.5", "3 pp 4 sp" -> gold pieces. Non-currency text like "3 gems" returns 0. */
 export function parseGpValue(text: string): number {
+  const parseNum = (raw: string) =>
+    Number(/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(raw) ? raw.replace(/,/g, '') : raw.replace(',', '.'));
+  const numPattern = '(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:[.,]\\d+)?)';
+  const trimmed = text.trim();
+  const bare = new RegExp(`^${numPattern}$`).exec(trimmed);
+  if (bare) {
+    const n = parseNum(bare[1]!);
+    return Number.isFinite(n) ? Math.min(1e9, Math.round(n * 100) / 100) : 0;
+  }
   let total = 0;
   let found = false;
-  for (const m of text.matchAll(/(\d+(?:[.,]\d+)?)\s*(pp|gp|sp|cp)?/gi)) {
-    const n = Number(m[1]!.replace(',', '.'));
-    const unit = (m[2] ?? 'gp').toLowerCase();
+  for (const m of trimmed.matchAll(new RegExp(`${numPattern}\\s*(pp|gp|sp|cp)\\b`, 'gi'))) {
+    const n = parseNum(m[1]!);
+    if (!Number.isFinite(n)) continue;
+    const unit = m[2]!.toLowerCase();
     total += unit === 'pp' ? n * 10 : unit === 'sp' ? n / 10 : unit === 'cp' ? n / 100 : n;
     found = true;
   }
@@ -131,6 +141,8 @@ export const inventoryActions = {
       const item = inv?.items.find((i) => i.id === itemId);
       if (!inv || !item) return;
       Object.assign(item, changes);
+      if (item.light === null) item.lit = false;
+      if (item.charges) item.charges.current = Math.min(item.charges.current, item.charges.max);
       // A container that stops being one drops its contents where it is.
       if (changes.container === null) for (const i of inv.items) if (i.containerId === itemId) i.containerId = item.containerId;
     },
@@ -331,7 +343,8 @@ export const inventoryActions = {
         if (ok !== true) return ok;
         const loot = ctx.state.loot[lootId];
         if (!loot || loot.stowed) return 'Loot item not found';
-        if (quantity > Math.max(1, loot.quantity)) return `Only ${loot.quantity} left`;
+        if (loot.quantity <= 0) return 'None left';
+        if (quantity > loot.quantity) return `Only ${loot.quantity} left`;
         const inv = ctx.state.characters[characterId]!.inventory;
         if (inv.items.length >= MAX_INVENTORY_ITEMS) return 'Inventory is full';
         return !inv.items.some((i) => i.id === itemId) || 'Item already exists';
@@ -378,11 +391,13 @@ export const inventoryActions = {
       loot: LootItemSchema.pick({ name: true, imageUrl: true, value: true, notes: true }).extend({ lootId: IdSchema, wholeStack: z.boolean() }).optional(),
     }),
     {
+      optimistic: false,
       authorize(ctx, { characterId, itemId, quantity, newLootId }) {
         const ok = requireItem(ctx, characterId, itemId);
         if (ok !== true) return ok;
         const item = ctx.state.characters[characterId]!.inventory.items.find((i) => i.id === itemId)!;
-        if (quantity > Math.max(1, item.quantity)) return `Only ${item.quantity} in the inventory`;
+        if (item.quantity <= 0) return 'None in the inventory';
+        if (quantity > item.quantity) return `Only ${item.quantity} in the inventory`;
         const existing = item.lootId ? ctx.state.loot[item.lootId] : undefined;
         return !!existing || !ctx.state.loot[newLootId] || 'Loot item already exists';
       },
@@ -405,9 +420,10 @@ export const inventoryActions = {
         if (!loot) return;
         const record = draft.loot[loot.lootId];
         if (record) {
-          record.quantity = Math.min(1_000_000, (record.stowed ? 0 : record.quantity) + quantity);
+          const wasStowed = record.stowed;
+          record.quantity = Math.min(1_000_000, (wasStowed ? 0 : record.quantity) + quantity);
           record.stowed = false;
-          if (loot.wholeStack) Object.assign(record, { name: loot.name, notes: loot.notes });
+          if (wasStowed && loot.wholeStack) Object.assign(record, { name: loot.name, notes: loot.notes });
         } else {
           draft.loot[loot.lootId] = {
             id: loot.lootId,

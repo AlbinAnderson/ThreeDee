@@ -251,8 +251,9 @@ function TakeIntoInventory({ item, self }: { item: LootItem; self: User }) {
       )}
       <button
         type="button"
-        title="Move into that character's inventory"
-        onClick={() => dispatch(inventoryActions.takeLoot.create({ lootId: item.id, characterId: target.id, itemId: newId(), quantity: Math.min(qty, max) }))}
+        disabled={item.quantity <= 0}
+        title={item.quantity <= 0 ? 'Nothing left to take' : "Move into that character's inventory"}
+        onClick={() => dispatch(inventoryActions.takeLoot.create({ lootId: item.id, characterId: target.id, itemId: newId(), quantity: Math.min(qty, item.quantity) }))}
       >
         → Inventory
       </button>

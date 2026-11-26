@@ -149,7 +149,7 @@ export function ActionsPanel() {
           </button>
         </div>
       )}
-      {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size); weapons come with the inventory update.</p>}
+      {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size); action 🎲 buttons use your wielded weapon when one is equipped.</p>}
 
       {resources.length > 0 && (
         <section>

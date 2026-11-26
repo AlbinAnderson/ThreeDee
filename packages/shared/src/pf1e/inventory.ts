@@ -114,15 +114,17 @@ export function seedInventory(build: PcgenCharacter): Inventory {
     const setItemToInv = new Map<string, string>();
     for (const si of set.items) {
       if (!si.itemName) continue;
-      const inv = items.find((it) => it.name === si.itemName && !used.has(it.id));
+      const targetName = (si.itemName.trim() || 'Item').slice(0, 120);
+      const inv = items.find((it) => it.name === targetName && !used.has(it.id));
       if (!inv) continue;
       used.add(inv.id);
       setItemToInv.set(si.id, inv.id);
       const insideContainer = si.parentId !== null && si.parentId !== set.id;
+      const loc = si.location.trim().toLowerCase();
       let slot: InventorySlot = insideContainer ? 'carried' : slotFromPcgLocation(si.location);
-      // PCGen data sets file armor under Body/Torso and shields under a hand.
-      if (inv.armor?.kind === 'armor' && (slot === 'body' || slot === 'chest')) slot = 'armor';
-      if (inv.armor?.kind === 'shield' && HAND_SLOTS.includes(slot)) slot = 'shield';
+      // PCGen data sets file armor under Body/Torso/Equipped and shields under a hand/Equipped.
+      if (!insideContainer && inv.armor?.kind === 'armor' && (slot === 'body' || slot === 'chest' || loc === 'equipped')) slot = 'armor';
+      if (!insideContainer && inv.armor?.kind === 'shield' && (HAND_SLOTS.includes(slot) || loc === 'equipped')) slot = 'shield';
       slots[inv.id] = slot;
     }
     for (const it of items) if (!used.has(it.id)) slots[it.id] = 'notCarried';
@@ -214,10 +216,16 @@ export function carriedWeight(inv: Inventory, loadout = activeLoadout(inv)): Loa
   return { total: round(gear + coins), gear: round(gear), coins: round(coins), extradimensional: round(extradimensional) };
 }
 
-/** Contents weight of a container (for its capacity bar). */
+/** Contents weight of a container (for its capacity bar; items inside nested extradimensional containers don't weigh on outer containers). */
 export function containerContentsWeight(inv: Inventory, containerId: string): number {
   let total = 0;
-  for (const item of inv.items) if (containerChain(inv, item).some((c) => c.id === containerId)) total += item.weight * item.quantity;
+  for (const item of inv.items) {
+    const chain = containerChain(inv, item);
+    const idx = chain.findIndex((c) => c.id === containerId);
+    if (idx === -1) continue;
+    if (chain.slice(0, idx).some((c) => c.container?.extradimensional)) continue;
+    total += item.weight * item.quantity;
+  }
   return Math.round(total * 100) / 100;
 }
 

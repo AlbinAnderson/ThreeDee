@@ -9,10 +9,12 @@ import {
   characterSheetActions,
   coinsFromGp,
   computeCharacterStats,
+  containerContentsWeight,
   createCharacterFromPcg,
   createInitialState,
   createToken,
   CURRENT_SCHEMA_VERSION,
+  detectGear,
   inventoryActions,
   lootActions,
   makeItem,
@@ -306,5 +308,74 @@ describe('inventory actions', () => {
     assert.equal(migrated.schemaVersion, CURRENT_SCHEMA_VERSION);
     assert.equal(migrated.characters.char!.inventory.items.length, 3);
     assert.equal(migrated.loot.l1!.stowed, false);
+  });
+
+  test('zero-quantity items cannot be duplicated via takeLoot or giveToLoot; returning partial stack preserves active loot name', () => {
+    const { room, g, a, act, item } = setup();
+    act(g, lootActions.create.create({ id: 'emptyLoot', item: { name: 'Empty', imageUrl: null, quantity: 0, value: '', holderId: null, notes: '' } }));
+    act(a, inventoryActions.takeLoot.create({ lootId: 'emptyLoot', characterId: 'char', itemId: 'e1', quantity: 1 }));
+    assert.ok(a.rejects().includes('None left'));
+
+    act(a, inventoryActions.adjust.create({ characterId: 'char', itemId: item('Trail Rations').id, quantity: -10 }));
+    assert.equal(item('Trail Rations').quantity, 0);
+    act(a, inventoryActions.giveToLoot.create({ characterId: 'char', itemId: item('Trail Rations').id, quantity: 1, newLootId: 'dupRations' }));
+    assert.ok(a.rejects().includes('None in the inventory'));
+    assert.equal(room.currentState.loot.dupRations, undefined);
+
+    // Returning a renamed split stack onto an active (unstowed) party stack does not clobber the party stack's name/notes.
+    act(g, lootActions.create.create({ id: 'gems', item: { name: 'Ruby', imageUrl: null, quantity: 3, value: '1,500 gp', holderId: null, notes: 'From dragon hoard' } }));
+    act(a, inventoryActions.takeLoot.create({ lootId: 'gems', characterId: 'char', itemId: 'g1', quantity: 1 }));
+    assert.equal(item('Ruby').value, 1500, 'thousands-separated gp parsed correctly');
+    act(a, inventoryActions.updateItem.create({ characterId: 'char', itemId: 'g1', changes: { name: 'Renamed gem', notes: 'Local note' } }));
+    act(a, inventoryActions.giveToLoot.create({ characterId: 'char', itemId: 'g1', quantity: 1, newLootId: 'unused2' }));
+    assert.equal(room.currentState.loot.gems!.quantity, 3);
+    assert.equal(room.currentState.loot.gems!.name, 'Ruby');
+    assert.equal(room.currentState.loot.gems!.notes, 'From dragon hoard');
+  });
+
+  test('detectGear, sizedDamage, parseGpValue, EQUIPSET:Equipped armor, nested extradimensional weight, and updateItem normalization', () => {
+    assert.equal(parseGpValue('2,315 gp'), 2315);
+    assert.equal(parseGpValue('12,5 gp'), 12.5);
+    assert.equal(parseGpValue('3 gems'), 0);
+
+    assert.equal(detectGear('Wand of Acid Arrow').weapon, null, 'wand of acid arrow is not a weapon');
+    assert.ok(detectGear('Wand of Acid Arrow').charges, 'wand still gets charges');
+    assert.equal(detectGear('Potion of Resist Acid').weapon, null);
+    assert.equal(detectGear('Acid').weapon?.damage, '1d6');
+
+    const comp = detectGear('Composite Longbow (+2 Str)');
+    assert.equal(comp.weapon?.strDamage, 'full');
+    assert.equal(comp.weapon?.enhancement, 0, '(+2 Str) is not a magic enhancement');
+    assert.equal(detectGear('Longbow (Composite)').weapon?.strDamage, 'full');
+    assert.equal(detectGear('Shortsword').weapon?.damage, '1d6');
+    assert.equal(detectGear('Sword (Short)').weapon?.damage, '1d6');
+    assert.equal(detectGear('Crossbow (Light)').weapon?.damage, '1d8');
+
+    assert.equal(sizedDamage('1d8', 'Huge'), '3d6');
+    assert.equal(sizedDamage('2d6', 'Huge'), '4d6');
+    assert.equal(sizedDamage('1d10', 'Huge'), '3d8');
+    assert.equal(sizedDamage('1d8', 'Tiny'), '1d4');
+
+    const eqInv = seedInventory(
+      parsePcg(`${SAMPLE}\nEQUIPNAME:Chainmail|OUTPUTORDER:4|COST:150|WT:40|QUANTITY:1.0\nEQUIPSET:Equipped|ID:0.1.3|VALUE:Chainmail|QUANTITY:1.0\n`),
+    );
+    assert.equal(eqInv.loadouts[0]!.slots[eqInv.items.find((i) => i.name === 'Chainmail')!.id], 'armor');
+
+    // Bag of Holding inside Backpack: anvil inside Bag counts for Bag capacity, not Backpack capacity.
+    const c = character();
+    const pack = c.inventory.items.find((i) => i.name === 'Backpack')!;
+    c.inventory.items.push(
+      makeItem({ id: 'boh', name: 'Bag of Holding (Type I)', weight: 15, containerId: pack.id, container: { extradimensional: true, capacity: 250 } }),
+      makeItem({ id: 'anvil', name: 'Anvil', weight: 100, containerId: 'boh' }),
+    );
+    assert.equal(containerContentsWeight(c.inventory, 'boh'), 100);
+    assert.equal(containerContentsWeight(c.inventory, pack.id), 5 + 15, '5 lb rations + 15 lb bag, not the 100 lb anvil inside the bag');
+
+    // updateItem clears lit when light becomes null and clamps charges.current <= max.
+    const { a, act, item } = setup();
+    act(a, inventoryActions.addItem.create({ characterId: 'char', item: makeItem({ id: 't1', name: 'Torch', light: { bright: 20, dim: 40 }, lit: true }) }));
+    act(a, inventoryActions.updateItem.create({ characterId: 'char', itemId: 't1', changes: { light: null, charges: { current: 80, max: 50 } } }));
+    assert.equal(item('Torch').lit, false);
+    assert.deepEqual(item('Torch').charges, { current: 50, max: 50 });
   });
 });

@@ -142,7 +142,7 @@ export type ItemArmor = z.infer<typeof ItemArmorSchema>;
 
 export const ItemWeaponSchema = z.object({
   /** Damage dice for a Medium weapon, e.g. "1d8" or "2d4". Sized for the wielder automatically. */
-  damage: z.string().regex(/^\d{1,2}d\d{1,3}$/, 'Dice like 1d8'),
+  damage: z.string().regex(/^[1-9]\d?d[1-9]\d{0,2}$/, 'Dice like 1d8'),
   /** Lowest natural roll that threatens (19 for 19-20). */
   critRange: z.number().int().min(2).max(20),
   critMult: z.number().int().min(2).max(6),

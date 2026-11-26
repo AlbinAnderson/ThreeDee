@@ -51,6 +51,7 @@ export const WEAPON_TABLE: [string, W][] = (
     ['Sap', w('1d6', 'x2', 0, 'light')],
     ['Starknife', w('1d4', 'x3', 20, 'light')],
     ['Short sword', w('1d6', '19-20/x2', 0, 'light')],
+    ['Shortsword', w('1d6', '19-20/x2', 0, 'light')],
     ['Battleaxe', w('1d8', 'x3', 0, 'one')],
     ['Heavy flail', w('1d10', '19-20/x2', 0, 'two')],
     ['Flail', w('1d8', 'x2', 0, 'one')],
@@ -139,11 +140,22 @@ const CHARGED_TABLE: [RegExp, number][] = [
 ];
 
 const MATERIAL_WORDS =
-  /\b(masterwork|mwk|cold iron|alchemical silver|silver(ed)?|adamantine|mithral|darkwood|dragonhide|steel|wood(en)?|iron|bronze|stone|obsidian|small|medium|large|base)\b|\(\s*\)|[+]\s*\d/gi;
+  /\b(masterwork|mwk|cold iron|alchemical silver|silver(ed)?|adamantine|mithral|darkwood|dragonhide|steel|wood(en)?|iron|bronze|stone|obsidian|small|medium|large|base)\b|\(\s*\)|[+]\s*\d+(\s*str\b)?/gi;
+
+const NON_WEAPON_PREFIX =
+  /^\s*(potion|scroll|wand|ring|amulet|cloak|oil|elixir|robe|boots|gloves|belt|headband|bracers|dust|salve|unguent|rod|manual|tome|book)\s+of\b/i;
+
+/** Reorder PCGen "Sword (Short)" / "Crossbow (Light)" / "Longbow (Composite)" forms -> "Short sword", etc. */
+function pcgenWeaponAlias(name: string): string {
+  return name.replace(
+    /\b(sword|crossbow|mace|flail|pick|axe|hammer|longbow|shortbow)\s*\(\s*(short|bastard|light|heavy|hand|throwing|composite|repeating heavy|repeating)\b([^)]*)\)/i,
+    (_, base: string, mod: string, rest: string) => `${mod} ${base}${rest ? ` (${rest.trim()})` : ''}`,
+  );
+}
 
 /** "+1 Masterwork Longsword (Cold Iron)" -> "longsword" */
 export function baseGearName(name: string): string {
-  return name
+  return pcgenWeaponAlias(name)
     .replace(/\(([^)]*)\)/g, ' $1 ')
     .replace(MATERIAL_WORDS, ' ')
     .replace(/[,()]/g, ' ')
@@ -153,17 +165,24 @@ export function baseGearName(name: string): string {
 }
 
 export function lookupWeapon(name: string): W | undefined {
+  if (NON_WEAPON_PREFIX.test(name)) return undefined;
   const base = ` ${baseGearName(name)} `;
-  const hit = WEAPON_TABLE.find(([n]) => base.includes(` ${n.toLowerCase()} `));
+  const hit = WEAPON_TABLE.find(([n]) => {
+    const key = n.toLowerCase();
+    if (!base.includes(` ${key} `)) return false;
+    // Bare "Acid" is only the splash weapon flask, not "Acid Arrow" or "Acid Resistance".
+    if (key === 'acid' && base.trim() !== 'acid') return false;
+    return true;
+  });
   return hit?.[1];
 }
 
-/** Enhancement bonus from "+2 Longsword", "Longsword +2" or a PCGen EQMOD like PLUS2W. */
+/** Enhancement bonus from "+2 Longsword", "Longsword +2" or a PCGen EQMOD like PLUS2W. Ignores composite bow "(+2 Str)" ratings. */
 export function enhancementFrom(name: string, eqmods = ''): number {
-  const fromName = /\+\s*(\d)/.exec(name);
-  if (fromName) return Number(fromName[1]);
-  const fromMod = /PLUS(\d)/i.exec(eqmods);
-  return fromMod ? Number(fromMod[1]) : 0;
+  const fromName = /\+\s*(\d+)(?!\s*str\b)/i.exec(name);
+  if (fromName) return Math.min(10, Number(fromName[1]));
+  const fromMod = /PLUS(\d+)/i.exec(eqmods);
+  return fromMod ? Math.min(10, Number(fromMod[1])) : 0;
 }
 
 export function masterworkFrom(name: string, eqmods = ''): boolean {
@@ -220,19 +239,20 @@ const SIZE_STEP: Partial<Record<SizeName, number>> = { Fine: -4, Diminutive: -3,
 
 /**
  * Damage dice of a Medium weapon made for a creature of another size, following
- * the PF1e weapon size progression (2d4 and 1d12 step like 1d8 and 2d6).
+ * the PF1e weapon size progression FAQ (1 step while <= 1d6 going up or <= 2d8
+ * going down from Medium; 2 steps thereafter).
  */
 export function sizedDamage(medium: string, size: SizeName): string {
   const shift = SIZE_STEP[size] ?? 0;
   if (!shift) return medium;
-  // Exact Core Rulebook values for the common Small/Large cases.
-  const small: Record<string, string> = { '1d2': '1d1', '1d3': '1d2', '1d4': '1d3', '1d6': '1d4', '1d8': '1d6', '1d10': '1d8', '1d12': '1d10', '2d4': '1d6', '2d6': '1d10', '2d8': '2d6' };
-  const large: Record<string, string> = { '1d2': '1d3', '1d3': '1d4', '1d4': '1d6', '1d6': '1d8', '1d8': '2d6', '1d10': '2d8', '1d12': '3d6', '2d4': '2d6', '2d6': '3d6', '2d8': '3d8' };
-  if (shift === -1 && small[medium]) return small[medium]!;
-  if (shift === 1 && large[medium]) return large[medium]!;
-  const idx = STEPS.indexOf(ALIASES[medium] ?? medium);
+  let idx = STEPS.indexOf(ALIASES[medium] ?? medium);
   if (idx === -1) return medium;
-  return STEPS[Math.max(0, Math.min(STEPS.length - 1, idx + shift))]!;
+  if (shift > 0) {
+    for (let s = 0; s < shift; s++) idx += idx <= 4 ? 1 : 2;
+  } else {
+    for (let s = 0; s < -shift; s++) idx -= idx <= 8 ? 1 : 2;
+  }
+  return STEPS[Math.max(0, Math.min(STEPS.length - 1, idx))]!;
 }
 
 // ------------------------------------------------------------------ carrying capacity
