@@ -10,6 +10,35 @@ type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
 /** migrations[n] upgrades version n -> n + 1. */
 const migrations: Record<number, Migration> = {
   1: (raw) => ({ ...raw, schemaVersion: 2, drawings: {}, notes: {}, loot: {} }),
+  2: (raw) => {
+    const scenes = (raw.scenes ?? {}) as Record<string, Record<string, unknown>>;
+    const tokens = (raw.tokens ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 3,
+      scenes: Object.fromEntries(
+        Object.entries(scenes).map(([id, s]) => [
+          id,
+          { ...s, fog: { enabled: false, ops: [] }, vision: { enabled: false, dark: false } },
+        ]),
+      ),
+      tokens: Object.fromEntries(
+        Object.entries(tokens).map(([id, t]) => [
+          id,
+          { ...t, hp: null, hpVisible: false, conditions: [], darkvision: 0, light: null },
+        ]),
+      ),
+      walls: {},
+      lights: {},
+      templates: {},
+      combat: { active: false, round: 0, currentId: null, combatants: [] },
+      handouts: {},
+      macros: {},
+      audio: {},
+      tables: {},
+      decks: {},
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {

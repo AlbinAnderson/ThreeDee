@@ -139,10 +139,13 @@ export function Board() {
     const hit = document.elementFromPoint(e.clientX, e.clientY);
     const tokenId = hit?.closest('[data-token-id]')?.getAttribute('data-token-id') ?? null;
     const drawingId = tokenId ? null : (hit?.closest('[data-drawing-id]')?.getAttribute('data-drawing-id') ?? null);
+    const templateId =
+      tokenId || drawingId ? null : (hit?.closest('[data-template-id]')?.getAttribute('data-template-id') ?? null);
     return {
       world: screenToWorld(useUi.getState().camera, e.clientX - rect.left, e.clientY - rect.top),
       tokenId,
       drawingId,
+      templateId,
       shift: e.shiftKey,
       alt: e.altKey,
       ctrl: e.ctrlKey || e.metaKey,

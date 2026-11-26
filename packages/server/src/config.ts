@@ -15,7 +15,7 @@ export const config = {
   /** In production the server also serves the built client. */
   serveClient: process.env.NODE_ENV === 'production',
   clientDist: path.join(REPO_ROOT, 'packages/client/dist'),
-  maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 30) * 1024 * 1024,
+  maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 60) * 1024 * 1024,
   saveDebounceMs: 1000,
   snapshotPolicy: {
     ...DEFAULT_SNAPSHOT_POLICY,

@@ -10,10 +10,20 @@ const EXTENSIONS: Record<string, string> = {
   'image/webp': '.webp',
   'image/gif': '.gif',
   'image/avif': '.avif',
+  'audio/mpeg': '.mp3',
+  'audio/mp3': '.mp3',
+  'audio/ogg': '.ogg',
+  'audio/wav': '.wav',
+  'audio/x-wav': '.wav',
+  'audio/webm': '.weba',
+  'audio/mp4': '.m4a',
+  'audio/x-m4a': '.m4a',
+  'audio/aac': '.aac',
+  'audio/flac': '.flac',
 };
 
 /**
- * POST /api/assets  (raw image body, Content-Type: image/*)  -> { url }
+ * POST /api/assets  (raw image/audio body, Content-Type: image/* or audio/*)  -> { url }
  * GET  /assets/<hash>.<ext>
  *
  * Files are content-addressed, so identical uploads are stored once and can

@@ -1,4 +1,4 @@
-import { createScene, newId, sceneActions, type DiagonalRule, type Scene } from '@vtt/shared';
+import { createScene, fogActions, newId, sceneActions, type DiagonalRule, type Scene } from '@vtt/shared';
 import { CheckboxField, ColorField, ImageUploadButton, NumberField, SelectField, TextField } from '../components/fields';
 import { loadImageSize, uploadAsset } from '../lib/assets';
 import { dispatch } from '../state/dispatch';
@@ -150,6 +150,28 @@ function SceneSettings({ scene }: { scene: Scene }) {
         </div>
         <SelectField label="Diagonal measurement" value={grid.diagonals} options={DIAGONAL_OPTIONS} onCommit={(diagonals) => updateGrid({ diagonals })} />
         <CheckboxField label="Snap tokens to grid" value={grid.snap} onCommit={(snap) => updateGrid({ snap })} />
+      </section>
+      <section>
+        <h3>Vision &amp; fog</h3>
+        <CheckboxField
+          label="Line of sight for players (walls block view)"
+          value={scene.vision.enabled}
+          onCommit={(enabled) => update({ vision: { ...scene.vision, enabled } })}
+        />
+        <CheckboxField
+          label="Dark scene (needs light or darkvision)"
+          value={scene.vision.dark}
+          onCommit={(dark) => update({ vision: { ...scene.vision, dark } })}
+        />
+        <CheckboxField
+          label="Fog of war"
+          value={scene.fog.enabled}
+          onCommit={(enabled) => dispatch(fogActions.setEnabled.create({ sceneId: scene.id, enabled }))}
+        />
+        <p className="muted small-text">
+          Draw walls and doors with the ▤ tool, place lights with ☀, paint fog with ☁. Players can't move tokens through walls on
+          any scene that has walls.
+        </p>
       </section>
       <section>
         <button type="button" className="danger" onClick={deleteScene}>

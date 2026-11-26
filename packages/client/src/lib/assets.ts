@@ -1,4 +1,4 @@
-/** Upload an image to the server and return its URL. */
+/** Upload an image or audio file to the server and return its URL. */
 export async function uploadAsset(file: File): Promise<string> {
   const res = await fetch('/api/assets', {
     method: 'POST',

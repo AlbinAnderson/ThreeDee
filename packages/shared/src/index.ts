@@ -1,6 +1,7 @@
 export * from './state';
 export * from './dice';
 export * from './geometry';
+export * from './visibility';
 export * from './util';
 export * from './protocol';
 export * from './rpc';

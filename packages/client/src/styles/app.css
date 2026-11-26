@@ -400,12 +400,8 @@ fieldset.owners legend {
 }
 
 .ruler-line {
-  stroke: #ffd400;
   stroke-linecap: round;
-}
-
-.ruler-end {
-  fill: #ffd400;
+  stroke-opacity: 0.9;
 }
 
 .ruler-label-bg {
@@ -1044,4 +1040,581 @@ fieldset.owners legend {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- chat visibility */
+
+.chat-mode {
+  display: flex;
+  gap: 6px;
+  padding-top: 6px;
+}
+
+.chat-mode select {
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+.chat-line.private {
+  border-left: 2px solid var(--warn);
+  padding-left: 6px;
+}
+
+.chat-card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.chat-card-image {
+  width: 64px;
+  max-height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius);
+}
+
+/* ---------------------------------------------------------- combat */
+
+.token-turn {
+  fill: none;
+  stroke: #ffd400;
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+  animation: turn-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes turn-pulse {
+  50% {
+    stroke-opacity: 0.35;
+  }
+}
+
+button.wide {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.button-row.compact {
+  margin: 0;
+  gap: 4px;
+}
+
+.combat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.combat-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 4px;
+  background: var(--panel-2);
+}
+
+.combat-row.current {
+  border-color: #ffd400;
+  box-shadow: 0 0 0 1px #ffd400 inset;
+}
+
+.combat-row.hidden-entry {
+  opacity: 0.65;
+}
+
+.combat-main {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.combat-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combat-fields {
+  display: flex;
+  gap: 4px;
+  grid-row: span 2;
+}
+
+.combat-fields .field {
+  width: 58px;
+  margin: 0;
+}
+
+.combat-fields .field label {
+  font-size: 10px;
+}
+
+.combat-init {
+  font-size: 18px;
+  font-weight: 700;
+  min-width: 36px;
+  text-align: center;
+}
+
+.combat-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.combat-actions .icon-button {
+  font-size: 13px;
+  padding: 2px 5px;
+}
+
+/* ---------------------------------------------------------- walls / lights / vision */
+
+.door-handle {
+  cursor: pointer;
+}
+
+.door-glyph {
+  font-size: 12px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.vision-hint {
+  fill: var(--muted);
+  font-size: 28px;
+  text-anchor: middle;
+}
+
+.tool-options input[type='number'] {
+  width: 56px;
+  padding: 2px 4px;
+}
+
+/* ---------------------------------------------------------- hp / conditions */
+
+.condition-glyph {
+  fill: white;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.5);
+  stroke-width: 1px;
+}
+
+.inspector-section {
+  border-top: 1px solid var(--border);
+  padding: 6px 0;
+}
+
+.inspector-section summary {
+  cursor: pointer;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.hp-bar-html {
+  height: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.hp-bar-html > div {
+  height: 100%;
+}
+
+.hp-quick {
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.hp-quick input {
+  width: 80px;
+  flex: 0 0 auto;
+}
+
+.condition-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.condition-chip {
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 10px;
+  gap: 3px;
+}
+
+.condition-chip.on {
+  color: white;
+  font-weight: 600;
+}
+
+.condition-icon {
+  font-size: 10px;
+}
+
+.status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.status-list li button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  background: var(--panel-2);
+  margin-bottom: 4px;
+  text-align: left;
+}
+
+.status-list li.selected button {
+  border-color: var(--accent);
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-hp {
+  font-variant-numeric: tabular-nums;
+}
+
+.temp-hp {
+  color: #4dabf7;
+}
+
+.status-list .hp-bar-html {
+  display: block;
+  height: 6px;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------- templates */
+
+.template-outline {
+  pointer-events: none;
+}
+
+.layer-templates.erasing .template-outline {
+  pointer-events: visiblePainted;
+  cursor: cell;
+}
+
+.layer-templates.erasing .template:hover .template-outline {
+  stroke: #ff5050;
+}
+
+/* ---------------------------------------------------------- handouts / modal */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px 16px;
+  max-width: min(900px, 92vw);
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.handout-image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto 12px;
+  border-radius: var(--radius);
+}
+
+.handout-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  max-width: 70ch;
+}
+
+.handout-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.handout-list li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  background: var(--panel-2);
+}
+
+.handout-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+}
+
+.handout-open {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  background: none;
+  border: none;
+  padding: 2px;
+}
+
+.handout-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------- saved rolls */
+
+.macro-list {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.macro-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.macro-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macro-formula {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.macro-form input:first-child {
+  flex: 1.2;
+}
+
+.hotbar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  max-width: calc(100% - 340px);
+  overflow-x: auto;
+}
+
+.hotbar button {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------- audio */
+
+.audio-unlock {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.inline-control.volume input[type='range'] {
+  width: 160px;
+}
+
+.track-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.track-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+}
+
+.track-list li.playing {
+  background: rgba(64, 192, 87, 0.12);
+}
+
+.track-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-list input[type='range'] {
+  width: 70px;
+  padding: 0;
+}
+
+.icon-button.on {
+  color: var(--ok);
+}
+
+/* ---------------------------------------------------------- tables & decks */
+
+.flex1 {
+  flex: 1;
+  min-width: 0;
+}
+
+.deck {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 4px 6px 6px;
+  margin-bottom: 8px;
+}
+
+.deck .button-row {
+  margin: 4px 0;
+}
+
+.drawn-cards {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+}
+
+.drawn-cards li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.card-thumb {
+  width: 28px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.card-thumb.back {
+  display: grid;
+  place-items: center;
+  background: #3b2a5c;
+  font-size: 22px;
+}
+
+/* ---------------------------------------------------------- sidebar rail */
+
+.sidebar {
+  flex-direction: row;
+  width: calc(var(--sidebar-width) + 56px);
+}
+
+.sidebar .panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-title {
+  padding: 10px 12px 6px;
+  font-weight: 700;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rail {
+  width: 56px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  overflow-y: auto;
+}
+
+.rail button {
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 0 4px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  border-radius: var(--radius);
+}
+
+.rail button:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.rail button.active {
+  color: var(--text);
+  background: var(--panel-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.rail-icon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.rail-label {
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
 }

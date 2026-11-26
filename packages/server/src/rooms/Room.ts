@@ -68,7 +68,7 @@ export class Room {
   private sendWelcome(client: Client) {
     if (!client.user) return;
     client.seq = 0;
-    client.send({ t: 'welcome', self: client.user, state: redactState(this.state, client.user), seq: 0 });
+    client.send({ t: 'welcome', self: client.user, state: redactState(this.state, client.user), seq: 0, serverTime: Date.now() });
   }
 
   leave(client: Client) {

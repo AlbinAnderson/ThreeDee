@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { isGm, newId, snapTokenPosition, tokenActions, type Token } from '@vtt/shared';
+import { createToken, isGm, newId, snapTokenPosition, tokenActions } from '@vtt/shared';
 import { ColorField, ImageUploadButton, NumberField, TextField } from '../components/fields';
 import { uploadAsset } from '../lib/assets';
 import { dispatch } from '../state/dispatch';
@@ -34,7 +34,7 @@ export function TokensPanel() {
     const px = size * scene.grid.size;
     const center = viewportCenterWorld();
     const pos = snapTokenPosition({ x: center.x - px / 2, y: center.y - px / 2 }, scene.grid);
-    const token: Token = {
+    const token = createToken({
       id: newId(),
       sceneId: scene.id,
       name: name.trim() || 'Token',
@@ -44,9 +44,7 @@ export function TokensPanel() {
       y: Math.round(pos.y),
       size,
       ownerIds: isGm(self) ? [] : [self.id],
-      hidden: false,
-      showName: true,
-    };
+    });
     if (dispatch(tokenActions.create.create({ token }))) {
       setSelection([token.id]);
       setName('');

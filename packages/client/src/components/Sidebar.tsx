@@ -11,14 +11,25 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <nav className="tabs">
+      <div className="panel">
+        <div className="panel-title">{active?.label}</div>
+        {active && <active.Component />}
+      </div>
+      <nav className="rail" aria-label="Panels">
         {available.map((p) => (
-          <button key={p.id} type="button" className={p.id === active?.id ? 'active' : ''} onClick={() => setPanel(p.id)}>
-            {p.label}
+          <button
+            key={p.id}
+            type="button"
+            className={p.id === active?.id ? 'active' : ''}
+            onClick={() => setPanel(p.id)}
+            title={p.label}
+            aria-label={p.label}
+          >
+            <span className="rail-icon">{p.icon}</span>
+            <span className="rail-label">{p.label.split(' ')[0]}</span>
           </button>
         ))}
       </nav>
-      <div className="panel">{active && <active.Component />}</div>
     </aside>
   );
 }

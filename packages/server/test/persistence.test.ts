@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
-import { createInitialState, newId, type GameState, type SnapshotInfo } from '@vtt/shared';
+import { createInitialState, CURRENT_SCHEMA_VERSION, migrateState, newId, type GameState, type SnapshotInfo } from '@vtt/shared';
 import { importLegacyRooms } from '../src/persistence/importLegacy';
 import { snapshotsToPrune, shouldAutoSnapshot, type SnapshotPolicy } from '../src/persistence/snapshotPolicy';
 import { SqliteRoomStore } from '../src/persistence/SqliteRoomStore';
@@ -56,7 +56,7 @@ describe('SqliteRoomStore', () => {
       .prepare('INSERT INTO rooms (id, schema_version, state, created_at, updated_at) VALUES (?, 1, ?, 0, 0)')
       .run('old', JSON.stringify(v1State()));
     const loaded = await store.load('old');
-    assert.equal(loaded!.schemaVersion, 2);
+    assert.equal(loaded!.schemaVersion, CURRENT_SCHEMA_VERSION);
     assert.deepEqual(loaded!.loot, {});
   });
 
@@ -101,6 +101,34 @@ describe('SqliteRoomStore', () => {
   });
 });
 
+describe('state migrations', () => {
+  test('v2 -> v3 adds vision/fog to scenes and hp/conditions to tokens', () => {
+    const v2 = {
+      schemaVersion: 2,
+      users: {},
+      scenes: {
+        s1: {
+          id: 's1', name: 'Cave', width: 700, height: 700, background: null, backgroundColor: '#000000',
+          grid: { type: 'square', size: 70, offsetX: 0, offsetY: 0, color: '#000000', opacity: 0.3, unitsPerCell: 5, unitLabel: 'ft', diagonals: 'alternating', snap: true },
+        },
+      },
+      sceneOrder: ['s1'],
+      activeSceneId: 's1',
+      tokens: {
+        t1: { id: 't1', sceneId: 's1', name: 'Hero', imageUrl: null, color: '#ff0000', x: 0, y: 0, size: 1, ownerIds: [], hidden: false, showName: true },
+      },
+      drawings: {}, chat: [], notes: {}, loot: {},
+    };
+    const s = migrateState(v2);
+    assert.equal(s.schemaVersion, 3);
+    assert.deepEqual(s.scenes.s1!.fog, { enabled: false, ops: [] });
+    assert.equal(s.tokens.t1!.hp, null);
+    assert.deepEqual(s.tokens.t1!.conditions, []);
+    assert.equal(s.combat.currentId, null);
+    assert.deepEqual(s.decks, {});
+  });
+});
+
 describe('importLegacyRooms', () => {
   test('imports JSON rooms once, renames files, keeps a snapshot', async () => {
     const roomsDir = path.join(dir, 'rooms');
@@ -109,7 +137,7 @@ describe('importLegacyRooms', () => {
     fs.writeFileSync(path.join(roomsDir, 'broken.json'), '{ not json');
 
     assert.deepEqual(await importLegacyRooms(store, roomsDir), ['main']);
-    assert.equal((await store.load('main'))!.schemaVersion, 2);
+    assert.equal((await store.load('main'))!.schemaVersion, CURRENT_SCHEMA_VERSION);
     assert.equal((await store.listSnapshots('main'))[0]!.reason, 'import');
     assert.ok(fs.existsSync(path.join(roomsDir, 'main.json.imported')));
     assert.ok(fs.existsSync(path.join(roomsDir, 'broken.json')), 'unreadable files are left untouched');

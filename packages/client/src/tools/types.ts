@@ -10,6 +10,8 @@ export interface BoardPointer {
   tokenId: string | null;
   /** Drawing under the pointer, if any (only when no token is). */
   drawingId: string | null;
+  /** Area template under the pointer, if any (only when no token/drawing is). */
+  templateId: string | null;
   shift: boolean;
   alt: boolean;
   ctrl: boolean;

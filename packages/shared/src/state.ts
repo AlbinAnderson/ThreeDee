@@ -5,22 +5,27 @@
  */
 import { z } from 'zod';
 import { RollResultSchema } from './dice';
+import {
+  AudioTrackSchema,
+  ChatCardSchema,
+  ChatWhisperSchema,
+  CombatSchema,
+  DeckSchema,
+  EMPTY_COMBAT,
+  HandoutSchema,
+  MacroSchema,
+  RollTableSchema,
+  TemplateSchema,
+} from './entities/play';
+import { FogSchema, LightEmissionSchema, LightSchema, VisionSettingsSchema, WallSchema } from './entities/vision';
+import { AssetUrlSchema, ColorSchema, IdSchema } from './primitives';
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export * from './primitives';
+export * from './entities/play';
+export * from './entities/vision';
 
-export const IdSchema = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[A-Za-z0-9_-]+$/, 'Invalid id');
-
-export const ColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Expected #rrggbb color');
-
-/** Images may be server-uploaded assets or external http(s) URLs. */
-export const AssetUrlSchema = z
-  .string()
-  .max(2048)
-  .refine((s) => s.startsWith('/assets/') || /^https?:\/\//i.test(s), 'Must be an uploaded asset or http(s) URL');
+/** Bump when the shape changes, and add a step in migrations.ts. */
+export const CURRENT_SCHEMA_VERSION = 3;
 
 // ---------------------------------------------------------------- users
 
@@ -73,6 +78,10 @@ export const SceneSchema = z.object({
   background: AssetUrlSchema.nullable(),
   backgroundColor: ColorSchema,
   grid: GridSettingsSchema,
+  /** GM-painted fog of war. */
+  fog: FogSchema,
+  /** Line of sight / lighting for players. */
+  vision: VisionSettingsSchema,
 });
 export type Scene = z.infer<typeof SceneSchema>;
 
@@ -94,8 +103,43 @@ export const TokenSchema = z.object({
   /** Hidden tokens are only rendered for the GM. */
   hidden: z.boolean(),
   showName: z.boolean(),
+  /** Hit points (generic: any "health" track). null = no bar. */
+  hp: z
+    .object({
+      value: z.number().int().min(-100000).max(100000),
+      max: z.number().int().min(0).max(100000),
+      temp: z.number().int().min(0).max(100000),
+    })
+    .nullable(),
+  /** Whether players who don't own the token can see its HP bar. */
+  hpVisible: z.boolean(),
+  /** Status markers ("prone", "shaken", or anything custom). */
+  conditions: z.array(z.string().trim().min(1).max(40)).max(30),
+  /** Darkvision range in grid cells (0 = none). */
+  darkvision: z.number().min(0).max(200),
+  /** Light the token carries (torch, lantern). */
+  light: LightEmissionSchema.nullable(),
 });
 export type Token = z.infer<typeof TokenSchema>;
+
+/** A token with default values for everything not given. */
+export function createToken(fields: Pick<Token, 'id' | 'sceneId' | 'x' | 'y'> & Partial<Token>): Token {
+  return {
+    name: 'Token',
+    imageUrl: null,
+    color: '#888888',
+    size: 1,
+    ownerIds: [],
+    hidden: false,
+    showName: true,
+    hp: null,
+    hpVisible: false,
+    conditions: [],
+    darkvision: 0,
+    light: null,
+    ...fields,
+  };
+}
 
 // ---------------------------------------------------------------- drawings
 
@@ -163,6 +207,9 @@ export const ChatMessageSchema = z.object({
   ts: z.number(),
   text: z.string().max(2000),
   roll: RollResultSchema.optional(),
+  card: ChatCardSchema.optional(),
+  /** Restricted visibility (GM-only roll or whisper). Absent = public. */
+  whisper: ChatWhisperSchema.optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
@@ -182,6 +229,15 @@ export const GameStateSchema = z.object({
   chat: z.array(ChatMessageSchema),
   notes: z.record(IdSchema, NoteSchema),
   loot: z.record(IdSchema, LootItemSchema),
+  walls: z.record(IdSchema, WallSchema),
+  lights: z.record(IdSchema, LightSchema),
+  templates: z.record(IdSchema, TemplateSchema),
+  combat: CombatSchema,
+  handouts: z.record(IdSchema, HandoutSchema),
+  macros: z.record(IdSchema, MacroSchema),
+  audio: z.record(IdSchema, AudioTrackSchema),
+  tables: z.record(IdSchema, RollTableSchema),
+  decks: z.record(IdSchema, DeckSchema),
 });
 export type GameState = z.infer<typeof GameStateSchema>;
 
@@ -207,6 +263,8 @@ export function createScene(id: string, name = 'New Scene'): Scene {
     background: null,
     backgroundColor: '#3a3d42',
     grid: { ...DEFAULT_GRID },
+    fog: { enabled: false, ops: [] },
+    vision: { enabled: false, dark: false },
   };
 }
 
@@ -223,5 +281,14 @@ export function createInitialState(firstSceneId: string): GameState {
     chat: [],
     notes: {},
     loot: {},
+    walls: {},
+    lights: {},
+    templates: {},
+    combat: structuredClone(EMPTY_COMBAT),
+    handouts: {},
+    macros: {},
+    audio: {},
+    tables: {},
+    decks: {},
   };
 }

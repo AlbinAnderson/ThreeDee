@@ -21,6 +21,14 @@ export const RoomIdSchema = z
 
 export const EphemeralEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('ping'), sceneId: IdSchema, x: z.number(), y: z.number() }),
+  /** Someone's live ruler (also shown while dragging a token). null points = ruler gone. */
+  z.object({
+    kind: z.literal('ruler'),
+    sceneId: IdSchema,
+    points: z.tuple([z.number(), z.number(), z.number(), z.number()]).nullable(),
+  }),
+  /** GM pops a handout open on everyone's screen. */
+  z.object({ kind: z.literal('showHandout'), handoutId: IdSchema }),
 ]);
 export type EphemeralEvent = z.infer<typeof EphemeralEventSchema>;
 
@@ -45,7 +53,8 @@ export type ClientMessage = z.input<typeof ClientMessageSchema>;
 export type JoinMessage = Extract<ClientMessage, { t: 'join' }>;
 
 export type ServerMessage =
-  | { t: 'welcome'; self: User; state: GameState; seq: number }
+  /** serverTime lets clients estimate clock offset (for synced audio). */
+  | { t: 'welcome'; self: User; state: GameState; seq: number; serverTime: number }
   | { t: 'action'; seq: number; action: Action; meta: ActionMeta; clientId?: string }
   | { t: 'reject'; clientId: string; reason: string }
   | { t: 'presence'; online: UserId[] }

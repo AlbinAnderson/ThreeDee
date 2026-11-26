@@ -5,6 +5,9 @@ import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
 import { useUi } from '../state/uiStore';
 import { tools } from '../tools';
+import { AudioEngine } from '../audio/AudioEngine';
+import { HandoutViewer } from '../handouts/HandoutsPanel';
+import { Hotbar } from '../player/MacrosSection';
 import { Sidebar } from './Sidebar';
 import { TokenInspector } from './TokenInspector';
 import { Toolbar } from './Toolbar';
@@ -46,9 +49,12 @@ export function TableView() {
           <Board />
           <Toolbar />
           <TokenInspector />
+          <Hotbar />
         </div>
         <Sidebar />
       </div>
+      <HandoutViewer />
+      <AudioEngine />
     </div>
   );
 }

@@ -3,7 +3,8 @@ import { defineAction } from '../actions/define';
 import { requireGm } from '../actions/auth';
 import { GridSettingsSchema, IdSchema, SceneSchema } from '../state';
 
-const SceneChangesSchema = SceneSchema.omit({ id: true, grid: true }).partial();
+/** Fog has its own actions (it's large and painted incrementally). */
+const SceneChangesSchema = SceneSchema.omit({ id: true, grid: true, fog: true }).partial();
 
 export const sceneActions = {
   create: defineAction('scene/create', z.object({ scene: SceneSchema }), {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { defineAction, type AuthContext, type AuthResult } from '../actions/define';
 import { canControlToken, isGm } from '../actions/auth';
 import { IdSchema, TokenSchema } from '../state';
+import { blockingSegments, isPathBlocked } from '../visibility';
 
 const CoordSchema = TokenSchema.shape.x;
 
@@ -12,6 +13,11 @@ const OwnerEditableSchema = TokenSchema.pick({
   color: true,
   size: true,
   showName: true,
+  hp: true,
+  hpVisible: true,
+  conditions: true,
+  darkvision: true,
+  light: true,
 });
 /** Fields only the GM may change. */
 const GmEditableSchema = TokenSchema.pick({ ownerIds: true, hidden: true });
@@ -42,7 +48,20 @@ export const tokenActions = {
   }),
 
   move: defineAction('token/move', z.object({ id: IdSchema, x: CoordSchema, y: CoordSchema }), {
-    authorize: (ctx, { id }) => requireTokenControl(ctx, id),
+    authorize(ctx, { id, x, y }) {
+      const control = requireTokenControl(ctx, id);
+      if (control !== true || isGm(ctx.user)) return control;
+      // Players can't walk through walls or closed doors.
+      const token = ctx.state.tokens[id]!;
+      const scene = ctx.state.scenes[token.sceneId];
+      if (!scene) return true;
+      const walls = Object.values(ctx.state.walls).filter((w) => w.sceneId === scene.id);
+      if (!walls.length) return true;
+      const half = (token.size * scene.grid.size) / 2;
+      const from = { x: token.x + half, y: token.y + half };
+      const to = { x: x + half, y: y + half };
+      return !isPathBlocked(from, to, blockingSegments(walls)) || 'Blocked by a wall';
+    },
     apply(draft, { id, x, y }) {
       const token = draft.tokens[id];
       if (!token) return;

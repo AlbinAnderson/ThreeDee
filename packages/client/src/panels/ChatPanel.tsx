@@ -1,19 +1,85 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { chatActions, formatTermNotation, newId, type ChatMessage, type RollResult, type User } from '@vtt/shared';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  chatActions,
+  formatTermNotation,
+  newId,
+  type ChatCard,
+  type ChatMessage,
+  type ChatWhisper,
+  type RollResult,
+  type User,
+} from '@vtt/shared';
 import { dispatch } from '../state/dispatch';
-import { useGame, useIsGm } from '../state/hooks';
+import { useGameStore } from '../state/gameStore';
+import { useGame, useIsGm, useSelf } from '../state/hooks';
+import { notify } from '../state/notifications';
+import { currentWhisper, useUi } from '../state/uiStore';
 
 const QUICK_DICE = [4, 6, 8, 10, 12, 20, 100];
 
-/** "/r 1d20+5 # Attack" -> roll; anything else -> text. */
-function submitChat(input: string): boolean {
-  const roll = /^\/(?:r|roll)\s+(.+)$/i.exec(input);
-  if (roll) {
-    const [expression = '', ...labelParts] = roll[1]!.split('#');
-    const label = labelParts.join('#').trim() || undefined;
-    return dispatch(chatActions.roll.create({ id: newId(), expression: expression.trim(), label }));
+/** Roll dice into chat using the current chat mode (or an explicit visibility). */
+export function rollToChat(expression: string, label?: string, whisper: ChatWhisper | undefined = currentWhisper()) {
+  return dispatch(chatActions.roll.create({ id: newId(), expression, label, whisper }));
+}
+
+/** Split "expr # label". */
+function splitLabel(input: string): [string, string | undefined] {
+  const [expression = '', ...rest] = input.split('#');
+  return [expression.trim(), rest.join('#').trim() || undefined];
+}
+
+/**
+ * Find the user whose name prefixes `text` (longest match), for "/w Some Name
+ * message". If several users share a name, prefer whoever is online.
+ */
+function matchRecipient(text: string, users: User[]): { user: User; rest: string } | null {
+  const lower = text.toLowerCase();
+  const online = useGameStore.getState().online;
+  let best: User | null = null;
+  for (const u of users) {
+    const n = u.name.toLowerCase();
+    if (lower !== n && !lower.startsWith(n + ' ')) continue;
+    const better =
+      !best ||
+      n.length > best.name.length ||
+      (n.length === best.name.length && online.includes(u.id) && !online.includes(best.id));
+    if (better) best = u;
   }
-  return dispatch(chatActions.send.create({ id: newId(), text: input }));
+  return best ? { user: best, rest: text.slice(best.name.length).trim() } : null;
+}
+
+/**
+ * Commands:
+ *   /r 1d20+5 # Attack     roll (current chat mode)
+ *   /gr 1d20+5 # Stealth   GM-only roll
+ *   /w Name message        whisper (also /w Name /r 1d20)
+ *   anything else          message (current chat mode)
+ */
+function submitChat(input: string, users: User[]): boolean {
+  const gr = /^\/(?:gr|gmroll)\s+(.+)$/i.exec(input);
+  if (gr) return rollToChat(...splitLabel(gr[1]!), { mode: 'gm', to: [] });
+
+  const r = /^\/(?:r|roll)\s+(.+)$/i.exec(input);
+  if (r) return rollToChat(...splitLabel(r[1]!));
+
+  const w = /^\/(?:w|whisper)\s+(.+)$/i.exec(input);
+  if (w) {
+    const match = matchRecipient(w[1]!, users);
+    if (!match || !match.rest) {
+      notify('Usage: /w <player name> <message>');
+      return false;
+    }
+    const whisper: ChatWhisper = { mode: 'whisper', to: [match.user.id] };
+    const inner = /^\/(?:r|roll)\s+(.+)$/i.exec(match.rest);
+    if (inner) return rollToChat(...splitLabel(inner[1]!), whisper);
+    return dispatch(chatActions.send.create({ id: newId(), text: match.rest, whisper }));
+  }
+
+  if (input.startsWith('/')) {
+    notify('Unknown command. Try /r, /gr or /w');
+    return false;
+  }
+  return dispatch(chatActions.send.create({ id: newId(), text: input, whisper: currentWhisper() }));
 }
 
 export function ChatPanel() {
@@ -22,6 +88,7 @@ export function ChatPanel() {
   const gm = useIsGm();
   const [input, setInput] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
+  const userList = useMemo(() => Object.values(users), [users]);
 
   useEffect(() => {
     const el = logRef.current;
@@ -31,24 +98,21 @@ export function ChatPanel() {
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (text && submitChat(text)) setInput('');
+    if (text && submitChat(text, userList)) setInput('');
   }
 
   return (
     <div className="chat-panel">
       <div className="chat-log" ref={logRef}>
-        {chat.length === 0 && <p className="muted">No messages yet. Try /r 1d20+5 # Attack</p>}
+        {chat.length === 0 && <p className="muted">No messages yet. Try /r 1d20+5 # Attack, /gr for a GM-only roll, /w Name to whisper.</p>}
         {chat.map((m) => (
-          <ChatLine key={m.id} message={m} author={users[m.userId]} />
+          <ChatLine key={m.id} message={m} users={users} />
         ))}
       </div>
+      <ChatModePicker />
       <div className="quick-dice">
         {QUICK_DICE.map((d) => (
-          <button
-            key={d}
-            type="button"
-            onClick={() => dispatch(chatActions.roll.create({ id: newId(), expression: `1d${d}` }))}
-          >
+          <button key={d} type="button" onClick={() => rollToChat(`1d${d}`)}>
             d{d}
           </button>
         ))}
@@ -57,7 +121,7 @@ export function ChatPanel() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Message, or /r 2d6+3 # label"
+          placeholder="Message, /r 2d6+3 # label, /w Name hi"
           maxLength={2000}
         />
         <button type="submit">Send</button>
@@ -75,22 +139,85 @@ export function ChatPanel() {
   );
 }
 
-function ChatLine({ message, author }: { message: ChatMessage; author: User | undefined }) {
-  const time = new Date(message.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function ChatModePicker() {
+  const chatMode = useUi((s) => s.chatMode);
+  const setChatMode = useUi((s) => s.setChatMode);
+  const users = useGame((s) => s.users);
+  const self = useSelf();
+  const others = useMemo(() => Object.values(users).filter((u) => u.id !== self.id), [users, self.id]);
+
   return (
-    <div className="chat-line">
-      <div className="chat-meta">
-        <span className="chat-author" style={{ color: author?.color }}>
-          {author?.name ?? 'Unknown'}
-        </span>
-        <span className="chat-time">{time}</span>
-      </div>
-      {message.roll ? <RollCard roll={message.roll} label={message.text} /> : <div className="chat-text">{message.text}</div>}
+    <div className="chat-mode">
+      <select
+        value={chatMode.mode}
+        onChange={(e) => setChatMode({ mode: e.target.value as typeof chatMode.mode, to: chatMode.to })}
+        title="Who sees your messages and rolls"
+      >
+        <option value="public">Everyone</option>
+        <option value="gm">GM only</option>
+        <option value="whisper">Whisper…</option>
+      </select>
+      {chatMode.mode === 'whisper' && (
+        <select
+          value={chatMode.to[0] ?? ''}
+          onChange={(e) => setChatMode({ mode: 'whisper', to: e.target.value ? [e.target.value] : [] })}
+        >
+          <option value="">Choose…</option>
+          {others.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }
 
-function RollCard({ roll, label }: { roll: RollResult; label: string }) {
+function visibilityLabel(m: ChatMessage, users: Record<string, User>): string | null {
+  if (!m.whisper) return null;
+  if (m.whisper.mode === 'gm') return 'GM only';
+  return `to ${m.whisper.to.map((id) => users[id]?.name ?? '?').join(', ')}`;
+}
+
+function ChatLine({ message, users }: { message: ChatMessage; users: Record<string, User> }) {
+  const author = users[message.userId];
+  const time = new Date(message.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const vis = visibilityLabel(message, users);
+  return (
+    <div className={`chat-line${message.whisper ? ' private' : ''}`}>
+      <div className="chat-meta">
+        <span className="chat-author" style={{ color: author?.color }}>
+          {author?.name ?? 'Unknown'}
+        </span>
+        {vis && <span className="badge warn">{vis}</span>}
+        <span className="chat-time">{time}</span>
+      </div>
+      {message.roll ? (
+        <RollCard roll={message.roll} label={message.text} />
+      ) : message.card ? (
+        <CardAttachment card={message.card} />
+      ) : (
+        <div className="chat-text">{message.text}</div>
+      )}
+    </div>
+  );
+}
+
+function CardAttachment({ card }: { card: ChatCard }) {
+  return (
+    <div className="roll-card chat-card">
+      {card.imageUrl && <img src={card.imageUrl} alt="" className="chat-card-image" />}
+      <div>
+        {card.subtitle && <div className="roll-expr">{card.subtitle}</div>}
+        <div className="roll-label">{card.title}</div>
+        {card.text && <div className="chat-text">{card.text}</div>}
+      </div>
+    </div>
+  );
+}
+
+export function RollCard({ roll, label }: { roll: RollResult; label: string }) {
   return (
     <div className="roll-card">
       {label && <div className="roll-label">{label}</div>}

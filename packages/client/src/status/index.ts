@@ -1,8 +1,9 @@
 /**
- * Status tab section registry. Empty for now; add things like HP,
- * conditions, buffs or initiative here as `{ id, title, Component }`.
+ * Status tab section registry. Add sections (buffs, resources...) here as
+ * `{ id, title, gmOnly?, Component }`.
  */
 import type { ComponentType } from 'react';
+import { OthersSection, PartySection } from './TokenStatusList';
 
 export interface StatusSection {
   id: string;
@@ -11,4 +12,7 @@ export interface StatusSection {
   Component: ComponentType;
 }
 
-export const statusSections: StatusSection[] = [];
+export const statusSections: StatusSection[] = [
+  { id: 'party', title: 'Party', Component: PartySection },
+  { id: 'others', title: 'Others on this scene', gmOnly: true, Component: OthersSection },
+];

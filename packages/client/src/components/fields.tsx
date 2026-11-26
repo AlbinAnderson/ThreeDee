@@ -132,15 +132,21 @@ export function SelectField<T extends string>({
   );
 }
 
-/** Button that opens a file picker for images. */
+const IMAGE_TYPES = 'image/png,image/jpeg,image/webp,image/gif,image/avif';
+
+/** Button that opens a file picker (images by default). `onFile` runs once per chosen file. */
 export function ImageUploadButton({
   label,
   onFile,
   disabled,
+  accept = IMAGE_TYPES,
+  multiple = false,
 }: {
   label: string;
   onFile: (file: File) => void | Promise<void>;
   disabled?: boolean;
+  accept?: string;
+  multiple?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   return (
@@ -148,16 +154,17 @@ export function ImageUploadButton({
       {busy ? 'Uploading…' : label}
       <input
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+        accept={accept}
+        multiple={multiple}
         hidden
         disabled={disabled || busy}
         onChange={async (e) => {
-          const file = e.target.files?.[0];
+          const files = [...(e.target.files ?? [])];
           e.target.value = '';
-          if (!file) return;
+          if (!files.length) return;
           setBusy(true);
           try {
-            await onFile(file);
+            for (const file of files) await onFile(file);
           } finally {
             setBusy(false);
           }

@@ -1,35 +1,37 @@
-import { cellCenter } from '@vtt/shared';
+import { cellCenter, type Point } from '@vtt/shared';
+import { clearSharedRuler, setSharedRuler } from '../board/rulerShare';
 import { defineTool } from './types';
 
-/** Drag to measure. Snaps to cell centers on gridded scenes (hold Alt for free measuring). */
-export const rulerTool = defineTool<{ active: boolean }>({
+/**
+ * Drag to measure; everyone at the table sees your ruler. Snaps to cell
+ * centers on gridded scenes (hold Alt for free measuring).
+ */
+export const rulerTool = defineTool<{ from: Point | null }>({
   id: 'ruler',
   label: 'Measure',
   icon: '📏',
   hotkey: 'r',
   cursor: 'crosshair',
-  createState: () => ({ active: false }),
+  createState: () => ({ from: null }),
 
   onPointerDown(p, ctx, state) {
-    state.active = true;
-    const from = p.alt ? p.world : cellCenter(p.world, ctx.scene.grid);
-    ctx.interaction.setRuler({ sceneId: ctx.scene.id, from, to: from });
+    state.from = p.alt ? p.world : cellCenter(p.world, ctx.scene.grid);
+    setSharedRuler(ctx.scene.id, state.from, state.from);
   },
 
   onPointerMove(p, ctx, state) {
-    const ruler = ctx.interaction.ruler;
-    if (!state.active || !ruler) return;
-    const to = p.alt ? p.world : cellCenter(p.world, ctx.scene.grid);
-    ctx.interaction.setRuler({ ...ruler, to });
+    if (!state.from) return;
+    setSharedRuler(ctx.scene.id, state.from, p.alt ? p.world : cellCenter(p.world, ctx.scene.grid));
   },
 
   onPointerUp(_p, ctx, state) {
-    state.active = false;
-    ctx.interaction.setRuler(null);
+    state.from = null;
+    clearSharedRuler(ctx.scene.id);
   },
 
   onCancel(ctx, state) {
-    state.active = false;
-    ctx.interaction.setRuler(null);
+    if (!state.from) return;
+    state.from = null;
+    clearSharedRuler(ctx.scene.id);
   },
 });

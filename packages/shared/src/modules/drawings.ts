@@ -47,6 +47,10 @@ export const drawingActions = {
       for (const d of Object.values(draft.drawings)) {
         if (d.sceneId === sceneId && (!authorId || d.authorId === authorId)) delete draft.drawings[d.id];
       }
+      // Templates are markings too: "clear" removes them as well.
+      for (const t of Object.values(draft.templates)) {
+        if (t.sceneId === sceneId && (!authorId || t.authorId === authorId)) delete draft.templates[t.id];
+      }
     },
   }),
 };

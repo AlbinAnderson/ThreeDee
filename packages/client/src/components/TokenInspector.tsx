@@ -5,7 +5,9 @@ import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { useUi } from '../state/uiStore';
+import { addSelectedToCombat } from '../panels/CombatPanel';
 import { CheckboxField, ColorField, ImageUploadButton, NumberField, TextField } from './fields';
+import { ConditionsEditor, HpEditor, VisionEditor } from './TokenStatusEditors';
 
 /** Floating editor for the single selected token. */
 export function TokenInspector() {
@@ -61,6 +63,18 @@ function Inspector({ token }: { token: Token }) {
         )}
       </div>
       <CheckboxField label="Show name" value={token.showName} onCommit={(showName) => update({ showName })} />
+      <details className="inspector-section" open>
+        <summary>Hit points</summary>
+        <HpEditor token={token} />
+      </details>
+      <details className="inspector-section" open={token.conditions.length > 0}>
+        <summary>Conditions{token.conditions.length ? ` (${token.conditions.length})` : ''}</summary>
+        <ConditionsEditor token={token} />
+      </details>
+      <details className="inspector-section">
+        <summary>Vision &amp; light</summary>
+        <VisionEditor token={token} />
+      </details>
       {gm && (
         <>
           <CheckboxField label="Hidden from players" value={token.hidden} onCommit={(hidden) => update({ hidden })} />
@@ -79,9 +93,14 @@ function Inspector({ token }: { token: Token }) {
           )}
         </>
       )}
-      <button type="button" className="danger" onClick={() => dispatch(tokenActions.remove.create({ id: token.id }))}>
-        Delete token
-      </button>
+      <div className="button-row">
+        <button type="button" onClick={addSelectedToCombat}>
+          Add to combat
+        </button>
+        <button type="button" className="danger" onClick={() => dispatch(tokenActions.remove.create({ id: token.id }))}>
+          Delete token
+        </button>
+      </div>
     </div>
   );
 }

@@ -5,22 +5,41 @@
  * handling and redaction update automatically.
  */
 import type { GameModule, ModuleActions } from '../actions/define';
-import { chatActions } from './chat';
+import { audioActions } from './audio';
+import { chatActions, redactChat } from './chat';
+import { combatActions } from './combat';
+import { deckActions, redactDecks } from './decks';
 import { drawingActions } from './drawings';
+import { fogActions } from './fog';
+import { handoutActions, redactHandouts } from './handouts';
 import { lootActions, redactLoot } from './loot';
+import { macroActions } from './macros';
 import { notesActions, redactNotes } from './notes';
 import { sceneActions } from './scenes';
+import { redactTables, tableActions } from './tables';
+import { templateActions } from './templates';
 import { tokenActions } from './tokens';
 import { userActions } from './users';
+import { lightActions, wallActions } from './vision';
 
 export const gameModules = {
   users: { actions: userActions },
   scenes: { actions: sceneActions },
   tokens: { actions: tokenActions },
   drawings: { actions: drawingActions },
-  chat: { actions: chatActions },
+  fog: { actions: fogActions },
+  chat: { actions: chatActions, redact: redactChat },
+  combat: { actions: combatActions },
   notes: { actions: notesActions, redact: redactNotes },
   loot: { actions: lootActions, redact: redactLoot },
+  handouts: { actions: handoutActions, redact: redactHandouts },
+  macros: { actions: macroActions },
+  audio: { actions: audioActions },
+  tables: { actions: tableActions, redact: redactTables },
+  decks: { actions: deckActions, redact: redactDecks },
+  templates: { actions: templateActions },
+  walls: { actions: wallActions },
+  lights: { actions: lightActions },
 } satisfies Record<string, GameModule>;
 
 type Modules = typeof gameModules;
@@ -28,5 +47,9 @@ type Modules = typeof gameModules;
 /** Union of every action the game understands. */
 export type GameAction = { [K in keyof Modules]: ModuleActions<Modules[K]['actions']> }[keyof Modules];
 
-export { chatActions, drawingActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
+export { audioActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
 export { canDeleteDrawing } from './drawings';
+export { canSeeMessage, chatAudience, pushMessage, validateWhisper } from './chat';
+export { canControlCombatant, compareCombatants } from './combat';
+export { canDeleteTemplate, templateCells, templateContains } from './templates';
+export { canSeeHandout } from './handouts';

@@ -1,10 +1,13 @@
 import { canControlToken, snapTokenPosition, tokenActions, type Point } from '@vtt/shared';
+import { clearSharedRuler, setSharedRuler } from '../board/rulerShare';
 import { defineTool } from './types';
 
 interface DragState {
   start: Point;
   origins: Record<string, Point>;
   moved: boolean;
+  /** Token under the pointer; its movement is measured and shown to everyone. */
+  leadId: string;
 }
 
 /** Click to select (shift to add), drag to move. Dragging empty space pans. Hold Alt to drop without snapping. */
@@ -35,7 +38,7 @@ export const selectTool = defineTool<{ drag: DragState | null }>({
         origins[tid] = { x: token.x, y: token.y };
       }
     }
-    if (Object.keys(origins).length) state.drag = { start: p.world, origins, moved: false };
+    if (origins[id]) state.drag = { start: p.world, origins, moved: false, leadId: id };
   },
 
   onPointerMove(p, ctx, state) {
@@ -48,12 +51,22 @@ export const selectTool = defineTool<{ drag: DragState | null }>({
     const preview: Record<string, Point> = {};
     for (const [id, o] of Object.entries(drag.origins)) preview[id] = { x: o.x + dx, y: o.y + dy };
     ctx.interaction.setDragPreview(preview);
+
+    // Show how far the lead token is moving (center to where it will land).
+    const lead = ctx.game.tokens[drag.leadId];
+    const origin = drag.origins[drag.leadId];
+    if (lead && origin) {
+      const half = (lead.size * ctx.scene.grid.size) / 2;
+      const landing = p.alt ? preview[drag.leadId]! : snapTokenPosition(preview[drag.leadId]!, ctx.scene.grid);
+      setSharedRuler(ctx.scene.id, { x: origin.x + half, y: origin.y + half }, { x: landing.x + half, y: landing.y + half });
+    }
   },
 
   onPointerUp(p, ctx, state) {
     const drag = state.drag;
     state.drag = null;
     if (!drag?.moved) return;
+    clearSharedRuler(ctx.scene.id);
     const dx = p.world.x - drag.start.x;
     const dy = p.world.y - drag.start.y;
     for (const [id, o] of Object.entries(drag.origins)) {
@@ -65,6 +78,7 @@ export const selectTool = defineTool<{ drag: DragState | null }>({
   },
 
   onCancel(ctx, state) {
+    if (state.drag?.moved) clearSharedRuler(ctx.scene.id);
     state.drag = null;
     ctx.interaction.setDragPreview({});
   },
