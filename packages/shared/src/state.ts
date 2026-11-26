@@ -27,7 +27,7 @@ export * from './entities/vision';
 export * from './entities/pf1e';
 
 /** Bump when the shape changes, and add a step in migrations.ts. */
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 // ---------------------------------------------------------------- users
 

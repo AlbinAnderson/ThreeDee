@@ -73,6 +73,17 @@ const migrations: Record<number, Migration> = {
       loot: Object.fromEntries(Object.entries(loot).map(([id, l]) => [id, { ...l, stowed: false }])),
     };
   },
+  // Epic 5: per-skill sheet overrides.
+  7: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 8,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => [id, { ...c, sheet: { skills: {}, ...(c.sheet as object) } }]),
+      ),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {
