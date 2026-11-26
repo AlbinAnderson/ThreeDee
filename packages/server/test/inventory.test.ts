@@ -378,4 +378,23 @@ describe('inventory actions', () => {
     assert.equal(item('Torch').lit, false);
     assert.deepEqual(item('Torch').charges, { current: 50, max: 50 });
   });
+
+  test('stowed loot records cannot be updated by players or deleted by non-GMs', () => {
+    const { room, g, a, b, act } = setup();
+    act(b, lootActions.create.create({ id: 'ring', item: { name: 'Strange Ring', imageUrl: null, quantity: 1, value: '', holderId: null, notes: '' } }));
+    act(g, lootActions.setSecret.create({ id: 'ring', secretNotes: 'Cursed ring' }));
+    act(a, inventoryActions.takeLoot.create({ lootId: 'ring', characterId: 'char', itemId: 'r1', quantity: 1 }));
+    assert.equal(room.currentState.loot.ring!.stowed, true);
+
+    act(b, lootActions.update.create({ id: 'ring', changes: { name: 'Tampered' } }));
+    assert.ok(b.rejects().includes('Item is stowed in an inventory'));
+    assert.equal(room.currentState.loot.ring!.name, 'Strange Ring');
+
+    act(b, lootActions.remove.create({ id: 'ring' }));
+    assert.ok(b.rejects().includes('Only the GM can delete a stowed loot record'));
+    assert.ok(room.currentState.loot.ring);
+
+    act(g, lootActions.remove.create({ id: 'ring' }));
+    assert.equal(room.currentState.loot.ring, undefined);
+  });
 });

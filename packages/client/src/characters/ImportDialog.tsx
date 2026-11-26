@@ -16,6 +16,7 @@ import {
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
+import { syncLinkedToken } from './characterActions';
 import { CharacterSummary } from './CharacterSummary';
 import { useCharactersUi, useImportDialog, type ImportState } from './store';
 
@@ -85,6 +86,7 @@ function ImportDialogBody({ state }: { state: ImportState }) {
       const action = characterActions.reimport.create({ id: target.id, build: state.build, fileName: state.fileName, replaceInventory });
       if (JSON.stringify(action).length > MAX_PAYLOAD_CHARS) return notify('This character is too large to upload');
       if (dispatch(action)) {
+        syncLinkedToken(target);
         notify(`${target.name} updated from ${state.fileName}`, 'info');
         close();
       }

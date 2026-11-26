@@ -42,6 +42,10 @@ interface Actor {
 
 export const useActionsUi = create<{ actorKey: string | null }>(() => ({ actorKey: null }));
 
+export function resetActionsUi() {
+  useActionsUi.setState({ actorKey: null });
+}
+
 /** Characters and combatants the current user can act for; the one whose turn it is first. */
 export function useActors(): Actor[] {
   const state = useGame((s) => s);

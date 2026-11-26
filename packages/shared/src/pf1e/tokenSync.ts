@@ -33,11 +33,12 @@ export function tokenSyncFor(state: Pick<GameState, 'scenes'>, c: Character, tok
   const stats = computeCharacterStats(c);
   const rawUnits = token ? state.scenes[token.sceneId]?.grid.unitsPerCell : undefined;
   const unitsPerCell = rawUnits && rawUnits > 0 ? rawUnits : 5;
-  const max = Math.max(1, stats.hp.total);
+  const max = Math.min(100000, Math.max(1, stats.hp.total));
   const prev = token?.hp;
   let value: number;
   if (prev) value = prev.value >= prev.max ? max : Math.min(prev.value, max);
   else value = Math.min(c.runtime.hp?.current ?? max, max);
+  value = Math.max(-100000, Math.min(100000, value));
   const sync: TokenSync = {
     name: c.name.slice(0, 60),
     hp: { value, max, temp: prev?.temp ?? c.runtime.hp?.temp ?? 0 },

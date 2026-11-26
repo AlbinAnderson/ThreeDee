@@ -7,6 +7,7 @@ import { GameConnection, type ConnectionStatus, type JoinParams } from '../net/c
 import { emitEphemeral } from '../net/ephemeral';
 import { handleRpcResponse, rejectAll, setRpcSender } from '../net/rpc';
 import { resetCharactersUi } from '../characters/store';
+import { resetActionsUi } from '../pf1e/ActionsPanel';
 import { gameStore } from './gameStore';
 import { notify } from './notifications';
 import { useUi } from './uiStore';
@@ -54,6 +55,7 @@ export function leaveRoom() {
   gameStore.reset();
   useUi.getState().resetForRoom();
   resetCharactersUi();
+  resetActionsUi();
   useSession.setState({ connection: null, status: 'idle' });
 }
 
