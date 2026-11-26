@@ -6,6 +6,7 @@ import type { ClientMessage, EphemeralEvent } from '@vtt/shared';
 import { GameConnection, type ConnectionStatus, type JoinParams } from '../net/connection';
 import { emitEphemeral } from '../net/ephemeral';
 import { handleRpcResponse, rejectAll, setRpcSender } from '../net/rpc';
+import { resetCharactersUi } from '../characters/store';
 import { gameStore } from './gameStore';
 import { notify } from './notifications';
 import { useUi } from './uiStore';
@@ -52,6 +53,7 @@ export function leaveRoom() {
   setRpcSender(null);
   gameStore.reset();
   useUi.getState().resetForRoom();
+  resetCharactersUi();
   useSession.setState({ connection: null, status: 'idle' });
 }
 

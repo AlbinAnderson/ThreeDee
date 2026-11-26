@@ -14,6 +14,8 @@ import { PcgenCharacterSchema } from '../../pcgen/schema';
 import { mergeReimport } from '../../pf1e/characters';
 import { CharacterSchema, IdSchema, MAX_CHARACTERS_PER_ROOM, type Character, type GameState, type User } from '../../state';
 
+const MAX_TOKEN_OWNERS = 50;
+
 export function canSeeCharacter(user: User, c: Character): boolean {
   return isGm(user) || c.ownerId === user.id || c.shared;
 }
@@ -52,6 +54,17 @@ export const characterActions = {
       if (!isGm(ctx.user) && c.ownerId !== ctx.user.id) return 'Players can only import their own characters';
       return true;
     },
+    prepare(ctx, { character }) {
+      const now = Date.now();
+      return {
+        character: {
+          ...character,
+          source: { ...character.source, importedBy: ctx.user.id, importedAt: now },
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+    },
     audience: (viewer, { character }) => canSeeCharacter(viewer, character),
     apply(draft, { character }) {
       if (!draft.characters[character.id]) draft.characters[character.id] = character;
@@ -66,10 +79,10 @@ export const characterActions = {
       authorize: (ctx, { id }) => requireManage(ctx, id),
       prepare: (ctx, { id, changes }) => ({ id, changes, full: { ...ctx.state.characters[id]!, ...changes, updatedAt: Date.now() } }),
       audience: (viewer, { id, full }, { state }) => beforeOrAfter(viewer, id, full, state),
-      apply(draft, { id, changes, full }) {
+      apply(draft, { id, changes, full }, meta) {
         if (full) return putFull(draft, id, full);
         const c = draft.characters[id];
-        if (c) Object.assign(c, changes);
+        if (c) Object.assign(c, changes, { updatedAt: meta.ts });
       },
     },
   ),
@@ -93,12 +106,15 @@ export const characterActions = {
         if (ownerId && !ctx.state.users[ownerId]) return 'Unknown player';
         return true;
       },
-      prepare: (ctx, { id, ownerId }) => ({ id, ownerId, full: { ...ctx.state.characters[id]!, ownerId } }),
+      prepare: (ctx, { id, ownerId }) => ({ id, ownerId, full: { ...ctx.state.characters[id]!, ownerId, updatedAt: Date.now() } }),
       audience: (viewer, { id, full }, { state }) => beforeOrAfter(viewer, id, full, state),
-      apply(draft, { id, ownerId, full }) {
+      apply(draft, { id, ownerId, full }, meta) {
         if (full) return putFull(draft, id, full);
         const c = draft.characters[id];
-        if (c) c.ownerId = ownerId;
+        if (c) {
+          c.ownerId = ownerId;
+          c.updatedAt = meta.ts;
+        }
       },
     },
   ),
@@ -127,7 +143,10 @@ export const characterActions = {
       prepare(ctx, { id, tokenId }) {
         const c = ctx.state.characters[id]!;
         const token = tokenId ? ctx.state.tokens[tokenId] : undefined;
-        const grant = token && c.ownerId && isGm(ctx.user) && !token.ownerIds.includes(c.ownerId) ? c.ownerId : null;
+        const grant =
+          token && c.ownerId && isGm(ctx.user) && !token.ownerIds.includes(c.ownerId) && token.ownerIds.length < MAX_TOKEN_OWNERS
+            ? c.ownerId
+            : null;
         return { id, tokenId, grantOwnerId: grant };
       },
       // Everyone gets it: the token (public) may change. The payload holds no private data.
@@ -135,7 +154,9 @@ export const characterActions = {
         if (tokenId) {
           for (const other of Object.values(draft.characters)) if (other.tokenId === tokenId && other.id !== id) other.tokenId = null;
           const token = draft.tokens[tokenId];
-          if (token && grantOwnerId && !token.ownerIds.includes(grantOwnerId)) token.ownerIds.push(grantOwnerId);
+          if (token && grantOwnerId && !token.ownerIds.includes(grantOwnerId) && token.ownerIds.length < MAX_TOKEN_OWNERS) {
+            token.ownerIds.push(grantOwnerId);
+          }
         }
         const c = draft.characters[id];
         if (c) {
@@ -149,19 +170,11 @@ export const characterActions = {
   /** Replace the build with a newer .pcg export, keeping owner, token link, sharing and runtime state. */
   reimport: defineAction(
     'character/reimport',
-    z.object({ id: IdSchema, build: PcgenCharacterSchema, fileName: z.string().max(255), full: CharacterSchema.optional() }),
+    z.object({ id: IdSchema, build: PcgenCharacterSchema, fileName: z.string().max(255) }),
     {
       authorize: (ctx, { id }) => requireManage(ctx, id),
-      prepare: (ctx, { id, build, fileName }) => ({
-        id,
-        build,
-        fileName,
-        full: mergeReimport(ctx.state.characters[id]!, build, { fileName, importedBy: ctx.user.id, now: Date.now() }),
-      }),
       audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
-      apply(draft, { id, build, fileName, full }, meta) {
-        if (full) return putFull(draft, id, full);
-        // Optimistic local apply (the server's `full` replaces it).
+      apply(draft, { id, build, fileName }, meta) {
         const c = draft.characters[id];
         if (c) Object.assign(c, mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts }));
       },

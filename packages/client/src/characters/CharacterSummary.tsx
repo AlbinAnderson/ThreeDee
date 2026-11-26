@@ -6,6 +6,13 @@ const STAT_ORDER = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
 const mod = (score: number) => Math.floor((score - 10) / 2);
 const signed = (n: number) => (n >= 0 ? `+${n}` : String(n));
 
+function formatAppliedTo(appliedTo: string[]): string {
+  const nonEmpty = appliedTo.filter((s) => s.trim().length > 0);
+  if (nonEmpty.length > 0) return ` (${nonEmpty.join(', ')})`;
+  if (appliedTo.length > 1) return ` (×${appliedTo.length})`;
+  return '';
+}
+
 export function CharacterSummary({ build, compact = false }: { build: PcgenCharacter; compact?: boolean }) {
   const stats = useMemo(
     () =>
@@ -19,7 +26,7 @@ export function CharacterSummary({ build, compact = false }: { build: PcgenChara
     // PCGen 6 files say CATEGORY:FEAT; older ones use FEAT: lines. Show both as "Feats".
     const groupName = (category: string) => (category.toUpperCase() === 'FEAT' ? 'Feats' : category);
     for (const a of build.abilities) {
-      const label = `${a.key}${a.appliedTo.length ? ` (${a.appliedTo.join(', ')})` : ''}`;
+      const label = `${a.key}${formatAppliedTo(a.appliedTo)}`;
       const g = groupName(a.category);
       groups.set(g, [...(groups.get(g) ?? []), label]);
     }
@@ -30,7 +37,15 @@ export function CharacterSummary({ build, compact = false }: { build: PcgenChara
     const groups = new Map<string, string[]>();
     for (const s of build.spells.entries) {
       const key = `${s.className ?? 'Spells'}${s.book ? ` · ${s.book}` : ''}`;
-      groups.set(key, [...(groups.get(key) ?? []), `${s.spellName}${s.level !== null ? ` (${s.level})` : ''}`]);
+      const label = [
+        s.spellName,
+        s.level !== null ? `(${s.level})` : '',
+        s.times !== null && s.times !== 1 ? `×${s.times}` : '',
+        s.metamagic.length > 0 ? `[${s.metamagic.join(', ')}]` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      groups.set(key, [...(groups.get(key) ?? []), label]);
     }
     return [...groups.entries()];
   }, [build]);

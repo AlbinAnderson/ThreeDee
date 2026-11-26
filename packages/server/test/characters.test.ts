@@ -5,14 +5,18 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import {
   characterActions,
+  combatActions,
   createCharacterFromPcg,
   createInitialState,
+  createScene,
   createToken,
   CURRENT_SCHEMA_VERSION,
   diffCharacterBuild,
+  mergeReimport,
   migrateState,
   newId,
   parsePcg,
+  sceneActions,
   tokenActions,
   type Character,
   type GameAction,
@@ -26,11 +30,13 @@ const SAMPLE = fs.readFileSync(new URL('./fixtures/sample-pf1e.pcg', import.meta
 
 let dir: string;
 let store: SqliteRoomStore;
+const openRooms: Room[] = [];
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vtt-test-'));
   store = new SqliteRoomStore(path.join(dir, 'vtt.db'));
 });
-afterEach(() => {
+afterEach(async () => {
+  for (const r of openRooms.splice(0)) await r.flush({ autoSnapshot: false });
   store.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -57,6 +63,7 @@ function client(): TestClient {
 
 function setup() {
   const room = new Room('main', createInitialState('scene1'), store, policy);
+  openRooms.push(room);
   const [g, a, b] = [client(), client(), client()];
   room.join(g, gmUser);
   room.join(a, alice);
@@ -137,6 +144,22 @@ describe('characters: token links', () => {
     act(g, tokenActions.remove.create({ id: 'tok' }));
     assert.equal(room.currentState.characters[c2.id]!.tokenId, null, 'deleting the token unlinks it');
   });
+
+  test('deleting a scene unlinks characters attached to tokens on that scene', () => {
+    const { room, g, a, act } = setup();
+    act(g, sceneActions.create.create({ scene: createScene('scene2', 'Dungeon') }));
+    act(g, tokenActions.create.create({ token: createToken({ id: 'tok2', sceneId: 'scene2', x: 0, y: 0, ownerIds: ['alice'] }) }));
+    const c = sampleCharacter('alice', 'alice');
+    act(a, characterActions.import.create({ character: c }));
+    act(a, characterActions.linkToken.create({ id: c.id, tokenId: 'tok2' }));
+    assert.equal(room.currentState.characters[c.id]!.tokenId, 'tok2');
+
+    act(g, combatActions.add.create({ combatant: { id: 'cb2', name: 'Hero', tokenId: 'tok2', initiative: 12, modifier: 0, hidden: false } }));
+
+    act(g, sceneActions.remove.create({ id: 'scene2' }));
+    assert.equal(room.currentState.characters[c.id]!.tokenId, null);
+    assert.equal(room.currentState.combat.combatants.length, 0, "the deleted scene's tokens also leave the turn order");
+  });
 });
 
 describe('characters: re-import', () => {
@@ -162,6 +185,37 @@ describe('characters: re-import', () => {
     assert.equal(after.shared, true);
     assert.equal(after.name, 'Val', 'name customized in the VTT is kept');
     assert.equal(after.source.fileName, 'valeros-lvl3.pcg');
+
+    // Broadcasted reimport action should not carry a duplicate `full` copy of `build`.
+    const broadcast = a.inbox.at(-1);
+    assert.ok(broadcast?.t === 'action' && broadcast.action.type === 'character/reimport');
+    assert.equal('full' in (broadcast.action.payload as Record<string, unknown>), false);
+  });
+
+  test('stamps server-authoritative importedBy on import and preserves custom VTT name on unnamed .pcg re-import', () => {
+    const { room, a, act } = setup();
+    const unnamedBuild = parsePcg('PCGVERSION:2.0\nSTAT:STR|SCORE:14\n');
+    const c = createCharacterFromPcg(unnamedBuild, { id: newId(), ownerId: 'alice', fileName: 'hero.pcg', importedBy: 'gm1', now: 1 });
+    act(a, characterActions.import.create({ character: c }));
+    assert.equal(room.currentState.characters[c.id]!.source.importedBy, 'alice');
+
+    const renamed: Character = { ...room.currentState.characters[c.id]!, name: 'My Custom Name' };
+    const namedBuild = parsePcg('PCGVERSION:2.0\nCHARACTERNAME:Valeros\nSTAT:STR|SCORE:14\n');
+    const merged = mergeReimport(renamed, namedBuild, { fileName: 'hero2.pcg', importedBy: 'alice', now: 2 });
+    assert.equal(merged.name, 'My Custom Name');
+  });
+
+  test('diffCharacterBuild detects spell times, metamagic, legacyFeats, and zero quantities', () => {
+    const base = parsePcg(SAMPLE);
+    const updated = parsePcg(
+      SAMPLE.replace('TIMES:2|CLASS:Wizard', 'TIMES:3|CLASS:Wizard')
+        .replace('QUANTITY:5.0', 'QUANTITY:0.0')
+        .replace('FEAT:Legacy Toughness', 'FEAT:Legacy Toughness\nFEAT:Improved Initiative'),
+    );
+    const diff = diffCharacterBuild(base, updated);
+    assert.ok(diff.some((d) => d.section === 'Spells' && d.text.includes('×2') && d.text.includes('×3')), JSON.stringify(diff));
+    assert.ok(diff.some((d) => d.section === 'Equipment' && d.text.includes('×0')), JSON.stringify(diff));
+    assert.ok(diff.some((d) => d.section === 'Feats & abilities' && d.text.includes('Improved Initiative')), JSON.stringify(diff));
   });
 
   test('only the owner or GM can re-import', () => {

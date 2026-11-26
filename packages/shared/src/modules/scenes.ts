@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { defineAction } from '../actions/define';
 import { requireGm } from '../actions/auth';
 import { GridSettingsSchema, IdSchema, SceneSchema } from '../state';
+import { removeCombatant } from './combat';
+import { unlinkToken } from './pf1e/characters';
 
 /** Fog has its own actions (it's large and painted incrementally). */
 const SceneChangesSchema = SceneSchema.omit({ id: true, grid: true, fog: true }).partial();
@@ -44,7 +46,12 @@ export const sceneActions = {
       delete draft.scenes[id];
       draft.sceneOrder = draft.sceneOrder.filter((s) => s !== id);
       for (const token of Object.values(draft.tokens)) {
-        if (token.sceneId === id) delete draft.tokens[token.id];
+        if (token.sceneId === id) {
+          delete draft.tokens[token.id];
+          // Same cleanup as deleting the token directly.
+          for (const c of [...draft.combat.combatants]) if (c.tokenId === token.id) removeCombatant(draft.combat, c.id);
+          unlinkToken(draft, token.id);
+        }
       }
       if (draft.activeSceneId === id) draft.activeSceneId = draft.sceneOrder[0] ?? null;
     },

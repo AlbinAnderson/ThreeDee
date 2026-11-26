@@ -17,6 +17,10 @@ export function totalLevel(build: PcgenCharacter): number {
   return build.classes.reduce((s, c) => s + c.level, 0);
 }
 
+function fileFallbackName(fileName: string): string {
+  return fileName.replace(/\.pcg$/i, '').trim() || 'Unnamed character';
+}
+
 /** A new character from a freshly parsed .pcg file. */
 export function createCharacterFromPcg(
   build: PcgenCharacter,
@@ -24,7 +28,7 @@ export function createCharacterFromPcg(
 ): Character {
   return {
     id: opts.id,
-    name: buildName(build, opts.fileName.replace(/\.pcg$/i, '') || 'Unnamed character'),
+    name: buildName(build, fileFallbackName(opts.fileName)),
     ownerId: opts.ownerId,
     tokenId: null,
     shared: false,
@@ -46,7 +50,8 @@ export function mergeReimport(
   build: PcgenCharacter,
   opts: { fileName: string; importedBy: string; now: number },
 ): Character {
-  const nameWasImported = existing.name === buildName(existing.build, existing.name);
+  const prevImportedName = buildName(existing.build, fileFallbackName(existing.source.fileName));
+  const nameWasImported = existing.name === prevImportedName;
   return {
     ...existing,
     name: nameWasImported ? buildName(build, existing.name) : existing.name,
@@ -72,7 +77,42 @@ function diffList(section: string, before: Map<string, string>, after: Map<strin
   for (const [key, label] of before) if (!after.has(key)) out.push({ section, kind: 'removed', text: label });
 }
 
-const fmtQty = (name: string, qty: number | null) => (qty && qty !== 1 ? `${name} ×${qty}` : name);
+/** Build a key -> label map that counts duplicate entries instead of silently overwriting them. */
+function countedMap(entries: [string, string][]): Map<string, string> {
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const [key, label] of entries) {
+    const prev = counts.get(key);
+    counts.set(key, { label, count: (prev?.count ?? 0) + 1 });
+  }
+  const out = new Map<string, string>();
+  for (const [key, { label, count }] of counts) out.set(key, count > 1 ? `${label} (×${count})` : label);
+  return out;
+}
+
+const fmtQty = (name: string, qty: number | null) => (qty !== null && qty !== 1 ? `${name} ×${qty}` : name);
+
+function formatAppliedTo(appliedTo: string[]): string {
+  const nonEmpty = appliedTo.filter((s) => s.trim().length > 0);
+  if (nonEmpty.length > 0) return ` (${nonEmpty.join(', ')})`;
+  if (appliedTo.length > 1) return ` (×${appliedTo.length})`;
+  return '';
+}
+
+function equipmentMap(items: PcgenCharacter['equipment']): Map<string, string> {
+  const totals = new Map<string, { qty: number | null; count: number }>();
+  for (const e of items) {
+    const prev = totals.get(e.name);
+    if (!prev) {
+      totals.set(e.name, { qty: e.quantity, count: 1 });
+    } else {
+      const qty = (prev.qty ?? 1) + (e.quantity ?? 1);
+      totals.set(e.name, { qty, count: prev.count + 1 });
+    }
+  }
+  const out = new Map<string, string>();
+  for (const [name, { qty }] of totals) out.set(name, fmtQty(name, qty));
+  return out;
+}
 
 /** Human-readable differences between two builds (for the re-import preview). */
 export function diffCharacterBuild(before: PcgenCharacter, after: PcgenCharacter): BuildChange[] {
@@ -86,11 +126,13 @@ export function diffCharacterBuild(before: PcgenCharacter, after: PcgenCharacter
   scalar('Alignment', before.attributes.alignment, after.attributes.alignment);
   scalar('Deity', before.attributes.deity?.name, after.attributes.deity?.name);
   scalar('Experience', before.experience.xp, after.experience.xp);
+  scalar('Money (gp)', before.money.amount, after.money.amount);
 
+  const classLabel = (c: PcgenCharacter['classes'][number]) => `${c.name}${c.subClass ? ` (${c.subClass})` : ''} ${c.level}`;
   diffList(
     'Classes',
-    new Map(before.classes.map((c) => [c.name, `${c.name} ${c.level}`])),
-    new Map(after.classes.map((c) => [c.name, `${c.name} ${c.level}`])),
+    new Map(before.classes.map((c) => [c.name, classLabel(c)])),
+    new Map(after.classes.map((c) => [c.name, classLabel(c)])),
     out,
   );
   diffList(
@@ -105,24 +147,29 @@ export function diffCharacterBuild(before: PcgenCharacter, after: PcgenCharacter
     new Map(after.skills.filter((s) => s.totalRanks > 0).map((s) => [s.name, `${s.name} ${s.totalRanks} ranks`])),
     out,
   );
-  const abilityKey = (a: PcgenCharacter['abilities'][number]) => `${a.category}|${a.key}|${a.appliedTo.join(',')}`;
-  const abilityLabel = (a: PcgenCharacter['abilities'][number]) =>
-    `${a.key}${a.appliedTo.length ? ` (${a.appliedTo.join(', ')})` : ''} [${a.category}]`;
-  diffList(
-    'Feats & abilities',
-    new Map(before.abilities.map((a) => [abilityKey(a), abilityLabel(a)])),
-    new Map(after.abilities.map((a) => [abilityKey(a), abilityLabel(a)])),
-    out,
-  );
-  diffList(
-    'Equipment',
-    new Map(before.equipment.map((e) => [e.name, fmtQty(e.name, e.quantity)])),
-    new Map(after.equipment.map((e) => [e.name, fmtQty(e.name, e.quantity)])),
-    out,
-  );
-  const spellKey = (s: PcgenCharacter['spells']['entries'][number]) => `${s.className}|${s.book}|${s.spellName}|${s.level}`;
-  const spellLabel = (s: PcgenCharacter['spells']['entries'][number]) =>
-    `${s.spellName}${s.level !== null ? ` (level ${s.level})` : ''}${s.className ? `, ${s.className}` : ''}`;
+  const abilityEntries = (b: PcgenCharacter): [string, string][] => [
+    ...b.abilities.map(
+      (a): [string, string] => [
+        `${a.pool}|${a.category}|${a.key}|${a.appliedTo.join(',')}`,
+        `${a.key}${formatAppliedTo(a.appliedTo)} [${a.category}]`,
+      ],
+    ),
+    ...b.legacyFeats.map((f): [string, string] => [`legacy-feat|${f}`, `${f} [FEAT]`]),
+    ...b.virtualFeats.map((f): [string, string] => [`virtual-feat|${f}`, `${f} [VFEAT]`]),
+  ];
+  diffList('Feats & abilities', countedMap(abilityEntries(before)), countedMap(abilityEntries(after)), out);
+  diffList('Equipment', equipmentMap(before.equipment), equipmentMap(after.equipment), out);
+
+  const spellKey = (s: PcgenCharacter['spells']['entries'][number]) =>
+    `${s.className ?? ''}|${s.book ?? ''}|${s.spellName}|${s.level ?? ''}|${s.metamagic.join(',')}`;
+  const spellLabel = (s: PcgenCharacter['spells']['entries'][number]) => {
+    const parts = [s.spellName];
+    if (s.level !== null) parts.push(`(level ${s.level})`);
+    if (s.times !== null && s.times !== 1) parts.push(`×${s.times}`);
+    if (s.metamagic.length > 0) parts.push(`[${s.metamagic.join(', ')}]`);
+    const ctx = [s.className, s.book].filter(Boolean).join(' · ');
+    return ctx ? `${parts.join(' ')} — ${ctx}` : parts.join(' ');
+  };
   diffList(
     'Spells',
     new Map(before.spells.entries.map((s) => [spellKey(s), spellLabel(s)])),

@@ -35,7 +35,17 @@ export async function openImport(file: File, targetId?: string): Promise<boolean
   }
   try {
     const build = parsePcg(await file.text());
-    useImportDialog.setState({ current: { build, fileName: file.name, targetId } });
+    const looksLikePcg =
+      build.system.pcgVersion !== null ||
+      build.bio.name !== null ||
+      Object.keys(build.attributes.stats).length > 0 ||
+      build.classes.length > 0 ||
+      build.equipment.length > 0;
+    if (!looksLikePcg) {
+      notify(`${file.name} does not look like a PCGen .pcg file`);
+      return false;
+    }
+    useImportDialog.setState({ current: { openId: newId(), build, fileName: file.name, targetId } });
     return true;
   } catch (e) {
     notify(`Could not read ${file.name}: ${(e as Error).message}`);
@@ -46,7 +56,7 @@ export async function openImport(file: File, targetId?: string): Promise<boolean
 export function ImportDialog() {
   const current = useImportDialog((s) => s.current);
   if (!current) return null;
-  return <ImportDialogBody key={`${current.fileName}-${current.targetId ?? 'new'}`} state={current} />;
+  return <ImportDialogBody key={current.openId} state={current} />;
 }
 
 function close() {
@@ -57,13 +67,20 @@ function ImportDialogBody({ state }: { state: ImportState }) {
   const self = useSelf();
   const gm = isGm(self);
   const users = useGame((s) => s.users);
+  const isReimport = !!state.targetId;
   const target = useGame((s) => (state.targetId ? s.characters[state.targetId] : undefined));
+  const targetMissing = isReimport && !target;
   const players = useMemo(() => Object.values(users).filter((u) => u.role !== 'gm'), [users]);
   const [ownerId, setOwnerId] = useState<string | null>(gm ? null : self.id);
   const changes = useMemo(() => (target ? diffCharacterBuild(target.build, state.build) : null), [target, state.build]);
 
   function save() {
-    if (target) {
+    if (isReimport) {
+      if (!target) {
+        notify('That character is no longer available');
+        close();
+        return;
+      }
       const action = characterActions.reimport.create({ id: target.id, build: state.build, fileName: state.fileName });
       if (JSON.stringify(action).length > MAX_PAYLOAD_CHARS) return notify('This character is too large to upload');
       if (dispatch(action)) {
@@ -93,7 +110,7 @@ function ImportDialogBody({ state }: { state: ImportState }) {
       <div className="modal import-modal">
         <div className="inspector-header">
           <strong>
-            {target ? `Re-import ${target.name}` : `Import ${buildName(state.build)}`}
+            {isReimport ? `Re-import ${target?.name ?? 'character'}` : `Import ${buildName(state.build)}`}
             <span className="muted small-text"> · {state.fileName}</span>
           </strong>
           <button type="button" className="icon-button" onClick={close} title="Cancel">
@@ -101,7 +118,9 @@ function ImportDialogBody({ state }: { state: ImportState }) {
           </button>
         </div>
 
-        {target ? (
+        {targetMissing ? (
+          <p className="muted">This character was deleted or is no longer accessible.</p>
+        ) : isReimport ? (
           <ReimportChanges changes={changes ?? []} />
         ) : (
           <div className="field">
@@ -121,14 +140,14 @@ function ImportDialogBody({ state }: { state: ImportState }) {
           </div>
         )}
 
-        <CharacterSummary build={state.build} compact={!!target} />
+        {!targetMissing && <CharacterSummary build={state.build} compact={isReimport} />}
 
         <div className="button-row modal-actions">
           <button type="button" onClick={close}>
             Cancel
           </button>
-          <button type="button" className="primary" onClick={save}>
-            {target ? 'Apply update' : 'Import character'}
+          <button type="button" className="primary" onClick={save} disabled={targetMissing}>
+            {isReimport ? 'Apply update' : 'Import character'}
           </button>
         </div>
       </div>

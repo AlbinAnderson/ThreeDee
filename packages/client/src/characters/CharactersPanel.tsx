@@ -62,6 +62,8 @@ export function CharactersPanel() {
     e.preventDefault();
     setDragging(false);
     const file = [...e.dataTransfer.files].find((f) => /\.pcg$/i.test(f.name)) ?? e.dataTransfer.files[0];
+    // Always a new import: re-importing over a character is an explicit choice (its Re-import button),
+    // so dropping a different character's file while one is open can't offer to overwrite it.
     if (file) void openImport(file);
   }
 
@@ -74,7 +76,9 @@ export function CharactersPanel() {
           setDragging(true);
         }
       }}
-      onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+      }}
       onDrop={onDrop}
     >
       {selected ? (
@@ -120,8 +124,11 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
   const users = useGame((s) => s.users);
   const tokens = useGame((s) => s.tokens);
   const scenes = useGame((s) => s.scenes);
+  const activeSceneId = useGame((s) => s.activeSceneId);
+  const viewedSceneId = useUi((s) => s.viewedSceneId);
   const manage = canManageCharacter(self, c);
   const players = useMemo(() => Object.values(users).filter((u) => u.role !== 'gm'), [users]);
+  const ownerUser = c.ownerId ? users[c.ownerId] : undefined;
   const linkable = useMemo(
     () =>
       Object.values(tokens)
@@ -130,6 +137,17 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
     [tokens, self, c.tokenId],
   );
   const linked = c.tokenId ? tokens[c.tokenId] : undefined;
+  const currentSceneId = gm ? (viewedSceneId ?? activeSceneId) : activeSceneId;
+  const linkedOnOtherScene = !!linked && linked.sceneId !== currentSceneId;
+
+  function selectLinkedToken() {
+    if (!linked) return;
+    if (linked.sceneId !== currentSceneId) {
+      if (!gm) return;
+      useUi.getState().setViewedScene(linked.sceneId);
+    }
+    useUi.getState().setSelection([linked.id]);
+  }
 
   return (
     <section>
@@ -145,6 +163,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
             {gm ? (
               <select value={c.ownerId ?? ''} onChange={(e) => dispatch(characterActions.setOwner.create({ id: c.id, ownerId: e.target.value || null }))}>
                 <option value="">GM (NPC)</option>
+                {ownerUser && ownerUser.role === 'gm' && <option value={ownerUser.id}>{ownerUser.name} (GM)</option>}
                 {players.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}
@@ -167,8 +186,14 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
             </select>
           </div>
           {linked && (
-            <button type="button" className="small" onClick={() => useUi.getState().setSelection([linked.id])}>
-              Select token on map
+            <button
+              type="button"
+              className="small"
+              disabled={!gm && linkedOnOtherScene}
+              title={!gm && linkedOnOtherScene ? `Token is on ${scenes[linked.sceneId]?.name ?? 'another scene'}` : undefined}
+              onClick={selectLinkedToken}
+            >
+              {gm && linkedOnOtherScene ? `Jump to token (${scenes[linked.sceneId]?.name ?? 'other scene'})` : 'Select token on map'}
             </button>
           )}
           <CheckboxField
@@ -181,7 +206,11 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
             <button
               type="button"
               className="small danger"
-              onClick={() => confirm(`Delete ${c.name}? Its token stays on the map.`) && dispatch(characterActions.remove.create({ id: c.id }))}
+              onClick={() => {
+                if (confirm(`Delete ${c.name}? Its token stays on the map.`) && dispatch(characterActions.remove.create({ id: c.id }))) {
+                  onBack();
+                }
+              }}
             >
               Delete
             </button>

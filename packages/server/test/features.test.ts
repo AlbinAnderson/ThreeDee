@@ -29,11 +29,14 @@ import { Room, type Client } from '../src/rooms/Room';
 
 let dir: string;
 let store: SqliteRoomStore;
+/** Rooms are flushed before the store closes, so no debounced save fires afterwards. */
+const openRooms: Room[] = [];
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vtt-test-'));
   store = new SqliteRoomStore(path.join(dir, 'vtt.db'));
 });
-afterEach(() => {
+afterEach(async () => {
+  for (const r of openRooms.splice(0)) await r.flush({ autoSnapshot: false });
   store.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -62,6 +65,7 @@ function client(): TestClient {
 function setup() {
   const state: GameState = createInitialState('scene1');
   const room = new Room('main', state, store, policy);
+  openRooms.push(room);
   const [g, a, b] = [client(), client(), client()];
   room.join(g, gmUser);
   room.join(a, alice);

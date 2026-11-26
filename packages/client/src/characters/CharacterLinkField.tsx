@@ -17,8 +17,12 @@ export function CharacterLinkField({ token }: { token: Token }) {
   if (!options.length && !linked) return null;
 
   function change(characterId: string) {
-    if (linked && linked.id !== characterId) dispatch(characterActions.linkToken.create({ id: linked.id, tokenId: null }));
-    if (characterId) dispatch(characterActions.linkToken.create({ id: characterId, tokenId: token.id }));
+    if (characterId) {
+      // linkToken atomically unlinks any previous character on this token.
+      dispatch(characterActions.linkToken.create({ id: characterId, tokenId: token.id }));
+    } else if (linked) {
+      dispatch(characterActions.linkToken.create({ id: linked.id, tokenId: null }));
+    }
   }
 
   return (
