@@ -10,3 +10,4 @@ export * from './actions/define';
 export * from './actions/auth';
 export * from './actions/registry';
 export * from './modules';
+export * from './pcgen';

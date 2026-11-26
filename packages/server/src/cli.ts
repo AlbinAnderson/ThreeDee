@@ -6,10 +6,11 @@
  *   npm run -s vtt -- backup [file]            consistent copy of the database (safe while running)
  *   npm run -s vtt -- export <room> [file]     room state as JSON
  *   npm run -s vtt -- import <file> <room>     load a JSON export into a room (stop the server first!)
+ *   npm run -s vtt -- pcgen <file.pcg> [out]   convert a PCGen .pcg file to JSON (stdout if no out file)
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { migrateState, RoomIdSchema } from '@vtt/shared';
+import { migrateState, parsePcgToJson, RoomIdSchema } from '@vtt/shared';
 import { paths } from './config';
 import { SqliteRoomStore } from './persistence/SqliteRoomStore';
 
@@ -34,6 +35,27 @@ function roomArg(value: string | undefined): string {
 }
 
 const [command, ...args] = process.argv.slice(2);
+
+if (command === 'pcgen') {
+  try {
+    if (!args[0]) usage();
+    const inputPath = resolveUserPath(args[0]);
+    const content = fs.readFileSync(inputPath, 'utf8');
+    const json = parsePcgToJson(content, true);
+    if (args[1]) {
+      const outPath = resolveUserPath(args[1]);
+      fs.writeFileSync(outPath, `${json}\n`);
+      console.log(`Converted ${inputPath} -> ${outPath}`);
+    } else {
+      console.log(json);
+    }
+  } catch (e) {
+    console.error((e as Error).message);
+    process.exitCode = 1;
+  }
+  process.exit(process.exitCode ?? 0);
+}
+
 const store = new SqliteRoomStore(paths.db);
 
 try {
