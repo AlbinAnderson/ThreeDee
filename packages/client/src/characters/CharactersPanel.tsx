@@ -127,6 +127,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
   const self = useSelf();
   const manage = canManageCharacter(self, c);
   const [tab, setTab] = useState<CharacterTab>('sheet');
+  const activeTab: CharacterTab = !manage && (tab === 'settings' || tab === 'manage') ? 'sheet' : tab;
   const tabs: [CharacterTab, string][] = [
     ['sheet', 'Sheet'],
     ['imported', 'Imported'],
@@ -141,15 +142,15 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
       <h2 className="character-title">{c.name}</h2>
       <div className="segmented sheet-tabs">
         {tabs.map(([id, label]) => (
-          <button key={id} type="button" className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
+          <button key={id} type="button" className={activeTab === id ? 'active' : ''} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}
       </div>
-      {tab === 'sheet' && <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} />}
-      {tab === 'imported' && <CharacterSummary build={c.build} />}
-      {tab === 'settings' && manage && <CharacterSettings character={c} />}
-      {tab === 'manage' && manage && <ManageCharacter character={c} onBack={onBack} />}
+      {activeTab === 'sheet' && <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} />}
+      {activeTab === 'imported' && <CharacterSummary build={c.build} />}
+      {activeTab === 'settings' && manage && <CharacterSettings character={c} />}
+      {activeTab === 'manage' && manage && <ManageCharacter character={c} onBack={onBack} />}
     </section>
   );
 }

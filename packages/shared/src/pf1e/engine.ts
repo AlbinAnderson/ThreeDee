@@ -71,11 +71,16 @@ function abilityNames(c: Character): string[] {
   return [...c.build.abilities.map((a) => a.key), ...c.build.legacyFeats, ...c.build.virtualFeats];
 }
 
-/** Armor and shields worn directly in the active equipment set (not stowed in a container). */
+/** Equip-set locations that are not actively worn/wielded armor or shield slots. */
+const NON_WORN_LOCATIONS = /^(carried|not carried|feet|hands|belt|head|headband|eyes|neck|shoulders|ring|wrists|slotless)$/i;
+
+/** Armor and shields worn directly in the active equipment set (not stowed or carried loosely). */
 function wornArmor(c: Character): { name: string; armor: ArmorData; enhancement: number }[] {
   const set = c.build.equipmentSets.find((s) => s.id === c.build.activeEquipmentSetId) ?? c.build.equipmentSets[0];
   const names = set
-    ? set.items.filter((i) => i.parentId === set.id && i.itemName).map((i) => i.itemName!)
+    ? set.items
+        .filter((i) => i.parentId === set.id && i.itemName && !NON_WORN_LOCATIONS.test(i.location.trim()))
+        .map((i) => i.itemName!)
     : c.build.equipment.map((e) => e.name);
   return names.flatMap((name) => {
     const hit = lookupArmor(name);
@@ -110,8 +115,10 @@ export function computeCharacterStats(c: Character): CharacterStats {
     if (runtime.abilityTemp[key]) mods.push({ value: runtime.abilityTemp[key]!, type: 'untyped', source: 'Temporary' });
     if (runtime.abilityDrain[key]) mods.push({ value: -runtime.abilityDrain[key]!, type: 'untyped', source: 'Drain' });
     const line = sumModifiers(mods);
-    const damage = runtime.abilityDamage[key] ?? 0;
-    abilities[key] = { key, score: line.total, damage, mod: Math.floor((line.total - damage - 10) / 2), line };
+    const damage = Math.max(0, runtime.abilityDamage[key] ?? 0);
+    // PF1e: every 2 points of ability damage apply a -1 penalty without altering the score.
+    const abilityMod = Math.floor((line.total - 10) / 2) - Math.floor(damage / 2);
+    abilities[key] = { key, score: line.total, damage, mod: abilityMod, line };
   }
   const mod = (k: StatKey) => abilities[k].mod;
 
@@ -129,10 +136,30 @@ export function computeCharacterStats(c: Character): CharacterStats {
     classes.map((k) => ({ value: k.chassis ? babFor(k.chassis.bab, k.level) : 0, type: 'base' as const, source: `${k.name} ${k.level}` })),
   );
 
-  // Feat/trait effects and sheet misc values, collected per target.
+  // Determine worn armor up front so light-armor-only feats (e.g. Fleet) know whether they apply.
+  const size: SizeName = sheet.size ?? race?.size ?? 'Medium';
+  const worn = wornArmor(c);
+  const armorItem = worn
+    .filter((w) => w.armor.kind === 'armor')
+    .sort((a, b) => b.armor.bonus + b.enhancement - (a.armor.bonus + a.enhancement))[0];
+  const shieldItem = worn
+    .filter((w) => w.armor.kind === 'shield')
+    .sort((a, b) => b.armor.bonus + b.enhancement - (a.armor.bonus + a.enhancement))[0];
+  const heavyArmor =
+    sheet.armorBonus !== 0 && !!armorItem && (armorItem.armor.category === 'medium' || armorItem.armor.category === 'heavy');
+
+  // Feat/trait effects and sheet misc values, collected per target (dedup non-stackable feats).
   const extra: Record<FeatTarget, Modifier[]> = { hp: [], initiative: [], fort: [], ref: [], will: [], ac: [], cmd: [], speed: [] };
+  const appliedFeats = new Set<string>();
   for (const n of names) {
-    for (const e of lookupFeatEffects(n) ?? []) {
+    const fk = featKey(n);
+    const effects = lookupFeatEffects(n);
+    if (!effects) continue;
+    const stackable = effects.some((e) => e.stackable);
+    if (!stackable && appliedFeats.has(fk)) continue;
+    appliedFeats.add(fk);
+    for (const e of effects) {
+      if (e.lightArmorOnly && heavyArmor) continue;
       extra[e.target].push({ value: typeof e.value === 'function' ? e.value(hitDice) : e.value, type: e.type, source: n.replace(/^trait\s*~\s*/i, '') });
     }
   }
@@ -157,24 +184,33 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const rolled = build.classLevels.reduce((s, l) => s + (l.hitPoints ?? 0), 0);
   const missingRolls = build.classLevels.filter((l) => l.hitPoints === null).length;
   if (missingRolls) warnings.push(`${missingRolls} level(s) have no HP roll in the .pcg file; add them as Misc HP.`);
+  // PF1e: each hit die grants at least 1 HP even with a negative Con modifier.
+  const conMod = mod('CON');
+  let conHpTotal = conMod * hitDice;
+  if (conMod < 0 && build.classLevels.length > 0) {
+    let adjusted = 0;
+    let rolledCount = 0;
+    for (const l of build.classLevels) {
+      if (l.hitPoints !== null) {
+        adjusted += Math.max(1, l.hitPoints + conMod) - l.hitPoints;
+        rolledCount++;
+      }
+    }
+    conHpTotal = adjusted + conMod * Math.max(0, hitDice - rolledCount);
+  }
   const hp = sumModifiers([
     { value: rolled, type: 'base', source: 'Rolled hit dice' },
-    { value: mod('CON') * hitDice, type: 'ability', source: `Con × ${hitDice} HD` },
+    { value: conHpTotal, type: 'ability', source: `Con × ${hitDice} HD` },
     ...extra.hp,
     ...misc('hp', 'Misc (favored class etc.)'),
   ]);
 
   // ---------------------------------------------------------------- size, armor, AC
-  const size: SizeName = sheet.size ?? race?.size ?? 'Medium';
-  const worn = wornArmor(c);
-  const armorItem = worn.find((w) => w.armor.kind === 'armor');
-  const shieldItem = worn.find((w) => w.armor.kind === 'shield');
   const armorBonus = sheet.armorBonus ?? (armorItem ? armorItem.armor.bonus + armorItem.enhancement : 0);
   const shieldBonus = sheet.shieldBonus ?? (shieldItem ? shieldItem.armor.bonus + shieldItem.enhancement : 0);
   const caps = worn.map((w) => w.armor.maxDex).filter((m): m is number => m !== null);
   const maxDex = sheet.maxDex ?? (caps.length ? Math.min(...caps) : null);
   const dexToAc = maxDex === null ? mod('DEX') : Math.min(mod('DEX'), maxDex);
-  const heavyArmor = !!armorItem && (armorItem.armor.category === 'medium' || armorItem.armor.category === 'heavy');
 
   const acDex: Modifier = { value: dexToAc, type: 'ability', source: maxDex !== null && mod('DEX') > maxDex ? `Dex (max ${maxDex})` : 'Dex' };
   const acArmor: Modifier = { value: armorBonus, type: 'armor', source: sheet.armorBonus !== null ? 'Armor (sheet)' : (armorItem?.name ?? 'Armor') };
@@ -193,12 +229,15 @@ export function computeCharacterStats(c: Character): CharacterStats {
   };
 
   // ---------------------------------------------------------------- CMB / CMD / initiative / speed
-  const agile = has(FEAT_FLAGS.agileManeuvers) || SIZE_MOD[size] >= SIZE_MOD.Tiny;
-  const cmbAbility: StatKey = agile && mod('DEX') > mod('STR') ? 'DEX' : 'STR';
+  const isTinyOrSmaller = SIZE_MOD[size] >= SIZE_MOD.Tiny;
+  const hasAgile = has(FEAT_FLAGS.agileManeuvers);
+  const useDexCmb = isTinyOrSmaller || (hasAgile && mod('DEX') > mod('STR'));
+  const cmbAbility: StatKey = useDexCmb ? 'DEX' : 'STR';
+  const cmbSource = !useDexCmb ? 'Str' : isTinyOrSmaller ? `Dex (${size})` : 'Dex (Agile Maneuvers)';
   const specialSize: Modifier = { value: SPECIAL_SIZE_MOD[size], type: 'size', source: size };
   const cmb = sumModifiers([
     { value: bab.total, type: 'base', source: 'BAB' },
-    { value: mod(cmbAbility), type: 'ability', source: cmbAbility === 'DEX' ? 'Dex (Agile Maneuvers)' : 'Str' },
+    { value: mod(cmbAbility), type: 'ability', source: cmbSource },
     specialSize,
     ...misc('cmb'),
   ]);
@@ -217,8 +256,14 @@ export function computeCharacterStats(c: Character): CharacterStats {
 
   const baseSpeed = sheet.speed ?? race?.speed ?? 30;
   const armorSlows = heavyArmor && !race?.steady && sheet.speed === null;
+  // PF1e Table: Armor and Shields — 20->15, 30->20, 40->30, 50->35, 60->40.
+  const reducedSpeed = baseSpeed <= 0 ? 0 : Math.max(5, Math.ceil((baseSpeed * 2) / 3 / 5) * 5);
   const speed = sumModifiers([
-    { value: armorSlows ? (baseSpeed >= 30 ? Math.round((baseSpeed * 2) / 3 / 5) * 5 : baseSpeed - 5) : baseSpeed, type: 'base', source: armorSlows ? `Base ${baseSpeed} ft, in ${armorItem!.armor.category} armor` : 'Base' },
+    {
+      value: armorSlows ? reducedSpeed : baseSpeed,
+      type: 'base',
+      source: armorSlows ? `Base ${baseSpeed} ft, in ${armorItem!.armor.category} armor` : 'Base',
+    },
     ...extra.speed,
   ]);
 

@@ -13,10 +13,13 @@ import {
   createCharacterFromPcg,
   createInitialState,
   createToken,
+  CURRENT_SCHEMA_VERSION,
+  migrateState,
   newId,
   parsePcg,
   sumModifiers,
   tokenActions,
+  tokenSyncFor,
   type Character,
   type GameAction,
   type User,
@@ -132,15 +135,92 @@ describe('PF1e stat engine', () => {
     assert.equal(baseSaveFor(false, 10, false), 3);
   });
 
-  test('ability damage lowers the modifier, drain and temp change the score', () => {
-    const c = character();
+  test('ability damage applies -1 per 2 damage without altering score; drain and temp change the score', () => {
+    const c = character(SAMPLE.replace('STAT:STR|SCORE:16', 'STAT:STR|SCORE:15')); // 15 + 1 lvl = 16 (+3)
+    c.runtime.abilityDamage = { STR: 1 };
+    assert.equal(computeCharacterStats(c).abilities.STR.score, 16);
+    assert.equal(computeCharacterStats(c).abilities.STR.mod, 3, '1 point of damage on even score does not penalize mod');
+
+    c.runtime.abilityDamage = { STR: 3 };
+    assert.equal(computeCharacterStats(c).abilities.STR.mod, 2, '3 points of damage = -1 penalty');
+
     c.runtime.abilityDamage = { STR: 2 };
     c.runtime.abilityTemp = { DEX: 4 };
     const s = computeCharacterStats(c);
-    assert.equal(s.abilities.STR.score, 17);
+    assert.equal(s.abilities.STR.score, 16);
     assert.equal(s.abilities.STR.mod, 2);
     assert.equal(s.abilities.DEX.score, 19);
     assert.equal(s.initiative.total, 6);
+  });
+
+  test('carried/not-carried armor and non-armor leather items are ignored; Fleet stops in heavy armor; Tiny CMB & min 1 HP/HD', () => {
+    const s = computeCharacterStats(
+      character(
+        withLines(
+          'ABILITY:FEAT|TYPE:NORMAL|CATEGORY:FEAT|KEY:Fleet',
+          'ABILITY:FEAT|TYPE:NORMAL|CATEGORY:FEAT|KEY:Toughness',
+          'FEAT:Toughness',
+          'EQUIPNAME:Full Plate|OUTPUTORDER:4|COST:1500|WT:50|QUANTITY:1.0',
+          'EQUIPNAME:Leather Boots|OUTPUTORDER:5|COST:1|WT:1|QUANTITY:1.0',
+          'EQUIPSET:Carried|ID:0.1.3|VALUE:Full Plate|QUANTITY:1.0',
+          'EQUIPSET:Feet|ID:0.1.4|VALUE:Leather Boots|QUANTITY:1.0',
+        ),
+      ),
+    );
+    assert.deepEqual(s.armor.worn, []);
+    assert.equal(s.ac.normal.total, 12);
+    assert.equal(s.speed.total, 35, 'Fleet applies without medium/heavy armor');
+    assert.equal(s.hp.total, 29 + 3, 'duplicate Toughness lines are not double-counted');
+
+    const armored = computeCharacterStats(
+      character(
+        withLines(
+          'ABILITY:FEAT|TYPE:NORMAL|CATEGORY:FEAT|KEY:Fleet',
+          'EQUIPNAME:Full Plate|OUTPUTORDER:4|COST:1500|WT:50|QUANTITY:1.0',
+          'EQUIPSET:Armor|ID:0.1.3|VALUE:Full Plate|QUANTITY:1.0',
+        ),
+      ),
+    );
+    assert.equal(armored.speed.total, 20, 'Fleet does not apply in heavy armor');
+
+    const android = computeCharacterStats(character(SAMPLE.replace('RACE:Human', 'RACE:Android')));
+    assert.equal(android.senses.darkvision, 60);
+    assert.equal(android.senses.lowLight, true);
+
+    const tiny = computeCharacterStats(character(SAMPLE.replace('STAT:DEX|SCORE:15', 'STAT:DEX|SCORE:8'), { size: 'Tiny' }));
+    assert.equal(tiny.cmb.total, 2 - 1 - 2, 'Tiny creature always uses Dex for CMB even when Str > Dex');
+
+    const frail = computeCharacterStats(
+      character(
+        SAMPLE.replace('STAT:CON|SCORE:14', 'STAT:CON|SCORE:4')
+          .replace('HITPOINTS:10', 'HITPOINTS:1')
+          .replace('HITPOINTS:7', 'HITPOINTS:1')
+          .replace('HITPOINTS:6', 'HITPOINTS:1'),
+      ),
+    );
+    assert.equal(frail.hp.total, 3, 'each rolled level grants at least 1 HP');
+  });
+
+  test('tokenSyncFor clamps long names and high darkvision to TokenSchema bounds; v4->v5 migration works', () => {
+    const state = createInitialState('scene1');
+    state.scenes.scene1!.grid.unitsPerCell = 1;
+    const c = character(SAMPLE, { darkvision: 600 });
+    c.name = 'A'.repeat(80);
+    const tok = createToken({ id: 'tok', sceneId: 'scene1', x: 0, y: 0 });
+    const sync = tokenSyncFor(state, c, tok);
+    assert.equal(sync.name.length, 60);
+    assert.equal(sync.darkvision, 200);
+
+    const v5 = createInitialState('s');
+    const { sheet: _s, runtime: _r, ...cRest } = c;
+    const migrated = migrateState({
+      ...v5,
+      schemaVersion: 4,
+      characters: { [c.id]: { ...cRest, runtime: { hp: null, uses: {} } } },
+    });
+    assert.equal(migrated.schemaVersion, CURRENT_SCHEMA_VERSION);
+    assert.equal(migrated.characters[c.id]!.sheet.racialChoice, null);
+    assert.deepEqual(migrated.characters[c.id]!.runtime.abilityDamage, {});
   });
 });
 

@@ -181,6 +181,7 @@ const RACES: Record<string, RaceData> = {
   halfling: r({ DEX: 2, CHA: 2, STR: -2 }, 'Small', 20, 0, false),
   // Featured & uncommon
   aasimar: r({ WIS: 2, CHA: 2 }, 'Medium', 30, 60, false),
+  android: r({ DEX: 2, INT: 2, CHA: -2 }, 'Medium', 30, 60, true),
   catfolk: r({ DEX: 2, CHA: 2, WIS: -2 }, 'Medium', 30, 0, true),
   dhampir: r({ DEX: 2, CHA: 2, CON: -2 }, 'Medium', 30, 60, true),
   drow: r({ DEX: 2, CHA: 2, CON: -2 }, 'Medium', 30, 120, false),
@@ -203,7 +204,7 @@ const RACES: Record<string, RaceData> = {
   grippli: r({ DEX: 2, WIS: 2, STR: -2 }, 'Small', 30, 60, false),
   nagaji: r({ STR: 2, CHA: 2, INT: -2 }, 'Medium', 30, 0, true),
   samsaran: r({ INT: 2, WIS: 2, CON: -2 }, 'Medium', 30, 0, true),
-  strix: r({ DEX: 2, CHA: -2 }, 'Medium', 30, 60, false),
+  strix: r({ DEX: 2, CHA: -2 }, 'Medium', 30, 60, true),
   suli: r({ STR: 2, CHA: 2, INT: -2 }, 'Medium', 30, 0, true),
   svirfneblin: r({ DEX: 2, WIS: 2, STR: -2, CHA: -4 }, 'Small', 20, 120, true),
   vanara: r({ DEX: 2, WIS: 2, CHA: -2 }, 'Medium', 30, 0, true),
@@ -271,10 +272,23 @@ export const ARMOR_TABLE: ArmorData[] = [
   a('Buckler', 'shield', 'shield', 1, null, -1),
 ].sort((x, y) => y.name.length - x.name.length);
 
+const NON_ARMOR_GEAR = /\b(boots?|gloves?|belt|waterskin|cloak|cape|bag|pouch|satchel|whip|saddle|harness|backpack|pack|quiver|scabbard|hat|cap|mask|coat|outfit|shirt)\b/i;
+
+function matchesArmorName(itemName: string, armorName: string): boolean {
+  const escaped = armorName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[\s-]+/g, '[\\s-]+');
+  if (new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(itemName)) return true;
+  // Fall back to normalized match only for multi-word armor names (e.g. "Chainmail" vs "Chain mail").
+  return armorName.includes(' ') && normalizeName(itemName).includes(normalizeName(armorName));
+}
+
 /** Match an item name like "+1 Chain Shirt (Mithral)" to armor data and its enhancement bonus. */
 export function lookupArmor(itemName: string): { armor: ArmorData; enhancement: number } | undefined {
-  const n = normalizeName(itemName);
-  const armor = ARMOR_TABLE.find((x) => n.includes(normalizeName(x.name)));
+  const armor = ARMOR_TABLE.find((x) => {
+    if (!matchesArmorName(itemName, x.name)) return false;
+    // Bare material names ("Leather", "Hide", "Padded") shouldn't match "Leather Boots" or "Hide Shirt".
+    if (!x.name.includes(' ') && !x.name.includes('-') && NON_ARMOR_GEAR.test(itemName)) return false;
+    return true;
+  });
   if (!armor) return undefined;
   const enh = /\+\s*(\d)/.exec(itemName);
   return { armor, enhancement: enh ? Number(enh[1]) : 0 };
@@ -289,6 +303,10 @@ export interface FeatEffect {
   /** Number, or a function of total hit dice. */
   value: number | ((hitDice: number) => number);
   type: BonusType;
+  /** Only applies when not wearing medium or heavy armor (e.g. Fleet). */
+  lightArmorOnly?: boolean;
+  /** Can be taken multiple times (e.g. Fleet). */
+  stackable?: boolean;
 }
 
 /** Feats/traits with flat, always-on effects on the core sheet numbers. */
@@ -302,7 +320,7 @@ const FEAT_EFFECTS: Record<string, FeatEffect[]> = {
     { target: 'ac', value: 1, type: 'dodge' },
     { target: 'cmd', value: 1, type: 'dodge' },
   ],
-  fleet: [{ target: 'speed', value: 5, type: 'untyped' }],
+  fleet: [{ target: 'speed', value: 5, type: 'untyped', lightArmorOnly: true, stackable: true }],
   // Traits
   reactionary: [{ target: 'initiative', value: 2, type: 'trait' }],
   warriorofold: [{ target: 'initiative', value: 2, type: 'trait' }],

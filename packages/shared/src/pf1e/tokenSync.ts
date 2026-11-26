@@ -19,18 +19,19 @@ export interface TokenSync {
  * the same thing); syncing only updates max HP, keeping a full-health token
  * at full when max HP grows.
  */
-export function tokenSyncFor(state: GameState, c: Character, token: Token | undefined): TokenSync {
+export function tokenSyncFor(state: Pick<GameState, 'scenes'>, c: Character, token: Token | undefined): TokenSync {
   const stats = computeCharacterStats(c);
-  const unitsPerCell = (token && state.scenes[token.sceneId]?.grid.unitsPerCell) || 5;
+  const rawUnits = token ? state.scenes[token.sceneId]?.grid.unitsPerCell : undefined;
+  const unitsPerCell = rawUnits && rawUnits > 0 ? rawUnits : 5;
   const max = Math.max(1, stats.hp.total);
   const prev = token?.hp;
   let value: number;
   if (prev) value = prev.value >= prev.max ? max : Math.min(prev.value, max);
   else value = Math.min(c.runtime.hp?.current ?? max, max);
   return {
-    name: c.name,
+    name: c.name.slice(0, 60),
     hp: { value, max, temp: prev?.temp ?? c.runtime.hp?.temp ?? 0 },
-    darkvision: Math.round(stats.senses.darkvision / unitsPerCell),
+    darkvision: Math.min(200, Math.max(0, Math.round(stats.senses.darkvision / unitsPerCell))),
     size: SIZE_CELLS[stats.size],
   };
 }

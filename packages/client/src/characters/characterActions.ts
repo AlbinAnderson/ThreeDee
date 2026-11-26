@@ -3,6 +3,7 @@
  * the linked token in sync (#17).
  */
 import {
+  canControlCombatant,
   canControlToken,
   characterSheetActions,
   combatActions,
@@ -29,8 +30,9 @@ export function rollCheck(c: Character, label: string, bonus: number) {
  */
 export function rollInitiative(c: Character, bonus: number) {
   const state = useGameStore.getState().view;
+  const self = getSelf();
   const combatant = c.tokenId ? state?.combat.combatants.find((x) => x.tokenId === c.tokenId) : undefined;
-  if (!combatant) return rollCheck(c, 'Initiative', bonus);
+  if (!combatant || !state || !self || !canControlCombatant(state, self, combatant)) return rollCheck(c, 'Initiative', bonus);
   if (combatant.modifier !== bonus) dispatch(combatActions.update.create({ id: combatant.id, changes: { modifier: bonus } }));
   return dispatch(combatActions.rollInitiative.create({ ids: [combatant.id] }));
 }
@@ -62,7 +64,10 @@ export function updateRuntime(c: Character, changes: Partial<CharacterRuntime>) 
 export function setHp(c: Character, next: { current: number; temp: number; nonlethal: number }, maxHp: number) {
   const token = linkedToken(c);
   if (token) {
-    dispatch(tokenActions.update.create({ id: token.id, changes: { hp: { value: next.current, max: token.hp?.max ?? maxHp, temp: next.temp } } }));
+    const tokenHpChanged = !token.hp || token.hp.value !== next.current || token.hp.temp !== next.temp;
+    if (tokenHpChanged) {
+      dispatch(tokenActions.update.create({ id: token.id, changes: { hp: { value: next.current, max: token.hp?.max ?? maxHp, temp: next.temp } } }));
+    }
     if ((c.runtime.hp?.nonlethal ?? 0) !== next.nonlethal) {
       dispatch(characterSheetActions.updateRuntime.create({ id: c.id, changes: { hp: { ...next } } }));
     }

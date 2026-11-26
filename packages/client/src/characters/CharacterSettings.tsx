@@ -151,7 +151,7 @@ function ClassChassisEditor({ character: c, className }: { character: Character;
         <SelectField
           label="Hit die"
           value={String(current.hd)}
-          options={['6', '8', '10', '12'].map((v) => ({ value: v, label: `d${v}` }))}
+          options={['4', '6', '8', '10', '12'].map((v) => ({ value: v, label: `d${v}` }))}
           onCommit={(v) => set({ hd: Number(v) })}
         />
         <SelectField

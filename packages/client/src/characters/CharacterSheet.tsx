@@ -1,5 +1,5 @@
 /** The core PF1e character sheet: live numbers with breakdowns and one-click rolls. */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   canManageCharacter,
   characterHp,
@@ -9,6 +9,7 @@ import {
   saveName,
   signed,
   STAT_KEYS,
+  tokenSyncFor,
   type Character,
   type CharacterStats,
   type SaveKey,
@@ -23,11 +24,19 @@ const STAT_NAMES: Record<string, string> = { STR: 'Strength', DEX: 'Dexterity', 
 export function CharacterSheet({ character: c, onOpenSettings }: { character: Character; onOpenSettings: () => void }) {
   const self = useSelf();
   const tokens = useGame((s) => s.tokens);
+  const scenes = useGame((s) => s.scenes);
   const stats = useMemo(() => computeCharacterStats(c), [c]);
   const manage = canManageCharacter(self, c);
   const b = c.build;
   const token = c.tokenId ? tokens[c.tokenId] : undefined;
-  const tokenOutOfDate = !!token && (token.hp?.max !== Math.max(1, stats.hp.total) || token.name !== c.name);
+  const expectedSync = useMemo(() => (token ? tokenSyncFor({ scenes }, c, token) : null), [scenes, c, token]);
+  const tokenOutOfDate =
+    !!token &&
+    !!expectedSync &&
+    (token.hp?.max !== expectedSync.hp.max ||
+      token.name !== expectedSync.name ||
+      token.darkvision !== expectedSync.darkvision ||
+      token.size !== expectedSync.size);
 
   return (
     <div className="sheet">
@@ -66,7 +75,7 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
       <HpBlock character={c} stats={stats} manage={manage} />
       {manage && tokenOutOfDate && (
         <button type="button" className="small sync-hint" onClick={() => syncLinkedToken(c)}>
-          ↻ Update token (max HP / name)
+          ↻ Update token (stats / name / senses)
         </button>
       )}
 
@@ -198,10 +207,11 @@ function HpBlock({ character: c, stats, manage }: { character: Character; stats:
           <button
             type="button"
             className="small"
-            title="Temporary HP"
+            title="Set temporary HP (enter 0 to clear)"
             onClick={() => {
-              const n = Math.abs(Math.round(Number(amount)));
-              if (n) setHp(c, { ...hp, temp: n }, max);
+              if (amount.trim() === '') return;
+              const n = Math.round(Number(amount));
+              if (Number.isFinite(n) && n >= 0) setHp(c, { ...hp, temp: n }, max);
               setAmount('');
             }}
           >
@@ -210,10 +220,11 @@ function HpBlock({ character: c, stats, manage }: { character: Character; stats:
           <button
             type="button"
             className="small"
-            title="Nonlethal damage"
+            title="Add nonlethal damage (negative to heal)"
             onClick={() => {
+              if (amount.trim() === '') return;
               const n = Math.round(Number(amount));
-              if (Number.isFinite(n)) setHp(c, { ...hp, nonlethal: Math.max(0, hp.nonlethal + n) }, max);
+              if (Number.isFinite(n) && n !== 0) setHp(c, { ...hp, nonlethal: Math.max(0, hp.nonlethal + n) }, max);
               setAmount('');
             }}
           >
@@ -251,13 +262,11 @@ function AbilityAdjustments({ character: c }: { character: Character }) {
               <td>{k}</td>
               {kinds.map(([field]) => (
                 <td key={field}>
-                  <input
-                    type="number"
+                  <AdjustInput
                     value={c.runtime[field][k] ?? 0}
                     min={field === 'abilityTemp' ? -50 : 0}
                     max={50}
-                    onChange={(e) => {
-                      const v = Math.round(Number(e.target.value) || 0);
+                    onCommit={(v) => {
                       const next = { ...c.runtime[field] };
                       if (v) next[k] = v;
                       else delete next[k];
@@ -271,5 +280,28 @@ function AbilityAdjustments({ character: c }: { character: Character }) {
         </tbody>
       </table>
     </details>
+  );
+}
+
+function AdjustInput({ value, min, max, onCommit }: { value: number; min: number; max: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    let n = Math.round(Number(draft) || 0);
+    if (!Number.isFinite(n)) n = value;
+    n = Math.max(min, Math.min(max, n));
+    setDraft(String(n));
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <input
+      type="number"
+      value={draft}
+      min={min}
+      max={max}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+    />
   );
 }

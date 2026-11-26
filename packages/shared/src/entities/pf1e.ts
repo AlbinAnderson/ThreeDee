@@ -26,6 +26,7 @@ export const SizeNameSchema = z.enum(['Fine', 'Diminutive', 'Tiny', 'Small', 'Me
 
 /** Per-ability adjustments, e.g. { STR: 2 }. Keys are ability abbreviations. */
 const StatAdjustSchema = z.partialRecord(StatKeySchema, z.number().int().min(-50).max(50));
+const NonNegStatAdjustSchema = z.partialRecord(StatKeySchema, z.number().int().min(0).max(50));
 
 export const CharacterRuntimeSchema = z.object({
   /** Current hit points tracked in the VTT; null until the sheet sets them (Epic 2). */
@@ -39,8 +40,8 @@ export const CharacterRuntimeSchema = z.object({
   /** Spent uses of daily/per-round resources and spell slots, keyed by resource id (Epics 6-7). */
   uses: z.record(z.string().max(120), z.number().int().min(0).max(100000)),
   /** Ability damage (lowers the modifier) and drain (lowers the score). */
-  abilityDamage: StatAdjustSchema,
-  abilityDrain: StatAdjustSchema,
+  abilityDamage: NonNegStatAdjustSchema,
+  abilityDrain: NonNegStatAdjustSchema,
   /** Temporary score changes from spells/items not modelled yet (e.g. Bull's Strength +4). */
   abilityTemp: StatAdjustSchema,
 });
