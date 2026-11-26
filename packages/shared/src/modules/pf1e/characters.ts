@@ -230,6 +230,9 @@ export const characterActions = {
         }
         if (c) {
           c.tokenId = tokenId;
+          // The token's condition markers drive the character's condition effects while linked.
+          const token = tokenId ? draft.tokens[tokenId] : undefined;
+          if (token) c.runtime.conditions = [...token.conditions];
           c.updatedAt = meta.ts;
         }
       },
@@ -277,8 +280,8 @@ export const characterSheetActions = {
     },
   }),
 
-  /** Table state: HP when not linked to a token, ability damage/drain/temp, spent uses. Prepared spells go through pf1e/prepareSpells. */
-  updateRuntime: defineAction('character/updateRuntime', z.object({ id: IdSchema, changes: CharacterRuntimeSchema.omit({ prepared: true }).partial() }), {
+  /** Table state: HP when not linked to a token, ability damage/drain/temp, spent uses. Prepared spells, buffs and conditions have their own actions. */
+  updateRuntime: defineAction('character/updateRuntime', z.object({ id: IdSchema, changes: CharacterRuntimeSchema.omit({ prepared: true, buffs: true, conditions: true }).partial() }), {
     authorize: (ctx, { id }) => requireManage(ctx, id),
     audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
     apply(draft, { id, changes }, meta) {
@@ -319,6 +322,13 @@ export const redactCharacters: Redactor = (draft, viewer) => {
   if (isGm(viewer)) return;
   for (const c of Object.values(draft.characters)) if (!canSeeCharacter(viewer, c as Character)) delete draft.characters[c.id];
 };
+
+/** Copy a token's conditions onto the characters linked to it (their condition effects follow the map markers). */
+export function mirrorTokenConditions(draft: Draft<GameState>, tokenId: string) {
+  const token = draft.tokens[tokenId];
+  if (!token) return;
+  for (const c of Object.values(draft.characters)) if (c.tokenId === tokenId) c.runtime.conditions = [...token.conditions];
+}
 
 /** Called when a token is deleted: keep its HP on the character and drop the link. */
 export function unlinkToken(draft: Draft<GameState>, tokenId: string) {

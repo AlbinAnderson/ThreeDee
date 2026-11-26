@@ -16,6 +16,7 @@
  */
 import type { Character, PreparedSpell, SpellcastingOverride } from '../entities/pf1e';
 import { computeCharacterStats, type CharacterStats } from './engine';
+import { sumModifiers } from './modifiers';
 import { featKey, normalizeName, STAT_KEYS, type StatKey } from './rules';
 import {
   bonusSpells,
@@ -242,7 +243,9 @@ export function characterSpellcasting(c: Character, stats: CharacterStats = comp
     const stat: StatKey = o?.stat ?? def?.stat ?? fileStat ?? 'INT';
     if (!def && !o?.stat && !fileStat) warnings.push(`Set the casting ability for ${k.name} in casting settings.`);
     const ability = stats.abilities[stat];
-    const casterLevel = o?.casterLevel ?? (def?.minLevel && k.level < def.minLevel ? 0 : Math.max(0, k.level + (def?.clOffset ?? 0)));
+    const baseCl = o?.casterLevel ?? (def?.minLevel && k.level < def.minLevel ? 0 : Math.max(0, k.level + (def?.clOffset ?? 0)));
+    // Buffs that raise caster level (stacking rules apply); never below 0.
+    const casterLevel = baseCl > 0 ? Math.max(0, baseCl + sumModifiers(stats.effects.casterLevel).total) : 0;
     const row = perDayRow(c, k.name, k.level, def, o);
     if (!row) warnings.push(`Spells per day for ${k.name} aren't in the rules tables: set them in casting settings.`);
     const cantrips = def ? def.cantrips : true;

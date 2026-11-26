@@ -2551,3 +2551,99 @@ button.active {
 .spell-level-head .push-right {
   margin-left: auto;
 }
+
+/* Effects tab (Epic 8) */
+.effects {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.condition-chip.cosmetic {
+  opacity: 0.75;
+}
+.condition-timers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  margin-top: 6px;
+}
+.condition-timers > span {
+  flex-basis: 100%;
+}
+.condition-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+input.timer-input {
+  width: 56px;
+  min-width: 56px;
+  flex: 0 0 56px;
+}
+.condition-rounds {
+  font-size: 0.85em;
+}
+.buff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.buff-list > li {
+  border-bottom: 1px solid var(--border);
+  padding: 2px 0 4px;
+}
+.buff-list > li:not(.on) .buff-name {
+  opacity: 0.6;
+}
+.buff-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.buff-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+.buff-add,
+.buff-effect-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0;
+}
+.buff-add select,
+.buff-effect-row select {
+  width: auto;
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.buff-effect-row input[type='number'] {
+  width: 56px;
+  flex: 0 0 56px;
+}
+.buff-editor {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 6px;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.effect-notes {
+  margin: 0;
+  padding-left: 16px;
+}
+.active-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}

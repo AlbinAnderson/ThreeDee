@@ -189,7 +189,7 @@ function ChatLine({ message, users }: { message: ChatMessage; users: Record<stri
     <div className={`chat-line${message.whisper ? ' private' : ''}`}>
       <div className="chat-meta">
         <span className="chat-author" style={{ color: author?.color }}>
-          {author?.name ?? 'Unknown'}
+          {author?.name ?? (message.userId === 'system' ? 'Table' : 'Unknown')}
         </span>
         {vis && <span className="badge warn">{vis}</span>}
         <span className="chat-time">{time}</span>

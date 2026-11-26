@@ -27,10 +27,15 @@ export const CombatSchema = z.object({
   currentId: IdSchema.nullable(),
   /** Turn order, first acts first. */
   combatants: z.array(CombatantSchema).max(200),
+  /**
+   * Turns already started in the latest round reached, so round-based
+   * durations tick once per turn even if the GM steps back and forward.
+   */
+  ticks: z.object({ round: z.number().int().min(0).max(100000), ids: z.array(IdSchema).max(200) }),
 });
 export type Combat = z.infer<typeof CombatSchema>;
 
-export const EMPTY_COMBAT: Combat = { active: false, round: 0, currentId: null, combatants: [] };
+export const EMPTY_COMBAT: Combat = { active: false, round: 0, currentId: null, combatants: [], ticks: { round: 0, ids: [] } };
 
 // ---------------------------------------------------------------- area templates
 

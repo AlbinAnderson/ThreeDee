@@ -28,6 +28,90 @@ export const SizeNameSchema = z.enum(['Fine', 'Diminutive', 'Tiny', 'Small', 'Me
 const StatAdjustSchema = z.partialRecord(StatKeySchema, z.number().int().min(-50).max(50));
 const NonNegStatAdjustSchema = z.partialRecord(StatKeySchema, z.number().int().min(0).max(50));
 
+// ------------------------------------------------------------------ buffs & conditions (Epic 8)
+
+/** What a buff effect changes. Ability keys change the score; `sizeSteps` moves the size category; `extraAttack` adds a full-attack attack (haste). */
+export const BuffTargetSchema = z.enum([
+  'STR',
+  'DEX',
+  'CON',
+  'INT',
+  'WIS',
+  'CHA',
+  'attack',
+  'attackMelee',
+  'attackRanged',
+  'damage',
+  'damageMelee',
+  'damageRanged',
+  'ac',
+  'cmb',
+  'cmd',
+  'initiative',
+  'saves',
+  'fort',
+  'ref',
+  'will',
+  'skills',
+  'speed',
+  'casterLevel',
+  'sizeSteps',
+  'extraAttack',
+]);
+export type BuffTarget = z.infer<typeof BuffTargetSchema>;
+
+export const BonusTypeSchema = z.enum([
+  'untyped',
+  'alchemical',
+  'armor',
+  'circumstance',
+  'competence',
+  'deflection',
+  'dodge',
+  'enhancement',
+  'inherent',
+  'insight',
+  'luck',
+  'morale',
+  'natural',
+  'profane',
+  'racial',
+  'resistance',
+  'sacred',
+  'shield',
+  'size',
+  'trait',
+]);
+
+export const BuffEffectSchema = z.object({
+  target: BuffTargetSchema,
+  value: z.number().int().min(-50).max(50),
+  type: BonusTypeSchema,
+});
+export type BuffEffect = z.infer<typeof BuffEffectSchema>;
+
+/**
+ * A temporary effect on a character: a preset (Bless, Rage...) or a custom
+ * one. Presets fill in `effects` when added (scaled for the character), so
+ * every buff is just a named list of typed modifiers the player can edit.
+ */
+export const BuffSchema = z.object({
+  id: IdSchema,
+  /** Preset it came from (see pf1e/buffs.ts), or null for custom buffs. */
+  presetId: z.string().max(40).nullable(),
+  name: z.string().trim().min(1).max(60),
+  effects: z.array(BuffEffectSchema).max(20),
+  /** Reminder text for what the numbers don't cover ("+1 morale vs fear"). */
+  note: z.string().max(300),
+  active: z.boolean(),
+  /** Rounds left; counts down at the start of the character's turn in combat. null = no duration. */
+  roundsLeft: z.number().int().min(1).max(10000).nullable(),
+});
+export type Buff = z.infer<typeof BuffSchema>;
+export const MAX_BUFFS = 40;
+export const MAX_CONDITIONS = 30;
+export const ConditionNameSchema = z.string().trim().min(1).max(40);
+
 /** Highest spell level and how many metamagic feats one prepared spell or cast may carry. */
 export const MAX_SPELL_LEVEL = 9;
 export const MAX_METAMAGIC = 6;
@@ -78,10 +162,21 @@ export const CharacterRuntimeSchema = z.object({
   prepared: z
     .record(z.string().trim().min(1).max(80), z.array(PreparedSpellSchema).max(MAX_PREPARED_PER_CLASS))
     .refine((r) => Object.keys(r).length <= MAX_CASTING_CLASSES, 'Too many casting classes'),
+  /** Temporary buffs, active or ready to switch on (Epic 8). */
+  buffs: z
+    .array(BuffSchema)
+    .max(MAX_BUFFS)
+    .refine((arr) => new Set(arr.map((b) => b.id)).size === arr.length, 'Duplicate buff id'),
+  /**
+   * Conditions (Shaken, Prone...) with mechanical effects. While the character
+   * is linked to a token this mirrors the token's conditions; otherwise it's
+   * edited on the sheet.
+   */
+  conditions: z.array(ConditionNameSchema).max(MAX_CONDITIONS),
 });
 export type CharacterRuntime = z.infer<typeof CharacterRuntimeSchema>;
 
-export const EMPTY_RUNTIME: CharacterRuntime = { hp: null, uses: {}, abilityDamage: {}, abilityDrain: {}, abilityTemp: {}, toggles: {}, prepared: {} };
+export const EMPTY_RUNTIME: CharacterRuntime = { hp: null, uses: {}, abilityDamage: {}, abilityDrain: {}, abilityTemp: {}, toggles: {}, prepared: {}, buffs: [], conditions: [] };
 
 /** Progression for a class the rules tables don't know (prestige or homebrew). */
 export const ClassChassisSchema = z.object({

@@ -239,6 +239,8 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
     if (def?.name === 'Fly' && FLY_SIZE[stats.size]) mods.push({ value: FLY_SIZE[stats.size], type: 'size', source: stats.size });
     if (def?.acp && stats.armor.acp) mods.push({ value: stats.armor.acp, type: 'untyped', source: 'Armor check penalty' });
     if (o?.misc) mods.push({ value: o.misc, type: 'untyped', source: 'Misc (sheet)' });
+    // Buffs and conditions on every skill check (Heroism, Shaken...).
+    mods.push(...stats.effects.skills);
 
     const trainedOnly = def?.trainedOnly ?? false;
     const usable = !trainedOnly || ranks > 0 || (bardic && def?.name === 'Knowledge');

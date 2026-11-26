@@ -112,6 +112,24 @@ const migrations: Record<number, Migration> = {
       ),
     };
   },
+  // Epic 8: buffs, character conditions (mirroring a linked token's) and condition timers on tokens.
+  10: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    const tokens = (raw.tokens ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 11,
+      tokens: Object.fromEntries(Object.entries(tokens).map(([id, t]) => [id, { conditionRounds: {}, ...t }])),
+      combat: { ticks: { round: 0, ids: [] }, ...(raw.combat as object) },
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => {
+          const token = typeof c.tokenId === 'string' ? tokens[c.tokenId] : undefined;
+          const conditions = Array.isArray(token?.conditions) ? token.conditions : [];
+          return [id, { ...c, runtime: { buffs: [], conditions, ...(c.runtime as object) } }];
+        }),
+      ),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {

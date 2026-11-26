@@ -124,6 +124,16 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
       <p className="muted small-text">Click a highlighted number to roll it (uses your chat mode). Hover for the breakdown.</p>
 
       <CombatToggles character={c} stats={stats} />
+      {stats.effects.sources.length > 0 && (
+        <div className="active-effects" title="Buffs and conditions included in these numbers (Effects tab)">
+          {stats.effects.sources.map((s) => (
+            <span key={`${s.kind}|${s.name}`} className={`badge${s.kind === 'condition' ? ' warn' : ''}`}>
+              {s.name}
+              {s.roundsLeft !== null ? ` ⏱${s.roundsLeft}` : ''}
+            </span>
+          ))}
+        </div>
+      )}
       <Attacks character={c} stats={stats} />
       <div className="muted small-text">
         {[

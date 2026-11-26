@@ -17,6 +17,7 @@ import { macroActions } from './macros';
 import { notesActions, redactNotes } from './notes';
 import { characterActions, characterSheetActions, redactCharacters } from './pf1e/characters';
 import { inventoryActions } from './pf1e/inventory';
+import { buffActions } from './pf1e/buffs';
 import { spellActions } from './pf1e/spells';
 import { pf1eTurnActions, redactPf1eTurns } from './pf1e/turns';
 import { sceneActions } from './scenes';
@@ -50,6 +51,7 @@ export const gameModules = {
   pf1eTurns: { actions: pf1eTurnActions, redact: redactPf1eTurns },
   inventory: { actions: inventoryActions },
   spells: { actions: spellActions },
+  buffs: { actions: buffActions },
 } satisfies Record<string, GameModule>;
 
 type Modules = typeof gameModules;
@@ -57,10 +59,10 @@ type Modules = typeof gameModules;
 /** Union of every action the game understands. */
 export type GameAction = { [K in keyof Modules]: ModuleActions<Modules[K]['actions']> }[keyof Modules];
 
-export { audioActions, spellActions, characterActions, characterSheetActions, pf1eTurnActions, inventoryActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
+export { audioActions, buffActions, spellActions, characterActions, characterSheetActions, pf1eTurnActions, inventoryActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
 export { canDeleteDrawing } from './drawings';
 export { canSeeMessage, chatAudience, pushMessage, validateWhisper } from './chat';
-export { canControlCombatant, combatantName, compareCombatants, isCombatantHidden } from './combat';
+export { canControlCombatant, combatantName, compareCombatants, isCombatantHidden, onTurnStart, type TurnStart, type TurnStartHook } from './combat';
 export { canDeleteTemplate, templateCells, templateContains } from './templates';
 export { canSeeHandout } from './handouts';
 export { canManageCharacter, canSeeCharacter } from './pf1e/characters';

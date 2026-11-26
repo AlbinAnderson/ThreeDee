@@ -20,6 +20,7 @@ import { AbilitiesTab } from './AbilitiesTab';
 import { InventoryTab } from './InventoryTab';
 import { SkillsTab } from './SkillsTab';
 import { SpellsTab } from './SpellsTab';
+import { EffectsTab } from './EffectsTab';
 import { openImport } from './ImportDialog';
 import { useCharactersUi } from './store';
 
@@ -126,7 +127,7 @@ export function CharactersPanel() {
   );
 }
 
-type CharacterTab = 'sheet' | 'skills' | 'abilities' | 'spells' | 'inventory' | 'imported' | 'settings' | 'manage';
+type CharacterTab = 'sheet' | 'skills' | 'abilities' | 'spells' | 'effects' | 'inventory' | 'imported' | 'settings' | 'manage';
 
 function CharacterView({ character: c, onBack }: { character: Character; onBack: () => void }) {
   const self = useSelf();
@@ -138,6 +139,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
     ['skills', 'Skills'],
     ['abilities', 'Abilities'],
     ['spells', 'Spells'],
+    ['effects', 'Effects'],
     ['inventory', 'Inventory'],
     ['imported', 'Imported'],
     ...(manage ? ([['settings', 'Settings'], ['manage', 'Manage']] as [CharacterTab, string][]) : []),
@@ -160,6 +162,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
       {activeTab === 'skills' && <SkillsTab character={c} />}
       {activeTab === 'abilities' && <AbilitiesTab character={c} />}
       {activeTab === 'spells' && <SpellsTab character={c} />}
+      {activeTab === 'effects' && <EffectsTab character={c} />}
       {activeTab === 'inventory' && <InventoryTab character={c} />}
       {activeTab === 'imported' && <CharacterSummary build={c.build} />}
       {activeTab === 'settings' && manage && <CharacterSettings character={c} />}

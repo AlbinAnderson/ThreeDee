@@ -27,7 +27,7 @@ export * from './entities/vision';
 export * from './entities/pf1e';
 
 /** Bump when the shape changes, and add a step in migrations.ts. */
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 
 // ---------------------------------------------------------------- users
 
@@ -117,6 +117,10 @@ export const TokenSchema = z.object({
   hpVisible: z.boolean(),
   /** Status markers ("prone", "shaken", or anything custom). */
   conditions: z.array(z.string().trim().min(1).max(40)).max(30),
+  /** Rounds left on some of those conditions (by name); they count down at the start of the token's turn in combat. */
+  conditionRounds: z
+    .record(z.string().trim().min(1).max(40), z.number().int().min(1).max(10000))
+    .refine((r) => Object.keys(r).length <= 30, 'Too many condition timers'),
   /** Darkvision range in grid cells (0 = none). */
   darkvision: z.number().min(0).max(200),
   /** Light the token carries (torch, lantern). */
@@ -137,6 +141,7 @@ export function createToken(fields: Pick<Token, 'id' | 'sceneId' | 'x' | 'y'> & 
     hp: null,
     hpVisible: false,
     conditions: [],
+    conditionRounds: {},
     darkvision: 0,
     light: null,
     ...fields,
