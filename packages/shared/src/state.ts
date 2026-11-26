@@ -17,15 +17,17 @@ import {
   RollTableSchema,
   TemplateSchema,
 } from './entities/play';
+import { CharacterSchema } from './entities/pf1e';
 import { FogSchema, LightEmissionSchema, LightSchema, VisionSettingsSchema, WallSchema } from './entities/vision';
 import { AssetUrlSchema, ColorSchema, IdSchema } from './primitives';
 
 export * from './primitives';
 export * from './entities/play';
 export * from './entities/vision';
+export * from './entities/pf1e';
 
 /** Bump when the shape changes, and add a step in migrations.ts. */
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 // ---------------------------------------------------------------- users
 
@@ -238,6 +240,8 @@ export const GameStateSchema = z.object({
   audio: z.record(IdSchema, AudioTrackSchema),
   tables: z.record(IdSchema, RollTableSchema),
   decks: z.record(IdSchema, DeckSchema),
+  /** PF1e characters (imported from PCGen). */
+  characters: z.record(IdSchema, CharacterSchema),
 });
 export type GameState = z.infer<typeof GameStateSchema>;
 
@@ -290,5 +294,6 @@ export function createInitialState(firstSceneId: string): GameState {
     audio: {},
     tables: {},
     decks: {},
+    characters: {},
   };
 }

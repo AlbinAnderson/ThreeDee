@@ -39,6 +39,7 @@ const migrations: Record<number, Migration> = {
       decks: {},
     };
   },
+  3: (raw) => ({ ...raw, schemaVersion: 4, characters: {} }),
 };
 
 export function migrateState(raw: unknown): GameState {

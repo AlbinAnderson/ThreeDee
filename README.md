@@ -39,6 +39,7 @@ Sidebar panels (icon rail on the right):
 - **Combat**: turn tracker. Select tokens and *Add selected tokens*; roll initiative (1d20 + modifier, ties broken by modifier); the GM starts combat and advances turns, and players can end their own turn and delay (↑/↓). The current token pulses on the map.
 - **Status**: HP and conditions of the party (and, for the GM, everything else on the scene). Set HP/conditions in the token inspector (select a token): damage soaks temp HP first; *Everyone sees HP* shows the bar to other players.
 - **Players**: the roster. Your page has your profile, **saved rolls** (also shown as a hotbar at the bottom of the map) and a private **notepad** (only you and the GM can see it).
+- **Characters** (PF1e): import a PCGen character by dropping its `.pcg` file on the panel (or *Import .pcg*). You get a preview of stats, classes, skills, feats, gear and spells before saving. Players import their own characters; the GM can import NPCs or hand a character to a player. Link a character to a map token from its page or from the token inspector; when the GM links a player's character, that player gets control of the token. After levelling up in PCGen, *Re-import .pcg…* shows what changed and keeps the VTT-side state (owner, token link, sharing, current HP, spent uses). Characters are private to their player and the GM unless *Share with the party* is ticked.
 - **Loot**: anyone can add items (image, quantity, value, holder, party notes). The GM also writes each item's **true properties**, revealed when the GM ticks *Identified*. **Export…** downloads CSV, Markdown or JSON.
 - **Handouts**: the GM's letters, maps and pictures, shared with nobody, everyone, or chosen players. *Show to players* pops it up on their screens.
 - **Tables & decks**: weighted rollable tables (one entry per line, `3: Goblins` for weight 3; GM-only unless shared) and card decks (52-card preset, or build from images / text). Draw face up (posted to chat) or face down (only you and the GM see it).
@@ -140,6 +141,7 @@ To reveal a secret later, have a server `prepare` step copy it into the action (
 | Status tab sections | `client/src/status/index.ts` |
 | Loot UI + exporters | `client/src/loot/` |
 | Condition presets (icons/colors) | `client/src/config/conditions.ts` |
+| PF1e characters | `shared/src/entities/pf1e.ts` (schema: `build` from PCGen vs VTT `runtime`), `shared/src/modules/pf1e/characters.ts` (actions), `shared/src/pf1e/` (helpers: import, re-import merge, diff), `shared/src/pcgen/` (.pcg parser), `client/src/characters/` (UI) |
 | Handouts, audio, tables & decks UI | `client/src/handouts/`, `client/src/audio/`, `client/src/random/` |
 
 ## Extending it: recipes
@@ -165,7 +167,7 @@ To reveal a secret later, have a server `prepare` step copy it into the action (
 
 **Add an ephemeral event** (shared cursors...): add a variant to `EphemeralEventSchema`, then send it with `sendEphemeral(...)` and subscribe with `onEphemeral(kind, handler)`.
 
-**System-specific features** (PF1e) can live in their own `shared/src/modules/pf1e/*` and `client/src/panels/pf1e/*` files, or later in a separate `packages/pf1e` workspace. Either way, the core stays generic.
+**System-specific features** (PF1e) live in their own `shared/src/modules/pf1e/*`, `shared/src/pf1e/*` and `client/src/characters/*` files, so the core stays generic. New per-character data that the VTT tracks (spent spell slots, resource uses...) goes in `Character.runtime`, which re-import never touches; anything that comes from PCGen stays in `build`.
 
 ### Conventions
 

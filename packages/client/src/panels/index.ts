@@ -2,6 +2,7 @@
  * Sidebar panel registry, in rail order. Add a panel by listing it here.
  */
 import { AudioPanel } from '../audio/AudioPanel';
+import { CharactersPanel } from '../characters/CharactersPanel';
 import { HandoutsPanel } from '../handouts/HandoutsPanel';
 import { LootPanel } from '../loot/LootPanel';
 import { RandomPanel } from '../random/RandomPanel';
@@ -19,6 +20,7 @@ export const panels: PanelDef[] = [
   { id: 'combat', label: 'Combat', icon: '⚔', Component: CombatPanel },
   { id: 'status', label: 'Status', icon: '❤', Component: StatusPanel },
   { id: 'players', label: 'Players', icon: '👥', Component: PlayersPanel },
+  { id: 'characters', label: 'Characters', icon: '📇', Component: CharactersPanel },
   { id: 'loot', label: 'Loot', icon: '💰', Component: LootPanel },
   { id: 'handouts', label: 'Handouts', icon: '📜', Component: HandoutsPanel },
   { id: 'random', label: 'Tables & decks', icon: '🎲', Component: RandomPanel },

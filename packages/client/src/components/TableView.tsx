@@ -6,6 +6,7 @@ import { getSelf, useGameStore } from '../state/gameStore';
 import { useUi } from '../state/uiStore';
 import { tools } from '../tools';
 import { AudioEngine } from '../audio/AudioEngine';
+import { ImportDialog } from '../characters/ImportDialog';
 import { HandoutViewer } from '../handouts/HandoutsPanel';
 import { Hotbar } from '../player/MacrosSection';
 import { Sidebar } from './Sidebar';
@@ -55,6 +56,7 @@ export function TableView() {
       </div>
       <HandoutViewer />
       <AudioEngine />
+      <ImportDialog />
     </div>
   );
 }
