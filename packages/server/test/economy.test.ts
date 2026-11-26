@@ -12,9 +12,11 @@ import {
   createInitialState,
   createToken,
   GENERIC_ACTIONS,
+  migrateState,
   newId,
   parsePcg,
   pf1eTurnActions,
+  redactState,
   tokenActions,
   type GameAction,
   type ServerMessage,
@@ -25,6 +27,9 @@ import { Room, type Client } from '../src/rooms/Room';
 
 const SAMPLE = fs.readFileSync(new URL('./fixtures/sample-pf1e.pcg', import.meta.url), 'utf8');
 const SAMURAI = SAMPLE.replace('CLASS:Wizard|LEVEL:1', 'CLASS:Samurai|LEVEL:1').replace('CLASSABILITIESLEVEL:Wizard=1', 'CLASSABILITIESLEVEL:Samurai=1');
+const INVESTIGATOR = SAMPLE.replace('CLASS:Wizard|LEVEL:1', 'CLASS:Investigator|LEVEL:2')
+  .replace('CLASSABILITIESLEVEL:Wizard=1', 'CLASSABILITIESLEVEL:Investigator=2')
+  .replace('STAT:INT|SCORE:10', 'STAT:INT|SCORE:14');
 
 let dir: string;
 let store: SqliteRoomStore;
@@ -41,6 +46,7 @@ afterEach(async () => {
 
 const gmUser: User = { id: 'gm1', name: 'Dana', role: 'gm', color: '#ff0000' };
 const alice: User = { id: 'alice', name: 'Alice', role: 'player', color: '#00ff00' };
+const bob: User = { id: 'bob', name: 'Bob', role: 'player', color: '#0000ff' };
 
 type TestClient = Client & { inbox: ServerMessage[]; rejects(): string[] };
 function client(): TestClient {
@@ -169,5 +175,75 @@ describe('PF1e class actions & resources', () => {
       for (const action of set.actions) if (action.resource) assert.ok(set.resources.some((r) => r.id === action.resource), action.id);
       for (const r of set.resources) assert.ok(r.max({ level: 1, mod: () => 0 }) >= 0, `${set.className} ${r.name}`);
     }
+  });
+
+  test('ending and restarting combat clears stale pf1eTurns; removing a combatant drops its turn state', () => {
+    const { room, g, a, act, doAct } = setup();
+    doAct(a, 'g.attack');
+    doAct(a, 'g.move');
+    assert.ok(room.currentState.pf1eTurns.cHero);
+
+    act(g, combatActions.end.create({ clear: false }));
+    assert.deepEqual(room.currentState.pf1eTurns, {});
+    act(g, combatActions.start.create({}));
+    const before = a.rejects().length;
+    doAct(a, 'g.attack');
+    assert.equal(a.rejects().length, before, 'fresh encounter starts with a fresh turn');
+
+    act(g, combatActions.remove.create({ id: 'cHero' }));
+    assert.equal(room.currentState.pf1eTurns.cHero, undefined);
+  });
+
+  test('cannot pair own combatantId with another characterId to burn their resources', () => {
+    const { room, g, a, act } = setup();
+    const npc = createCharacterFromPcg(parsePcg(SAMPLE), { id: 'npcWiz', ownerId: null, fileName: 'npc.pcg', importedBy: 'gm1', now: 1 });
+    act(g, characterActions.import.create({ character: npc }));
+
+    act(a, pf1eTurnActions.act.create({ actionId: 'c.wizard.school', combatantId: 'cHero', characterId: 'npcWiz', chatId: newId() }));
+    assert.ok(a.rejects().some((r) => r.includes('not linked') || r.includes("don't control")));
+    assert.deepEqual(room.currentState.characters.npcWiz!.runtime.uses, {});
+  });
+
+  test('hidden combatant actions stay GM-only; unshared character actions send prepared who to other players', () => {
+    const { room, g, a, act } = setup();
+    const b = client();
+    room.join(b, bob);
+    act(g, combatActions.update.create({ id: 'cGob', changes: { hidden: true } }));
+    act(g, combatActions.next.create({})); // goblin's turn
+    const bBefore = b.inbox.length;
+    act(g, pf1eTurnActions.act.create({ actionId: 'g.attack', combatantId: 'cGob', chatId: newId() }));
+    assert.equal(b.inbox.slice(bBefore).filter((m) => m.t === 'action' && m.action.type === 'pf1e/act').length, 0, 'hidden action not sent to player');
+    const redacted = redactState(room.currentState, bob);
+    assert.equal(redacted.pf1eTurns.cGob, undefined, 'hidden combatant turn redacted');
+    assert.ok(!redacted.chat.some((m) => m.card?.title.includes('Goblin')), 'hidden combatant card redacted');
+
+    act(g, combatActions.end.create({ clear: true }));
+    const bOutBefore = b.inbox.length;
+    act(a, pf1eTurnActions.act.create({ actionId: 'g.attack', characterId: 'char', chatId: newId() }));
+    const delivered = b.inbox.slice(bOutBefore).find((m) => m.t === 'action' && m.action.type === 'pf1e/act');
+    assert.ok(delivered && delivered.t === 'action');
+    assert.equal((delivered.action.payload as { who?: string }).who, room.currentState.characters.char!.name);
+  });
+
+  test('Investigator 2-point Inspiration actions spend 2 points and reject when only 1 remains', () => {
+    const { room, a, doAct } = setup(INVESTIGATOR);
+    // Investigator 2 with Int 14 (+2) => floor(2/2) + 2 = 3 points
+    const insp = () => characterResources(room.currentState.characters.char!).find((r) => r.def.id === 'inspiration')!;
+    assert.equal(insp().max, 3);
+    doAct(a, 'c.investigator.inspireattack');
+    assert.equal(a.rejects().length, 0);
+    assert.equal(insp().used, 2);
+    doAct(a, 'c.investigator.inspireattack');
+    assert.ok(a.rejects().some((r) => r.includes('needs 2')), 'rejects 2-point action with 1 point left');
+    assert.equal(insp().used, 2);
+  });
+
+  test('v5 -> v6 migration adds empty pf1eTurns', () => {
+    const v6 = createInitialState('s1');
+    const v5: Record<string, unknown> = { ...v6, schemaVersion: 5 };
+    delete v5.pf1eTurns;
+    const migrated = migrateState(v5);
+    assert.equal(migrated.schemaVersion, 6);
+    assert.deepEqual(migrated.pf1eTurns, {});
   });
 });

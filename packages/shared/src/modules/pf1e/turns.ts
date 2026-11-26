@@ -3,20 +3,20 @@
  * in chat, reset a turn, and reset daily resource uses.
  */
 import { z } from 'zod';
-import { defineAction, type AuthContext, type AuthResult } from '../../actions/define';
+import { defineAction, type AuthContext, type AuthResult, type Redactor } from '../../actions/define';
 import { isGm } from '../../actions/auth';
 import { classActionSetsFor, classSetForAction, COST_LABEL, lookupPf1Action, type Pf1Action } from '../../pf1e/actions';
 import { applySpend, canSpend, characterForCombatant, effectiveTurn, freshTurn, turnWindow } from '../../pf1e/economy';
 import { computeCharacterStats } from '../../pf1e/engine';
 import { resourceKey, resourceMax } from '../../pf1e/resources';
-import { IdSchema, type Character, type GameState } from '../../state';
-import { pushMessage } from '../chat';
-import { canControlCombatant } from '../combat';
+import { ChatWhisperSchema, IdSchema, type Character, type GameState } from '../../state';
+import { canSeeMessage, pushMessage } from '../chat';
+import { canControlCombatant, combatantName, isCombatantHidden } from '../combat';
 import { canManageCharacter } from './characters';
 
 const PROVOKES_LABEL = { yes: 'provokes AoO', no: 'no AoO', varies: 'AoO varies', ranged: 'ranged provokes' } as const;
 
-/** Class actions need a character with that class, and resource actions a use left. */
+/** Class actions need a character with that class, and resource actions enough uses left. */
 function classCheck(c: Character | undefined, action: Pf1Action): AuthResult {
   const set = classSetForAction(action.id);
   if (!set) return true;
@@ -27,7 +27,8 @@ function classCheck(c: Character | undefined, action: Pf1Action): AuthResult {
   const def = set.resources.find((r) => r.id === action.resource)!;
   const used = c.runtime.uses[resourceKey(set, def.id)] ?? 0;
   const max = resourceMax(c, def, entry.level);
-  return used < max || `No ${def.name} left (${used}/${max} ${def.unit} used)`;
+  const cost = action.resourceCost ?? 1;
+  return used + cost <= max || `No ${def.name} left (${used}/${max} ${def.unit} used${cost > 1 ? `, needs ${cost}` : ''})`;
 }
 
 function actor(state: GameState, combatantId: string | undefined, characterId: string | undefined) {
@@ -40,8 +41,10 @@ function authorizeActor(ctx: AuthContext, combatantId: string | undefined, chara
   const { character, combatant } = actor(ctx.state, combatantId, characterId);
   if (combatantId && !combatant) return 'Not in the turn order';
   if (characterId && !character) return 'Character not found';
+  if (combatant && characterId && (!combatant.tokenId || character?.tokenId !== combatant.tokenId))
+    return 'Character is not linked to that combatant';
   if (combatant && !canControlCombatant(ctx.state, ctx.user, combatant)) return "You don't control that combatant";
-  if (!combatant && character && !canManageCharacter(ctx.user, character)) return "You don't control that character";
+  if (characterId && character && !canManageCharacter(ctx.user, character)) return "You don't control that character";
   if (!combatant && !character) return 'Choose a character or combatant';
   return true;
 }
@@ -58,6 +61,10 @@ export const pf1eTurnActions = {
       combatantId: IdSchema.optional(),
       characterId: IdSchema.optional(),
       chatId: IdSchema,
+      /** Filled in by the server so clients who can't see an unshared character still render the same name. */
+      who: z.string().max(80).optional(),
+      /** Filled in by the server: hidden combatants' actions stay GM-only. */
+      whisper: ChatWhisperSchema.optional(),
     }),
     {
       authorize(ctx, { actionId, combatantId, characterId }) {
@@ -74,9 +81,18 @@ export const pf1eTurnActions = {
         }
         return true;
       },
-      // Delivered to everyone: turn state is public and actions are taken in plain view at the table.
-      // (Players who can't see the character simply skip its resource counter.)
-      apply(draft, { actionId, combatantId, characterId, chatId }, meta) {
+      prepare(ctx, payload) {
+        const { character, combatant } = actor(ctx.state, payload.combatantId, payload.characterId);
+        const who = character?.name ?? (combatant ? combatantName(ctx.state, combatant) : 'Someone');
+        const hidden = !!combatant && isCombatantHidden(ctx.state, combatant);
+        return {
+          ...payload,
+          who,
+          whisper: hidden ? { mode: 'gm' as const, to: [] } : undefined,
+        };
+      },
+      audience: (viewer, { whisper }, { meta }) => canSeeMessage(viewer, meta.userId, whisper),
+      apply(draft, { actionId, combatantId, characterId, chatId, who: preparedWho, whisper }, meta) {
         const action = lookupPf1Action(actionId);
         if (!action) return;
         const state = draft as unknown as GameState;
@@ -95,17 +111,18 @@ export const pf1eTurnActions = {
         const c = character ? draft.characters[character.id] : undefined;
         if (action.resource && set && c) {
           const key = resourceKey(set, action.resource);
-          c.runtime.uses[key] = (c.runtime.uses[key] ?? 0) + 1;
+          c.runtime.uses[key] = (c.runtime.uses[key] ?? 0) + (action.resourceCost ?? 1);
         }
 
-        const who = character?.name ?? combatant?.name ?? 'Someone';
+        const who = preparedWho ?? character?.name ?? (combatant ? combatantName(state, combatant) : 'Someone');
         pushMessage(draft.chat, {
           id: chatId,
           userId: meta.userId,
           ts: meta.ts,
           text: '',
+          ...(whisper ? { whisper } : {}),
           card: {
-            title: `${who}: ${action.name}`,
+            title: `${who}: ${action.name}`.slice(0, 120),
             subtitle: `${action.costLabel ?? COST_LABEL[action.cost]} · ${PROVOKES_LABEL[action.provokes]}`,
             text: action.notes,
           },
@@ -116,7 +133,14 @@ export const pf1eTurnActions = {
 
   /** Undo: give a combatant their whole turn back. */
   resetTurn: defineAction('pf1e/resetTurn', z.object({ combatantId: IdSchema }), {
-    authorize: (ctx, { combatantId }) => authorizeActor(ctx, combatantId, undefined),
+    authorize(ctx, { combatantId }) {
+      if (!ctx.state.combat.active) return 'Combat has not started';
+      return authorizeActor(ctx, combatantId, undefined);
+    },
+    audience(viewer, { combatantId }, { state }) {
+      const cb = state.combat.combatants.find((c) => c.id === combatantId);
+      return isGm(viewer) || !cb || !isCombatantHidden(state, cb);
+    },
     apply(draft, { combatantId }) {
       const window = turnWindow(draft as unknown as GameState, combatantId);
       draft.pf1eTurns[combatantId] = freshTurn(window);
@@ -141,6 +165,16 @@ export const pf1eTurnActions = {
       c.updatedAt = meta.ts;
     },
   }),
+};
+
+/** Hide turn state of hidden combatants from players on snapshot/welcome. */
+export const redactPf1eTurns: Redactor = (draft, viewer) => {
+  if (isGm(viewer)) return;
+  const state = draft as unknown as GameState;
+  for (const id of Object.keys(draft.pf1eTurns)) {
+    const cb = state.combat.combatants.find((c) => c.id === id);
+    if (cb && isCombatantHidden(state, cb)) delete draft.pf1eTurns[id];
+  }
 };
 
 /** Exported for the UI: current max for every resource a character has. */

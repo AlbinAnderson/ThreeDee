@@ -12,6 +12,7 @@ import {
   characterResources,
   classActionSetsFor,
   combatActions,
+  combatantName,
   computeCharacterStats,
   COST_LABEL,
   effectiveTurn,
@@ -52,7 +53,7 @@ export function useActors(): Actor[] {
       for (const cb of combat.combatants) {
         if (!canControlCombatant(state, self, cb)) continue;
         const character = cb.tokenId ? Object.values(state.characters).find((c) => c.tokenId === cb.tokenId) : undefined;
-        out.push({ key: `cb:${cb.id}`, label: character?.name ?? cb.name, combatantId: cb.id, character });
+        out.push({ key: `cb:${cb.id}`, label: character?.name ?? combatantName(state, cb), combatantId: cb.id, character });
       }
       out.sort((a, b) => Number(b.combatantId === combat.currentId) - Number(a.combatantId === combat.currentId));
     }
@@ -84,6 +85,7 @@ export function ActionsPanel() {
   const actorKey = useActionsUi((s) => s.actorKey);
   const actor = actors.find((a) => a.key === actorKey) ?? actors[0];
   const state = useGame((s) => s);
+  const self = useSelf();
   const [query, setQuery] = useState('');
 
   const econ: EffectiveTurn | null = actor?.combatantId && state.combat.active ? effectiveTurn(state, actor.combatantId) : null;
@@ -148,14 +150,16 @@ export function ActionsPanel() {
         <section>
           <div className="section-header">
             <h3>Resources</h3>
-            <button
-              type="button"
-              className="small"
-              title="Restore all daily uses (after 8 hours of rest)"
-              onClick={() => confirm('Restore all daily uses?') && dispatch(pf1eTurnActions.resetUses.create({ characterId: actor.character!.id }))}
-            >
-              Rest
-            </button>
+            {canManageCharacter(self, actor.character!) && (
+              <button
+                type="button"
+                className="small"
+                title="Restore all daily uses (after 8 hours of rest)"
+                onClick={() => confirm('Restore all daily uses?') && dispatch(pf1eTurnActions.resetUses.create({ characterId: actor.character!.id }))}
+              >
+                Rest
+              </button>
+            )}
           </div>
           <ul className="resource-list">
             {resources.map((r) => (
@@ -202,6 +206,9 @@ export function ActionsPanel() {
 
 function TurnPips({ econ, combatantId }: { econ: EffectiveTurn; combatantId: string }) {
   const t = econ.turn;
+  const aooBlocked = econ.flatFooted && !econ.combatReflexes;
+  const aooLeft = aooBlocked ? 0 : Math.max(0, econ.aooMax - t.aoo);
+  const offTurnImmUsed = !econ.isTurn && t.immediateLock !== null && t.immediateLock > t.window;
   const pips: [string, boolean, string][] = [
     ['Standard', t.standard || t.fullRound, 'Standard action'],
     ['Move', t.move || t.fullRound, 'Move action (a standard can become a second move)'],
@@ -220,8 +227,16 @@ function TurnPips({ econ, combatantId }: { econ: EffectiveTurn; combatantId: str
             {label}
           </span>
         ))}
-        <span className={`pip${econ.turn.aoo >= econ.aooMax ? ' used' : ''}`} title="Attacks of opportunity this round">
-          AoO {econ.aooMax - econ.turn.aoo}/{econ.aooMax}
+        {offTurnImmUsed && (
+          <span className="pip used" title="Off-turn immediate action used (uses up your next turn’s swift action)">
+            Immediate
+          </span>
+        )}
+        <span
+          className={`pip${aooLeft <= 0 ? ' used' : ''}`}
+          title={aooBlocked ? 'Flat-footed creatures can’t make attacks of opportunity' : 'Attacks of opportunity this round'}
+        >
+          AoO {aooLeft}/{econ.aooMax}
         </span>
       </div>
       <div className="button-row">
@@ -229,7 +244,14 @@ function TurnPips({ econ, combatantId }: { econ: EffectiveTurn; combatantId: str
           Reset turn
         </button>
         {econ.isTurn && (
-          <button type="button" className="small primary" onClick={() => dispatch(combatActions.next.create({}))}>
+          <button
+            type="button"
+            className="small primary"
+            onClick={() => {
+              useActionsUi.setState({ actorKey: null });
+              dispatch(combatActions.next.create({}));
+            }}
+          >
             End turn ▶
           </button>
         )}
@@ -256,16 +278,19 @@ function ActionList({
       {actions.map((a) => {
         const spend = econ ? canSpend(econ, a.cost, a.movement) : true;
         const uses = a.resource ? usesFor?.(a) : undefined;
-        const out = uses ? uses.used >= uses.max : false;
-        const blocked = spend !== true ? spend : out ? 'None left today' : null;
+        const cost = a.resourceCost ?? 1;
+        const remaining = uses ? Math.max(0, uses.max - uses.used) : 0;
+        const out = uses ? uses.used + cost > uses.max : false;
+        const blocked = spend !== true ? spend : out ? (remaining > 0 ? `Needs ${cost} (only ${remaining} left)` : 'None left today') : null;
         const [badge, badgeTitle] = PROVOKES_BADGE[a.provokes];
+        const tooltip = `${a.notes}${blocked ? `\n\nCan’t now: ${blocked}` : ''}`;
         return (
-          <li key={a.id} className={blocked ? 'blocked' : ''}>
+          <li key={a.id} className={blocked ? 'blocked' : ''} title={tooltip}>
             <button
               type="button"
               className="action-main"
               disabled={!onAct || !!blocked}
-              title={`${a.notes}${blocked ? `\n\nCan’t now: ${blocked}` : ''}`}
+              title={tooltip}
               onClick={() => onAct?.(a)}
             >
               <span className="action-name">{a.name}</span>
@@ -276,7 +301,7 @@ function ActionList({
                 </span>
                 {uses && (
                   <span className="muted small-text">
-                    {Math.max(0, uses.max - uses.used)}/{uses.max}
+                    {remaining}/{uses.max}
                   </span>
                 )}
               </span>
@@ -313,13 +338,20 @@ export function TurnBar() {
         type="button"
         className="small"
         onClick={() => {
-          useActionsUi.setState({ actorKey: mine.key });
+          useActionsUi.setState({ actorKey: null });
           useUi.getState().setSidebarPanel('actions');
         }}
       >
         Actions
       </button>
-      <button type="button" className="small primary" onClick={() => dispatch(combatActions.next.create({}))}>
+      <button
+        type="button"
+        className="small primary"
+        onClick={() => {
+          useActionsUi.setState({ actorKey: null });
+          dispatch(combatActions.next.create({}));
+        }}
+      >
         End turn ▶
       </button>
     </div>

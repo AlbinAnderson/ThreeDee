@@ -29,8 +29,9 @@ export function combatantName(state: GameState, c: Combatant): string {
   return token?.name.trim() || c.name;
 }
 
-/** Remove a combatant, passing the turn on if it was theirs. */
-export function removeCombatant(combat: Draft<Combat>, id: string) {
+/** Remove a combatant, passing the turn on if it was theirs and dropping its PF1e turn state. */
+export function removeCombatant(draft: Draft<GameState>, id: string) {
+  const { combat } = draft;
   const idx = combat.combatants.findIndex((c) => c.id === id);
   if (idx === -1) return;
   if (combat.currentId === id) {
@@ -38,6 +39,7 @@ export function removeCombatant(combat: Draft<Combat>, id: string) {
     combat.currentId = next && next.id !== id ? next.id : null;
   }
   combat.combatants.splice(idx, 1);
+  delete draft.pf1eTurns[id];
 }
 
 function requireCombatant(ctx: AuthContext, id: string): AuthResult {
@@ -111,7 +113,7 @@ export const combatActions = {
   remove: defineAction('combat/remove', z.object({ id: IdSchema }), {
     authorize: (ctx, { id }) => requireCombatant(ctx, id),
     apply(draft, { id }) {
-      removeCombatant(draft.combat, id);
+      removeCombatant(draft, id);
     },
   }),
 
@@ -193,6 +195,7 @@ export const combatActions = {
       combat.active = true;
       combat.round = 1;
       combat.currentId = combat.combatants[0]?.id ?? null;
+      draft.pf1eTurns = {};
     },
   }),
 
@@ -243,6 +246,7 @@ export const combatActions = {
       draft.combat.active = false;
       draft.combat.round = 0;
       draft.combat.currentId = null;
+      draft.pf1eTurns = {};
       if (clear) draft.combat.combatants = [];
     },
   }),

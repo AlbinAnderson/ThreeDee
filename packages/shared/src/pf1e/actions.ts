@@ -21,8 +21,10 @@ export interface Pf1Action {
   group?: ActionGroup;
   /** Counts as moving (no 5-foot step that turn). */
   movement?: boolean;
-  /** Spends one use of this resource id. */
+  /** Spends uses of this resource id (default 1; see resourceCost). */
   resource?: string;
+  /** Uses of `resource` spent per activation (default 1). */
+  resourceCost?: number;
   /** Offer a matching roll button. */
   roll?: 'melee' | 'ranged' | 'cmb';
 }
@@ -106,7 +108,7 @@ export const GENERIC_ACTIONS: Pf1Action[] = [
   g('dirtytrick', 'Dirty Trick', 'maneuver', 'standard', 'yes', 'Provokes without Improved Dirty Trick.', { roll: 'cmb' }),
   g('drag', 'Drag', 'maneuver', 'standard', 'yes', 'Provokes without Improved Drag.', { roll: 'cmb' }),
   g('grapple', 'Grapple', 'maneuver', 'standard', 'yes', 'Provokes without Improved Grapple.', { roll: 'cmb' }),
-  g('overrun', 'Overrun', 'maneuver', 'standard', 'yes', 'Standard action taken during your move, or part of a charge. Provokes without Improved Overrun.', { roll: 'cmb' }),
+  g('overrun', 'Overrun', 'maneuver', 'standard', 'yes', 'Standard action taken during your move, or part of a charge. Provokes without Improved Overrun.', { movement: true, roll: 'cmb' }),
   g('reposition', 'Reposition', 'maneuver', 'standard', 'yes', 'Provokes without Improved Reposition.', { roll: 'cmb' }),
   g('steal', 'Steal', 'maneuver', 'standard', 'yes', 'Provokes without Improved Steal.', { roll: 'cmb' }),
   // Free / non-actions
@@ -400,8 +402,8 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     resources: [res('inspiration', 'Inspiration', 'points', ({ level, mod }) => atLeast1(Math.floor(level / 2) + mod('INT')))],
     actions: [
       ca('investigator', 'inspire', 'Inspiration (skill/ability check)', 'free', 'no', '+1d6 to a check. Free (no point) on trained Knowledge, Linguistics, Spellcraft.', { resource: 'inspiration' }),
-      ca('investigator', 'inspireattack', 'Inspiration (attack, 2 points)', 'free', 'no', '+1d6 to an attack roll. Spend 2 points (press twice).', { resource: 'inspiration' }),
-      ca('investigator', 'inspiresave', 'Inspiration (save, 2 points)', 'immediate', 'no', '+1d6 to a saving throw. Spend 2 points (press the free version once more).', { resource: 'inspiration' }),
+      ca('investigator', 'inspireattack', 'Inspiration (attack, 2 points)', 'free', 'no', '+1d6 to an attack roll. Spends 2 points.', { resource: 'inspiration', resourceCost: 2 }),
+      ca('investigator', 'inspiresave', 'Inspiration (save, 2 points)', 'immediate', 'no', '+1d6 to a saving throw. Spends 2 points.', { resource: 'inspiration', resourceCost: 2 }),
       ca('investigator', 'extract', 'Drink Extract', 'standard', 'yes', 'As alchemist.'),
     ],
   },
@@ -439,7 +441,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     actions: [
       ca('swashbuckler', 'derring', 'Derring-Do', 'free', 'no', '+1d6 (exploding on 6, up to Dex times) to Acrobatics, Climb, Escape Artist, Fly, Ride or Swim.', { resource: 'panache' }),
       ca('swashbuckler', 'dodging', 'Dodging Panache', 'immediate', 'varies', 'When targeted by a melee attack: move 5 ft (not a 5-foot step) and add Cha as dodge AC vs that attack. Light/no armor, light load.', { resource: 'panache' }),
-      ca('swashbuckler', 'parry', 'Opportune Parry', 'aoo', 'no', 'Spend 1 panache and your AoO to parry a melee attack; if it works and you still have panache, riposte as an immediate action.', { resource: 'panache' }),
+      ca('swashbuckler', 'parry', 'Opportune Parry', 'aoo', 'no', 'Spend 1 panache and your AoO to parry a melee attack; if it works and you still have panache, riposte as an immediate action.', { resource: 'panache', roll: 'melee' }),
       ca('swashbuckler', 'riposte', 'Riposte', 'immediate', 'no', 'Counter-attack after a successful parry (needs 1 panache left).', { roll: 'melee' }),
     ],
   },
@@ -448,7 +450,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     keys: ['warpriest'],
     resources: [res('blessings', 'Blessings', 'uses', ({ level }) => 3 + Math.floor(level / 2))],
     actions: [
-      ca('warpriest', 'blessing', 'Blessing', 'swift', 'no', 'One of your two 1st-level blessing powers (standard or swift).', { costLabel: 'Standard or Swift', resource: 'blessings' }),
+      ca('warpriest', 'blessing', 'Blessing', 'standard', 'no', 'One of your two 1st-level blessing powers (standard or swift).', { costLabel: 'Standard or Swift', resource: 'blessings' }),
       castSpell('warpriest', 'Prepared divine (orisons, 1st level); can spontaneously cast cure or inflict.'),
     ],
   },

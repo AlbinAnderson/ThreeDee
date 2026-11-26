@@ -49,7 +49,7 @@ export const sceneActions = {
         if (token.sceneId === id) {
           delete draft.tokens[token.id];
           // Same cleanup as deleting the token directly.
-          for (const c of [...draft.combat.combatants]) if (c.tokenId === token.id) removeCombatant(draft.combat, c.id);
+          for (const c of [...draft.combat.combatants]) if (c.tokenId === token.id) removeCombatant(draft, c.id);
           unlinkToken(draft, token.id);
         }
       }

@@ -16,7 +16,7 @@ import { lootActions, redactLoot } from './loot';
 import { macroActions } from './macros';
 import { notesActions, redactNotes } from './notes';
 import { characterActions, characterSheetActions, redactCharacters } from './pf1e/characters';
-import { pf1eTurnActions } from './pf1e/turns';
+import { pf1eTurnActions, redactPf1eTurns } from './pf1e/turns';
 import { sceneActions } from './scenes';
 import { redactTables, tableActions } from './tables';
 import { templateActions } from './templates';
@@ -45,7 +45,7 @@ export const gameModules = {
   // ---- PF1e
   characters: { actions: characterActions, redact: redactCharacters },
   characterSheets: { actions: characterSheetActions },
-  pf1eTurns: { actions: pf1eTurnActions },
+  pf1eTurns: { actions: pf1eTurnActions, redact: redactPf1eTurns },
 } satisfies Record<string, GameModule>;
 
 type Modules = typeof gameModules;

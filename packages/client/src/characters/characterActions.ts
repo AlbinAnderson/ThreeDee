@@ -21,7 +21,7 @@ import { getSelf, useGameStore } from '../state/gameStore';
 
 /** Roll d20 + bonus into chat using the current chat mode, labelled with the character's name. */
 export function rollCheck(c: Character, label: string, bonus: number) {
-  return rollToChat(`1d20${signed(bonus)}`, `${c.name}: ${label}`);
+  return rollToChat(`1d20${signed(bonus)}`, `${c.name}: ${label}`.slice(0, 100));
 }
 
 /**
