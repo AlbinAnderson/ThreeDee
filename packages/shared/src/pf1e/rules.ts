@@ -227,49 +227,52 @@ export interface ArmorData {
   bonus: number;
   maxDex: number | null;
   acp: number;
+  /** Arcane spell failure, percent. */
+  asf: number;
 }
 
-const a = (name: string, kind: ArmorData['kind'], category: ArmorData['category'], bonus: number, maxDex: number | null, acp: number): ArmorData => ({
+const a = (name: string, kind: ArmorData['kind'], category: ArmorData['category'], bonus: number, maxDex: number | null, acp: number, asf: number): ArmorData => ({
   name,
   kind,
   category,
   bonus,
   maxDex,
   acp,
+  asf,
 });
 
 /** Longest names first so "Studded leather" wins over "Leather". */
 export const ARMOR_TABLE: ArmorData[] = [
-  a('Padded', 'armor', 'light', 1, 8, 0),
-  a('Quilted cloth', 'armor', 'light', 1, 8, 0),
-  a('Leather lamellar', 'armor', 'light', 4, 3, -2),
-  a('Studded leather', 'armor', 'light', 3, 5, -1),
-  a('Leather', 'armor', 'light', 2, 6, 0),
-  a('Wooden armor', 'armor', 'light', 3, 3, -1),
-  a('Chain shirt', 'armor', 'light', 4, 4, -2),
-  a('Haramaki', 'armor', 'light', 1, null, 0),
-  a('Armored coat', 'armor', 'medium', 4, 3, -2),
-  a('Hide', 'armor', 'medium', 4, 4, -3),
-  a('Scale mail', 'armor', 'medium', 5, 3, -4),
-  a('Chainmail', 'armor', 'medium', 6, 2, -5),
-  a('Chain mail', 'armor', 'medium', 6, 2, -5),
-  a('Breastplate', 'armor', 'medium', 6, 3, -4),
-  a('Mountain pattern', 'armor', 'medium', 6, 3, -4),
-  a('Kikko', 'armor', 'medium', 5, 4, -3),
-  a('Do-maru', 'armor', 'medium', 5, 4, -4),
-  a('Splint mail', 'armor', 'heavy', 7, 0, -7),
-  a('Banded mail', 'armor', 'heavy', 7, 1, -6),
-  a('Half-plate', 'armor', 'heavy', 8, 0, -7),
-  a('Full plate', 'armor', 'heavy', 9, 1, -6),
-  a('Stoneplate', 'armor', 'heavy', 9, 0, -6),
-  a('O-yoroi', 'armor', 'heavy', 8, 2, -5),
-  a('Tower shield', 'shield', 'shield', 4, 2, -10),
-  a('Heavy steel shield', 'shield', 'shield', 2, null, -2),
-  a('Heavy wooden shield', 'shield', 'shield', 2, null, -2),
-  a('Light steel shield', 'shield', 'shield', 1, null, -1),
-  a('Light wooden shield', 'shield', 'shield', 1, null, -1),
-  a('Madu', 'shield', 'shield', 1, null, -2),
-  a('Buckler', 'shield', 'shield', 1, null, -1),
+  a('Padded', 'armor', 'light', 1, 8, 0, 5),
+  a('Quilted cloth', 'armor', 'light', 1, 8, 0, 10),
+  a('Leather lamellar', 'armor', 'light', 4, 3, -2, 25),
+  a('Studded leather', 'armor', 'light', 3, 5, -1, 15),
+  a('Leather', 'armor', 'light', 2, 6, 0, 10),
+  a('Wooden armor', 'armor', 'light', 3, 3, -1, 15),
+  a('Chain shirt', 'armor', 'light', 4, 4, -2, 20),
+  a('Haramaki', 'armor', 'light', 1, null, 0, 0),
+  a('Armored coat', 'armor', 'medium', 4, 3, -2, 20),
+  a('Hide', 'armor', 'medium', 4, 4, -3, 20),
+  a('Scale mail', 'armor', 'medium', 5, 3, -4, 25),
+  a('Chainmail', 'armor', 'medium', 6, 2, -5, 30),
+  a('Chain mail', 'armor', 'medium', 6, 2, -5, 30),
+  a('Breastplate', 'armor', 'medium', 6, 3, -4, 25),
+  a('Mountain pattern', 'armor', 'medium', 6, 3, -4, 30),
+  a('Kikko', 'armor', 'medium', 5, 4, -3, 25),
+  a('Do-maru', 'armor', 'medium', 5, 4, -4, 25),
+  a('Splint mail', 'armor', 'heavy', 7, 0, -7, 40),
+  a('Banded mail', 'armor', 'heavy', 7, 1, -6, 35),
+  a('Half-plate', 'armor', 'heavy', 8, 0, -7, 40),
+  a('Full plate', 'armor', 'heavy', 9, 1, -6, 35),
+  a('Stoneplate', 'armor', 'heavy', 9, 0, -6, 40),
+  a('O-yoroi', 'armor', 'heavy', 8, 2, -5, 40),
+  a('Tower shield', 'shield', 'shield', 4, 2, -10, 50),
+  a('Heavy steel shield', 'shield', 'shield', 2, null, -2, 15),
+  a('Heavy wooden shield', 'shield', 'shield', 2, null, -2, 15),
+  a('Light steel shield', 'shield', 'shield', 1, null, -1, 5),
+  a('Light wooden shield', 'shield', 'shield', 1, null, -1, 5),
+  a('Madu', 'shield', 'shield', 1, null, -2, 10),
+  a('Buckler', 'shield', 'shield', 1, null, -1, 5),
 ].sort((x, y) => y.name.length - x.name.length);
 
 const NON_ARMOR_GEAR = /\b(boots?|gloves?|belt|waterskin|cloak|cape|bag|pouch|satchel|whip|saddle|harness|backpack|pack|quiver|scabbard|hat|cap|mask|coat|outfit|shirt)\b/i;
@@ -282,7 +285,17 @@ function matchesArmorName(itemName: string, armorName: string): boolean {
 }
 
 /** Match an item name like "+1 Chain Shirt (Mithral)" to armor data and its enhancement bonus. */
-export function lookupArmor(itemName: string): { armor: ArmorData; enhancement: number } | undefined {
+/** PCGen's "Shield (Small/Wood)" style names -> "Light wooden shield". */
+function shieldAlias(name: string): string {
+  const m = /shield\s*\(\s*(small|light|large|heavy)\s*\/\s*(wood|wooden|steel)\s*\)/i.exec(name);
+  if (!m) return name;
+  const weight = /small|light/i.test(m[1]!) ? 'Light' : 'Heavy';
+  const material = /steel/i.test(m[2]!) ? 'steel' : 'wooden';
+  return name.replace(m[0], `${weight} ${material} shield`);
+}
+
+export function lookupArmor(rawName: string): { armor: ArmorData; enhancement: number } | undefined {
+  const itemName = shieldAlias(rawName);
   const armor = ARMOR_TABLE.find((x) => {
     if (!matchesArmorName(itemName, x.name)) return false;
     // Bare material names ("Leather", "Hide", "Padded") shouldn't match "Leather Boots" or "Hide Shirt".

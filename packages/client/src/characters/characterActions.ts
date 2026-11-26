@@ -33,7 +33,8 @@ export function rollInitiative(c: Character, bonus: number) {
   const self = getSelf();
   const combatant = c.tokenId ? state?.combat.combatants.find((x) => x.tokenId === c.tokenId) : undefined;
   if (!combatant || !state || !self || !canControlCombatant(state, self, combatant)) return rollCheck(c, 'Initiative', bonus);
-  if (combatant.modifier !== bonus) dispatch(combatActions.update.create({ id: combatant.id, changes: { modifier: bonus } }));
+  const clamped = Math.max(-100, Math.min(100, Math.round(bonus)));
+  if (combatant.modifier !== clamped) dispatch(combatActions.update.create({ id: combatant.id, changes: { modifier: clamped } }));
   return dispatch(combatActions.rollInitiative.create({ ids: [combatant.id] }));
 }
 
@@ -80,5 +81,7 @@ export function setHp(c: Character, next: { current: number; temp: number; nonle
 export function initiativeForToken(tokenId: string): { modifier: number; name: string } | undefined {
   const state = useGameStore.getState().view;
   const c = state && Object.values(state.characters).find((x) => x.tokenId === tokenId);
-  return c ? { modifier: computeCharacterStats(c).initiative.total, name: c.name } : undefined;
+  if (!c) return undefined;
+  const modifier = Math.max(-100, Math.min(100, Math.round(computeCharacterStats(c).initiative.total)));
+  return { modifier, name: c.name };
 }

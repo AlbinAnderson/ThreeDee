@@ -56,13 +56,21 @@ function putFull(draft: Draft<GameState>, id: string, full: Character | undefine
 const CharacterChangesSchema = CharacterSchema.pick({ name: true, shared: true }).partial();
 
 /** Token fields a character sync may set. */
-const TokenSyncSchema = TokenSchema.pick({ name: true, hp: true, darkvision: true, size: true });
+const TokenSyncSchema = TokenSchema.pick({ name: true, hp: true, darkvision: true, size: true }).extend({ light: TokenSchema.shape.light.optional() });
 
-/** Apply a sync to the token and to its combatants' initiative modifier. */
+/** Clamp an initiative modifier to CombatantSchema's valid range. */
+const clampInit = (n: number) => Math.max(-100, Math.min(100, Math.round(n)));
+
+/** Apply a sync to the token and to its combatants' initiative modifier and name. */
 function applySync(draft: Draft<GameState>, tokenId: string, sync: z.infer<typeof TokenSyncSchema> | undefined, initiative: number | undefined) {
   const token = draft.tokens[tokenId];
   if (token && sync) Object.assign(token, sync);
-  if (initiative !== undefined) for (const c of draft.combat.combatants) if (c.tokenId === tokenId) c.modifier = initiative;
+  const clamped = initiative !== undefined ? clampInit(initiative) : undefined;
+  for (const c of draft.combat.combatants) {
+    if (c.tokenId !== tokenId) continue;
+    if (clamped !== undefined) c.modifier = clamped;
+    if (sync?.name !== undefined) c.name = sync.name.trim() || 'Token';
+  }
 }
 
 /** When a character leaves a token, keep the token's live HP on the character. */
@@ -80,6 +88,8 @@ export const characterActions = {
       if (c.tokenId !== null) return 'Link a token after importing';
       if (c.ownerId && !ctx.state.users[c.ownerId]) return 'Unknown owner';
       if (!isGm(ctx.user) && c.ownerId !== ctx.user.id) return 'Players can only import their own characters';
+      if (c.inventory.items.some((i) => i.lootId !== null)) return 'Imported items cannot reference party loot';
+      if (!c.inventory.loadouts.some((l) => l.id === c.inventory.activeLoadoutId)) return 'Invalid active loadout';
       return true;
     },
     prepare(ctx, { character }) {
@@ -105,7 +115,12 @@ export const characterActions = {
     z.object({ id: IdSchema, changes: CharacterChangesSchema, full: CharacterSchema.optional() }),
     {
       authorize: (ctx, { id }) => requireManage(ctx, id),
-      prepare: (ctx, { id, changes }) => ({ id, changes, full: { ...ctx.state.characters[id]!, ...changes, updatedAt: Date.now() } }),
+      prepare(ctx, { id, changes }) {
+        const before = ctx.state.characters[id]!;
+        // Only attach the full character when sharing turns on (so newly-allowed viewers receive it).
+        const full = changes.shared === true && !before.shared ? { ...before, ...changes, updatedAt: Date.now() } : undefined;
+        return { id, changes, full };
+      },
       audience: (viewer, { id, full }, { state }) => beforeOrAfter(viewer, id, full, state),
       apply(draft, { id, changes, full }, meta) {
         if (full) return putFull(draft, id, full);
@@ -134,7 +149,12 @@ export const characterActions = {
         if (ownerId && !ctx.state.users[ownerId]) return 'Unknown player';
         return true;
       },
-      prepare: (ctx, { id, ownerId }) => ({ id, ownerId, full: { ...ctx.state.characters[id]!, ownerId, updatedAt: Date.now() } }),
+      prepare(ctx, { id, ownerId }) {
+        const before = ctx.state.characters[id]!;
+        // Only attach the full character when handing to a new player who didn't already see it.
+        const full = ownerId !== null && !before.shared && before.ownerId !== ownerId ? { ...before, ownerId, updatedAt: Date.now() } : undefined;
+        return { id, ownerId, full };
+      },
       audience: (viewer, { id, full }, { state }) => beforeOrAfter(viewer, id, full, state),
       apply(draft, { id, ownerId, full }, meta) {
         if (full) return putFull(draft, id, full);
@@ -169,7 +189,10 @@ export const characterActions = {
         if (ok !== true || tokenId === null) return ok;
         const token = ctx.state.tokens[tokenId];
         if (!token) return 'Token not found';
-        return canControlToken(ctx.user, token) || "You don't control that token";
+        if (!canControlToken(ctx.user, token)) return "You don't control that token";
+        const occupant = Object.values(ctx.state.characters).find((o) => o.tokenId === tokenId && o.id !== id);
+        if (occupant && !canManageCharacter(ctx.user, occupant)) return 'That token is already linked to another character';
+        return true;
       },
       prepare(ctx, { id, tokenId }) {
         const c = ctx.state.characters[id]!;
@@ -184,7 +207,7 @@ export const characterActions = {
           tokenId,
           grantOwnerId: grant,
           sync: tokenSyncFor(ctx.state, c, token),
-          initiative: computeCharacterStats(c).initiative.total,
+          initiative: clampInit(computeCharacterStats(c).initiative.total),
         };
       },
       // Everyone gets it: the token (public) may change. The payload holds no private data.
@@ -215,13 +238,13 @@ export const characterActions = {
   /** Replace the build with a newer .pcg export, keeping owner, token link, sharing and runtime state. */
   reimport: defineAction(
     'character/reimport',
-    z.object({ id: IdSchema, build: PcgenCharacterSchema, fileName: z.string().max(255) }),
+    z.object({ id: IdSchema, build: PcgenCharacterSchema, fileName: z.string().max(255), replaceInventory: z.boolean().optional() }),
     {
       authorize: (ctx, { id }) => requireManage(ctx, id),
       audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
-      apply(draft, { id, build, fileName }, meta) {
+      apply(draft, { id, build, fileName, replaceInventory }, meta) {
         const c = draft.characters[id];
-        if (c) Object.assign(c, mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts }));
+        if (c) Object.assign(c, mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts, replaceInventory }));
       },
     },
   ),
@@ -272,7 +295,7 @@ export const characterSheetActions = {
       prepare(ctx, { id }) {
         const c = ctx.state.characters[id]!;
         const token = ctx.state.tokens[c.tokenId!]!;
-        return { id, tokenId: token.id, sync: tokenSyncFor(ctx.state, c, token), initiative: computeCharacterStats(c).initiative.total };
+        return { id, tokenId: token.id, sync: tokenSyncFor(ctx.state, c, token), initiative: clampInit(computeCharacterStats(c).initiative.total) };
       },
       // The token is public, so everyone applies it; the payload only carries token-visible values.
       apply(draft, { tokenId, sync, initiative }) {

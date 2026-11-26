@@ -5,6 +5,7 @@ import {
   characterActions,
   classSummary,
   isGm,
+  tokenActions,
   type Character,
 } from '@vtt/shared';
 import { CheckboxField, TextField } from '../components/fields';
@@ -15,6 +16,7 @@ import { syncLinkedToken } from './characterActions';
 import { CharacterSettings } from './CharacterSettings';
 import { CharacterSheet } from './CharacterSheet';
 import { CharacterSummary } from './CharacterSummary';
+import { InventoryTab } from './InventoryTab';
 import { openImport } from './ImportDialog';
 import { useCharactersUi } from './store';
 
@@ -121,7 +123,7 @@ export function CharactersPanel() {
   );
 }
 
-type CharacterTab = 'sheet' | 'imported' | 'settings' | 'manage';
+type CharacterTab = 'sheet' | 'inventory' | 'imported' | 'settings' | 'manage';
 
 function CharacterView({ character: c, onBack }: { character: Character; onBack: () => void }) {
   const self = useSelf();
@@ -130,6 +132,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
   const activeTab: CharacterTab = !manage && (tab === 'settings' || tab === 'manage') ? 'sheet' : tab;
   const tabs: [CharacterTab, string][] = [
     ['sheet', 'Sheet'],
+    ['inventory', 'Inventory'],
     ['imported', 'Imported'],
     ...(manage ? ([['settings', 'Settings'], ['manage', 'Manage']] as [CharacterTab, string][]) : []),
   ];
@@ -148,6 +151,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
         ))}
       </div>
       {activeTab === 'sheet' && <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} />}
+      {activeTab === 'inventory' && <InventoryTab character={c} />}
       {activeTab === 'imported' && <CharacterSummary build={c.build} />}
       {activeTab === 'settings' && manage && <CharacterSettings character={c} />}
       {activeTab === 'manage' && manage && <ManageCharacter character={c} onBack={onBack} />}
@@ -190,14 +194,23 @@ function ManageCharacter({ character: c, onBack }: { character: Character; onBac
       <TextField
         label="Name in the VTT"
         value={c.name}
-        onCommit={(name) => {
-          if (name.trim() && dispatch(characterActions.update.create({ id: c.id, changes: { name } }))) syncLinkedToken({ ...c, name });
+        onCommit={(raw) => {
+          const name = raw.trim().slice(0, 80);
+          if (name && dispatch(characterActions.update.create({ id: c.id, changes: { name } }))) syncLinkedToken({ ...c, name });
         }}
       />
       <div className="field">
         <label>Played by</label>
         {gm ? (
-          <select value={c.ownerId ?? ''} onChange={(e) => dispatch(characterActions.setOwner.create({ id: c.id, ownerId: e.target.value || null }))}>
+          <select
+            value={c.ownerId ?? ''}
+            onChange={(e) => {
+              const ownerId = e.target.value || null;
+              if (dispatch(characterActions.setOwner.create({ id: c.id, ownerId })) && ownerId && linked && !linked.ownerIds.includes(ownerId) && linked.ownerIds.length < 50) {
+                dispatch(tokenActions.update.create({ id: linked.id, changes: { ownerIds: [...linked.ownerIds, ownerId] } }));
+              }
+            }}
+          >
             <option value="">GM (NPC)</option>
             {ownerUser && ownerUser.role === 'gm' && <option value={ownerUser.id}>{ownerUser.name} (GM)</option>}
             {players.map((u) => (

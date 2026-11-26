@@ -3,6 +3,8 @@
  * bump CURRENT_SCHEMA_VERSION in state.ts and add a step here that upgrades
  * the previous version's raw JSON. Steps run in order on load.
  */
+import { seedInventory } from './pf1e/inventory';
+import { PcgenCharacterSchema } from './pcgen/schema';
 import { CURRENT_SCHEMA_VERSION, GameStateSchema, type GameState } from './state';
 
 type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
@@ -58,6 +60,19 @@ const migrations: Record<number, Migration> = {
     };
   },
   5: (raw) => ({ ...raw, schemaVersion: 6, pf1eTurns: {} }),
+  // Epic 4: VTT-owned inventory seeded from each character's imported gear; loot can be stowed in it.
+  6: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    const loot = (raw.loot ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 7,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => [id, { ...c, inventory: seedInventory(PcgenCharacterSchema.parse(c.build)) }]),
+      ),
+      loot: Object.fromEntries(Object.entries(loot).map(([id, l]) => [id, { ...l, stowed: false }])),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {

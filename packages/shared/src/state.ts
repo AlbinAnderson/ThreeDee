@@ -27,7 +27,7 @@ export * from './entities/vision';
 export * from './entities/pf1e';
 
 /** Bump when the shape changes, and add a step in migrations.ts. */
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 // ---------------------------------------------------------------- users
 
@@ -196,6 +196,8 @@ export const LootItemSchema = z.object({
   identified: z.boolean(),
   /** GM-only true properties. Redacted for players until identified. */
   secretNotes: z.string().max(10000),
+  /** Moved whole into a character's inventory: hidden from the Loot list, kept for the GM's true properties. */
+  stowed: z.boolean(),
   createdBy: IdSchema,
   createdAt: z.number(),
 });

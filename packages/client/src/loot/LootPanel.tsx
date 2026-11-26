@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { isGm, lootActions, newId, type LootItem, type User } from '@vtt/shared';
+import { canManageCharacter, inventoryActions, isGm, lootActions, newId, type LootItem, type User } from '@vtt/shared';
 import { CheckboxField, ImageUploadButton, NumberField, SelectField, TextAreaField, TextField } from '../components/fields';
 import { uploadAsset } from '../lib/assets';
 import { dispatch } from '../state/dispatch';
@@ -24,6 +24,8 @@ export function LootPanel() {
     const q = query.trim().toLowerCase();
     return Object.values(loot)
       .filter((i) => {
+        // Moved whole into a character's inventory (kept only for its true properties).
+        if (i.stowed) return false;
         if (holderFilter === PARTY && i.holderId) return false;
         if (holderFilter !== ALL && holderFilter !== PARTY && i.holderId !== holderFilter) return false;
         if (!q) return true;
@@ -51,7 +53,9 @@ export function LootPanel() {
 
   function onExport(format: string) {
     if (!(format in lootExporters)) return;
-    const all = Object.values(loot).sort((a, b) => a.createdAt - b.createdAt);
+    const all = Object.values(loot)
+      .filter((i) => !i.stowed)
+      .sort((a, b) => a.createdAt - b.createdAt);
     exportLoot(format as LootExportFormat, all, users, roomId);
   }
 
@@ -79,7 +83,7 @@ export function LootPanel() {
             onExport(e.target.value);
             e.target.value = '';
           }}
-          disabled={Object.keys(loot).length === 0}
+          disabled={!Object.values(loot).some((i) => !i.stowed)}
           title="Download all loot"
         >
           <option value="">Export…</option>
@@ -92,7 +96,7 @@ export function LootPanel() {
       </div>
 
       {items.length === 0 && (
-        <p className="muted">{Object.keys(loot).length ? 'Nothing matches.' : 'No loot yet. Add the first find!'}</p>
+        <p className="muted">{Object.values(loot).some((i) => !i.stowed) ? 'Nothing matches.' : 'No loot yet. Add the first find!'}</p>
       )}
       <ul className="loot-list">
         {items.map((item) => (
@@ -198,6 +202,8 @@ function LootEditor({ item, users, self }: { item: LootItem; users: User[]; self
         )
       )}
 
+      <TakeIntoInventory item={item} self={self} />
+
       {canDelete && (
         <button
           type="button"
@@ -207,6 +213,50 @@ function LootEditor({ item, users, self }: { item: LootItem; users: User[]; self
           Delete item
         </button>
       )}
+    </div>
+  );
+}
+
+/** Move some or all of this item into a character you play (its notes, value and image go along). */
+function TakeIntoInventory({ item, self }: { item: LootItem; self: User }) {
+  const characters = useGame((s) => s.characters);
+  const mine = useMemo(
+    () => Object.values(characters).filter((c) => canManageCharacter(self, c)).sort((a, b) => a.name.localeCompare(b.name)),
+    [characters, self],
+  );
+  const [characterId, setCharacterId] = useState('');
+  const [qty, setQty] = useState(1);
+  const target = mine.find((c) => c.id === characterId) ?? mine.find((c) => c.ownerId === self.id) ?? mine[0];
+  if (!target) return null;
+  const max = Math.max(1, item.quantity);
+  return (
+    <div className="button-row">
+      <select value={target.id} onChange={(e) => setCharacterId(e.target.value)} aria-label="Character to give it to">
+        {mine.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      {max > 1 && (
+        <input
+          type="number"
+          className="inv-give-qty"
+          min={1}
+          max={max}
+          value={Math.min(qty, max)}
+          aria-label="How many"
+          onChange={(e) => setQty(Math.max(1, Math.min(max, Math.round(Number(e.target.value) || 1))))}
+        />
+      )}
+      <button
+        type="button"
+        disabled={item.quantity <= 0}
+        title={item.quantity <= 0 ? 'Nothing left to take' : "Move into that character's inventory"}
+        onClick={() => dispatch(inventoryActions.takeLoot.create({ lootId: item.id, characterId: target.id, itemId: newId(), quantity: Math.min(qty, item.quantity) }))}
+      >
+        → Inventory
+      </button>
     </div>
   );
 }

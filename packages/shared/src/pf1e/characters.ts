@@ -1,6 +1,7 @@
 /** Pure helpers for PF1e characters (shared by client UI and server tests). */
 import { EMPTY_RUNTIME, EMPTY_SHEET, type Character } from '../entities/pf1e';
 import type { PcgenCharacter } from '../pcgen/schema';
+import { seedInventory } from './inventory';
 
 /** Character name from a parsed file, with a sensible fallback. */
 export function buildName(build: PcgenCharacter, fallback = 'Unnamed character'): string {
@@ -36,6 +37,7 @@ export function createCharacterFromPcg(
     build,
     sheet: structuredClone(EMPTY_SHEET),
     runtime: structuredClone(EMPTY_RUNTIME),
+    inventory: seedInventory(build),
     createdAt: opts.now,
     updatedAt: opts.now,
   };
@@ -44,12 +46,13 @@ export function createCharacterFromPcg(
 /**
  * Apply a re-imported build to an existing character. Build data is replaced;
  * id, owner, token link, sharing and runtime state are kept. A name the user
- * customized in the VTT is kept too.
+ * customized in the VTT is kept too. The inventory is VTT-owned (it changes
+ * in play) and is kept unless `replaceInventory` asks to reseed it from the file.
  */
 export function mergeReimport(
   existing: Character,
   build: PcgenCharacter,
-  opts: { fileName: string; importedBy: string; now: number },
+  opts: { fileName: string; importedBy: string; now: number; replaceInventory?: boolean },
 ): Character {
   const prevImportedName = buildName(existing.build, fileFallbackName(existing.source.fileName));
   const nameWasImported = existing.name === prevImportedName;
@@ -57,6 +60,7 @@ export function mergeReimport(
     ...existing,
     name: nameWasImported ? buildName(build, existing.name) : existing.name,
     build,
+    inventory: opts.replaceInventory ? seedInventory(build) : existing.inventory,
     source: { kind: 'pcgen', fileName: opts.fileName.slice(0, 255), importedAt: opts.now, importedBy: opts.importedBy },
     updatedAt: opts.now,
   };

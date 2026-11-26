@@ -42,6 +42,10 @@ interface Actor {
 
 export const useActionsUi = create<{ actorKey: string | null }>(() => ({ actorKey: null }));
 
+export function resetActionsUi() {
+  useActionsUi.setState({ actorKey: null });
+}
+
 /** Characters and combatants the current user can act for; the one whose turn it is first. */
 export function useActors(): Actor[] {
   const state = useGame((s) => s);
@@ -109,9 +113,14 @@ export function ActionsPanel() {
   const roll = stats
     ? (a: Pf1Action) => {
         const size = SIZE_MOD[stats.size];
-        if (a.roll === 'cmb') rollCheck(actor.character!, `${a.name} (CMB)`, stats.cmb.total);
-        else if (a.roll === 'ranged') rollCheck(actor.character!, `${a.name} (ranged)`, stats.bab.total + stats.abilities.DEX.mod + size);
-        else rollCheck(actor.character!, `${a.name} (melee)`, stats.bab.total + stats.abilities.STR.mod + size + (a.id === 'g.charge' ? 2 : 0));
+        if (a.roll === 'cmb') return rollCheck(actor.character!, `${a.name} (CMB)`, stats.cmb.total);
+        // Use the wielded weapon when there is one (Inventory tab), else a bare BAB + ability roll.
+        const ranged = a.roll === 'ranged';
+        const weapon = stats.attacks.find((x) => (ranged ? x.mode !== 'melee' : x.mode === 'melee') && x.hand !== 'offHand');
+        const charge = a.id === 'g.charge' ? 2 : 0;
+        if (weapon) return rollCheck(actor.character!, `${a.name} (${weapon.name})`, weapon.attack.total + charge);
+        if (ranged) rollCheck(actor.character!, `${a.name} (ranged)`, stats.bab.total + stats.abilities.DEX.mod + size);
+        else rollCheck(actor.character!, `${a.name} (melee)`, stats.bab.total + stats.abilities.STR.mod + size + charge);
       }
     : null;
 
@@ -144,7 +153,7 @@ export function ActionsPanel() {
           </button>
         </div>
       )}
-      {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size); weapons come with the inventory update.</p>}
+      {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size); action 🎲 buttons use your wielded weapon when one is equipped.</p>}
 
       {resources.length > 0 && (
         <section>

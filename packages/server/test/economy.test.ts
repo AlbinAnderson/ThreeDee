@@ -11,6 +11,7 @@ import {
   createCharacterFromPcg,
   createInitialState,
   createToken,
+  CURRENT_SCHEMA_VERSION,
   GENERIC_ACTIONS,
   migrateState,
   newId,
@@ -243,7 +244,7 @@ describe('PF1e class actions & resources', () => {
     const v5: Record<string, unknown> = { ...v6, schemaVersion: 5 };
     delete v5.pf1eTurns;
     const migrated = migrateState(v5);
-    assert.equal(migrated.schemaVersion, 6);
+    assert.equal(migrated.schemaVersion, CURRENT_SCHEMA_VERSION);
     assert.deepEqual(migrated.pf1eTurns, {});
   });
 });

@@ -226,6 +226,52 @@ describe('characters: re-import', () => {
     act(b, characterActions.reimport.create({ id: c.id, build: c.build, fileName: 'x.pcg' }));
     assert.ok(b.rejects().includes("You don't control that character"));
   });
+
+  test('import rejects fabricated lootId and invalid activeLoadoutId; linkToken prevents stealing another user’s linked token; update/setOwner omit full when visibility doesn’t expand', () => {
+    const { room, g, a, b, act } = setup();
+    const badLoot = sampleCharacter('alice', 'alice');
+    badLoot.inventory.items[0]!.lootId = 'stolenLoot';
+    act(a, characterActions.import.create({ character: badLoot }));
+    assert.ok(a.rejects().includes('Imported items cannot reference party loot'));
+
+    const badLoadout = sampleCharacter('alice', 'alice');
+    badLoadout.inventory.activeLoadoutId = 'missing';
+    act(a, characterActions.import.create({ character: badLoadout }));
+    assert.ok(a.rejects().includes('Invalid active loadout'));
+
+    const ca = sampleCharacter('alice', 'alice');
+    const cb = sampleCharacter('bob', 'bob');
+    act(a, characterActions.import.create({ character: ca }));
+    act(b, characterActions.import.create({ character: cb }));
+    act(g, tokenActions.create.create({ token: createToken({ id: 'sharedTok', sceneId: 'scene1', x: 0, y: 0, ownerIds: ['alice', 'bob'] }) }));
+    act(a, characterActions.linkToken.create({ id: ca.id, tokenId: 'sharedTok' }));
+
+    // Bob shares control of sharedTok but cannot steal it away from Alice's character.
+    act(b, characterActions.linkToken.create({ id: cb.id, tokenId: 'sharedTok' }));
+    assert.ok(b.rejects().includes('That token is already linked to another character'));
+    assert.equal(room.currentState.characters[ca.id]!.tokenId, 'sharedTok');
+
+    // Rename & unshare omit `full`; share includes `full`.
+    const gBefore = g.inbox.length;
+    act(a, characterActions.update.create({ id: ca.id, changes: { name: 'Valeros II' } }));
+    const renameMsg = g.inbox.slice(gBefore).find((m) => m.t === 'action' && m.action.type === 'character/update');
+    assert.ok(renameMsg && renameMsg.t === 'action' && (renameMsg.action.payload as { full?: unknown }).full === undefined);
+
+    const bBeforeShare = b.inbox.length;
+    act(a, characterActions.update.create({ id: ca.id, changes: { shared: true } }));
+    const shareMsg = b.inbox.slice(bBeforeShare).find((m) => m.t === 'action' && m.action.type === 'character/update');
+    assert.ok(shareMsg && shareMsg.t === 'action' && !!(shareMsg.action.payload as { full?: unknown }).full);
+
+    const bBeforeUnshare = b.inbox.length;
+    act(a, characterActions.update.create({ id: ca.id, changes: { shared: false } }));
+    const unshareMsg = b.inbox.slice(bBeforeUnshare).find((m) => m.t === 'action' && m.action.type === 'character/update');
+    assert.ok(unshareMsg && unshareMsg.t === 'action' && (unshareMsg.action.payload as { full?: unknown }).full === undefined);
+
+    const aBeforeNpc = a.inbox.length;
+    act(g, characterActions.setOwner.create({ id: ca.id, ownerId: null }));
+    const npcMsg = a.inbox.slice(aBeforeNpc).find((m) => m.t === 'action' && m.action.type === 'character/setOwner');
+    assert.ok(npcMsg && npcMsg.t === 'action' && (npcMsg.action.payload as { full?: unknown }).full === undefined);
+  });
 });
 
 describe('characters: migration', () => {
