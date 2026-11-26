@@ -28,6 +28,31 @@ export const SizeNameSchema = z.enum(['Fine', 'Diminutive', 'Tiny', 'Small', 'Me
 const StatAdjustSchema = z.partialRecord(StatKeySchema, z.number().int().min(-50).max(50));
 const NonNegStatAdjustSchema = z.partialRecord(StatKeySchema, z.number().int().min(0).max(50));
 
+/** Highest spell level and how many metamagic feats one prepared spell or cast may carry. */
+export const MAX_SPELL_LEVEL = 9;
+export const MAX_METAMAGIC = 6;
+const SpellNameSchema = z.string().trim().min(1).max(80);
+const SpellLevelSchema = z.number().int().min(0).max(MAX_SPELL_LEVEL);
+export const MetamagicListSchema = z.array(z.string().trim().min(1).max(40)).max(MAX_METAMAGIC);
+
+/**
+ * One prepared spell for the day (one casting: a spell prepared twice is two
+ * entries). `level` is the slot it occupies, which metamagic raises.
+ */
+export const PreparedSpellSchema = z.object({
+  id: IdSchema,
+  name: SpellNameSchema,
+  level: SpellLevelSchema,
+  metamagic: MetamagicListSchema,
+  /** `bonus`: the domain/school slot, which only domain/school spells may fill. */
+  slot: z.enum(['normal', 'bonus']),
+  /** Already cast today (prepared casters). Cantrips never get used up. */
+  cast: z.boolean(),
+});
+export type PreparedSpell = z.infer<typeof PreparedSpellSchema>;
+export const MAX_PREPARED_PER_CLASS = 120;
+export const MAX_CASTING_CLASSES = 20;
+
 export const CharacterRuntimeSchema = z.object({
   /** Current hit points tracked in the VTT; null until the sheet sets them (Epic 2). */
   hp: z
@@ -46,10 +71,17 @@ export const CharacterRuntimeSchema = z.object({
   abilityTemp: StatAdjustSchema,
   /** Active combat options (Power Attack, Fight defensively...), keyed by toggle id; see pf1e/toggles.ts. */
   toggles: z.record(z.string().max(40), z.boolean()).refine((r) => Object.keys(r).length <= 30, 'Too many toggles'),
+  /**
+   * Spells prepared for the day, by casting class name (Epic 7). A class with no
+   * entry uses the prepared book in the .pcg file until it is prepared in the VTT.
+   */
+  prepared: z
+    .record(z.string().trim().min(1).max(80), z.array(PreparedSpellSchema).max(MAX_PREPARED_PER_CLASS))
+    .refine((r) => Object.keys(r).length <= MAX_CASTING_CLASSES, 'Too many casting classes'),
 });
 export type CharacterRuntime = z.infer<typeof CharacterRuntimeSchema>;
 
-export const EMPTY_RUNTIME: CharacterRuntime = { hp: null, uses: {}, abilityDamage: {}, abilityDrain: {}, abilityTemp: {}, toggles: {} };
+export const EMPTY_RUNTIME: CharacterRuntime = { hp: null, uses: {}, abilityDamage: {}, abilityDrain: {}, abilityTemp: {}, toggles: {}, prepared: {} };
 
 /** Progression for a class the rules tables don't know (prestige or homebrew). */
 export const ClassChassisSchema = z.object({
@@ -72,6 +104,19 @@ export const CustomPoolSchema = z.object({
 });
 export type CustomPool = z.infer<typeof CustomPoolSchema>;
 export const MAX_CUSTOM_POOLS = 30;
+
+/** Casting settings for one class, for classes the rules tables don't know or house rules. null = from the rules tables. */
+export const SpellcastingOverrideSchema = z.object({
+  model: z.enum(['prepared', 'spontaneous', 'hybrid']).nullable(),
+  stat: StatKeySchema.nullable(),
+  casterLevel: z.number().int().min(0).max(40).nullable(),
+  /** Base spells per day for spell levels 0-9 (before bonus spells); null entries = can't cast that level. */
+  perDay: z.array(z.number().int().min(0).max(20).nullable()).max(MAX_SPELL_LEVEL + 1).nullable(),
+  /** Untyped bonus to save DCs and to concentration checks (traits, items...). */
+  dcBonus: z.number().int().min(-10).max(10),
+  concentrationBonus: z.number().int().min(-20).max(20),
+});
+export type SpellcastingOverride = z.infer<typeof SpellcastingOverrideSchema>;
 
 /** Sheet-side changes to one skill (kept on re-import). */
 export const SkillOverrideSchema = z.object({
@@ -117,6 +162,10 @@ export const CharacterSheetSchema = z.object({
     .array(CustomPoolSchema)
     .max(MAX_CUSTOM_POOLS)
     .refine((arr) => new Set(arr.map((p) => p.id)).size === arr.length, 'Duplicate custom pool id'),
+  /** Per-class spellcasting settings, by class name. */
+  spellcasting: z
+    .record(z.string().trim().min(1).max(80), SpellcastingOverrideSchema)
+    .refine((r) => Object.keys(r).length <= MAX_CASTING_CLASSES, 'Too many casting classes'),
 });
 export type CharacterSheet = z.infer<typeof CharacterSheetSchema>;
 
@@ -132,6 +181,7 @@ export const EMPTY_SHEET: CharacterSheet = {
   misc: {},
   skills: {},
   customPools: [],
+  spellcasting: {},
 };
 
 // ------------------------------------------------------------------ inventory

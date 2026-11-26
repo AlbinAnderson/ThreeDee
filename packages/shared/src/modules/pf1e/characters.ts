@@ -276,8 +276,8 @@ export const characterSheetActions = {
     },
   }),
 
-  /** Table state: HP when not linked to a token, ability damage/drain/temp, spent uses. */
-  updateRuntime: defineAction('character/updateRuntime', z.object({ id: IdSchema, changes: CharacterRuntimeSchema.partial() }), {
+  /** Table state: HP when not linked to a token, ability damage/drain/temp, spent uses. Prepared spells go through pf1e/prepareSpells. */
+  updateRuntime: defineAction('character/updateRuntime', z.object({ id: IdSchema, changes: CharacterRuntimeSchema.omit({ prepared: true }).partial() }), {
     authorize: (ctx, { id }) => requireManage(ctx, id),
     audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
     apply(draft, { id, changes }, meta) {

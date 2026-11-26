@@ -24,3 +24,5 @@ export * from './pf1e/inventory';
 export * from './pf1e/skills';
 export * from './pf1e/toggles';
 export * from './pf1e/abilities';
+export * from './pf1e/spellData';
+export * from './pf1e/spells';

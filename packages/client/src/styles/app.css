@@ -2450,3 +2450,104 @@ button.active {
   flex: 1 0 auto;
   border-radius: var(--radius) !important;
 }
+
+/* Spells tab (Epic 7) */
+.caster {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+.caster h3 .badge {
+  font-weight: normal;
+  vertical-align: middle;
+}
+.caster-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  margin: 2px 0 6px;
+}
+.spell-levels,
+.spell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.spell-levels > li {
+  margin-bottom: 6px;
+}
+.spell-level-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 2px 0;
+}
+.spell-level-head select {
+  width: auto;
+  margin-left: auto;
+}
+.spell-level-name {
+  font-weight: 600;
+  min-width: 56px;
+}
+.pips.inline {
+  display: inline-flex;
+  margin-top: 0;
+}
+.spell-list > li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0 2px 8px;
+}
+.spell-list > li.spent .spell-name {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.spell-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.known-spells {
+  margin-top: 4px;
+}
+.known-spells > div {
+  padding: 2px 0 2px 8px;
+}
+.prepare-panel,
+.casting-settings {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 6px;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.prepare-metamagic {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.prepare-metamagic input,
+.prepare-metamagic select {
+  width: auto;
+  flex: 1 1 100px;
+  min-width: 0;
+}
+.chat-card-actions {
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.spell-level-head .push-right {
+  margin-left: auto;
+}

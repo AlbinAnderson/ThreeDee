@@ -98,6 +98,20 @@ const migrations: Record<number, Migration> = {
       ),
     };
   },
+  // Epic 7: prepared spells (empty = the .pcg's prepared book) and per-class casting settings.
+  9: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 10,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => [
+          id,
+          { ...c, sheet: { spellcasting: {}, ...(c.sheet as object) }, runtime: { prepared: {}, ...(c.runtime as object) } },
+        ]),
+      ),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {
