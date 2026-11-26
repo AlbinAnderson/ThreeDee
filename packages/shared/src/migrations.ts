@@ -9,7 +9,7 @@ type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
 
 /** migrations[n] upgrades version n -> n + 1. */
 const migrations: Record<number, Migration> = {
-  // 1: (raw) => ({ ...raw, schemaVersion: 2, newField: defaultValue }),
+  1: (raw) => ({ ...raw, schemaVersion: 2, drawings: {}, notes: {}, loot: {} }),
 };
 
 export function migrateState(raw: unknown): GameState {

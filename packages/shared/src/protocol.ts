@@ -1,9 +1,12 @@
 /**
  * Wire protocol between client and server (JSON over a single WebSocket).
  *
- *   client -> server: join, action, ephemeral
+ *   client -> server: join, action, ephemeral, request
  *   server -> client: welcome (full snapshot), action (confirmed, sequenced),
- *                     reject, presence, ephemeral, error
+ *                     reject, presence, ephemeral, response, notice, error
+ *
+ * A second `welcome` may arrive at any time (e.g. after the GM restores a
+ * snapshot); clients must replace their state with it.
  *
  * "Ephemeral" events (pings, cursors, ...) are relayed to other clients but
  * never stored in game state.
@@ -36,6 +39,7 @@ export const ClientMessageSchema = z.discriminatedUnion('t', [
     action: z.object({ type: z.string().max(64), payload: z.unknown() }),
   }),
   z.object({ t: z.literal('ephemeral'), event: EphemeralEventSchema }),
+  z.object({ t: z.literal('request'), reqId: z.string().min(1).max(64), op: z.string().max(64), args: z.unknown() }),
 ]);
 export type ClientMessage = z.input<typeof ClientMessageSchema>;
 export type JoinMessage = Extract<ClientMessage, { t: 'join' }>;
@@ -46,4 +50,8 @@ export type ServerMessage =
   | { t: 'reject'; clientId: string; reason: string }
   | { t: 'presence'; online: UserId[] }
   | { t: 'ephemeral'; from: UserId; event: EphemeralEvent }
+  | { t: 'response'; reqId: string; ok: true; data: unknown }
+  | { t: 'response'; reqId: string; ok: false; error: string }
+  /** Informational message to show the user (e.g. "the GM restored a snapshot"). */
+  | { t: 'notice'; message: string }
   | { t: 'error'; message: string; fatal?: boolean };

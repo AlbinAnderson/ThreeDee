@@ -20,13 +20,17 @@ export class RoomManager {
 
   private async load(roomId: string): Promise<Room> {
     const saved = await this.store.load(roomId);
+    let room: Room;
     if (saved) {
       console.log(`[rooms] loaded "${roomId}"`);
-      return new Room(roomId, saved, this.store);
+      room = new Room(roomId, saved, this.store);
+    } else {
+      console.log(`[rooms] created "${roomId}"`);
+      room = new Room(roomId, createInitialState(newId()), this.store);
+      await this.store.save(roomId, room.currentState);
     }
-    console.log(`[rooms] created "${roomId}"`);
-    const room = new Room(roomId, createInitialState(newId()), this.store);
-    await this.store.save(roomId, room.snapshot);
+    // Snapshot at the start of a session if the last one is old.
+    await room.maybeAutoSnapshot();
     return room;
   }
 

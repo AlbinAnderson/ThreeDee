@@ -4,6 +4,7 @@ import { ClientMessageSchema, newId, pickUserColor, type JoinMessage, type Role 
 import { config } from '../config';
 import type { Client } from '../rooms/Room';
 import type { RoomManager } from '../rooms/RoomManager';
+import { handleRequest } from '../rpc';
 
 const HEARTBEAT_MS = 30_000;
 
@@ -19,6 +20,7 @@ export function attachWebSocket(server: Server, rooms: RoomManager) {
       id: newId(),
       user: null,
       room: null,
+      seq: 0,
       send(msg) {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
       },
@@ -41,7 +43,7 @@ export function attachWebSocket(server: Server, rooms: RoomManager) {
         }
         const room = await rooms.get(msg.roomId);
         if (ws.readyState !== WebSocket.OPEN) return;
-        const existing = room.snapshot.users[msg.userId];
+        const existing = room.currentState.users[msg.userId];
         room.join(client, {
           id: msg.userId,
           name: msg.name.trim(),
@@ -74,6 +76,9 @@ export function attachWebSocket(server: Server, rooms: RoomManager) {
           break;
         case 'ephemeral':
           client.room?.broadcastEphemeral(client, msg.event);
+          break;
+        case 'request':
+          void handleRequest(client, msg.reqId, msg.op, msg.args);
           break;
       }
     });

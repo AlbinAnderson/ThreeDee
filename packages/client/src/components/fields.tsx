@@ -166,3 +166,29 @@ export function ImageUploadButton({
     </label>
   );
 }
+
+export function TextAreaField({
+  label,
+  value,
+  onCommit,
+  disabled,
+  placeholder,
+  rows = 4,
+}: FieldProps<string> & { placeholder?: string; rows?: number }) {
+  const id = useId();
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <Field label={label} id={id}>
+      <textarea
+        id={id}
+        value={draft}
+        rows={rows}
+        disabled={disabled}
+        placeholder={placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => draft !== value && onCommit(draft)}
+      />
+    </Field>
+  );
+}

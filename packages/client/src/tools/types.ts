@@ -1,3 +1,4 @@
+import type { ComponentType } from 'react';
 import type { EphemeralEvent, GameAction, GameState, Point, Scene, User } from '@vtt/shared';
 import type { useInteraction } from '../board/interactionStore';
 import type { Camera, useUi } from '../state/uiStore';
@@ -7,6 +8,8 @@ export interface BoardPointer {
   world: Point;
   /** Token under the pointer, if any. */
   tokenId: string | null;
+  /** Drawing under the pointer, if any (only when no token is). */
+  drawingId: string | null;
   shift: boolean;
   alt: boolean;
   ctrl: boolean;
@@ -37,6 +40,8 @@ export interface Tool<S = unknown> {
   hotkey?: string;
   gmOnly?: boolean;
   cursor?: string;
+  /** Settings shown under the toolbar while the tool is active. */
+  Options?: ComponentType;
   createState(): S;
   /** Return 'pan' to hand the gesture to the camera instead. */
   onPointerDown?(p: BoardPointer, ctx: ToolContext, state: S): void | 'pan';

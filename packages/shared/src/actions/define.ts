@@ -51,6 +51,14 @@ export interface ActionSpec<P> {
   optimistic?: boolean;
   authorize: (ctx: AuthContext, payload: P) => AuthResult;
   prepare?: (ctx: PrepareContext, payload: P) => P;
+  /**
+   * Server-side: whether a connected user receives this action (evaluated
+   * against the state *before* it is applied). Default: everyone. The author
+   * always receives their own action. An action with a restricted audience
+   * must only touch data that the module's redactor hides from excluded users,
+   * otherwise their copy of the state drifts.
+   */
+  audience?: (viewer: User, payload: P, ctx: { state: GameState; meta: ActionMeta }) => boolean;
   apply: (draft: Draft<GameState>, payload: P, meta: ActionMeta) => void;
 }
 
@@ -77,8 +85,19 @@ export function defineAction<T extends string, S extends z.ZodType>(
   };
 }
 
-/** A feature module is just a record of action definitions. */
+/** A feature module's actions: a record of action definitions. */
 export type ActionModule = Record<string, AnyActionDef>;
+
+/**
+ * Removes data a viewer may not see from a state snapshot (mutates a draft).
+ * Runs on the server before sending a snapshot to each client.
+ */
+export type Redactor = (draft: Draft<GameState>, viewer: User) => void;
+
+export interface GameModule<A extends ActionModule = ActionModule> {
+  actions: A;
+  redact?: Redactor;
+}
 
 /** Union of the concrete action objects of a module. */
 export type ModuleActions<M> = {

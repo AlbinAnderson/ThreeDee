@@ -3,6 +3,16 @@ import type { ClientMessage, JoinMessage, ServerMessage } from '@vtt/shared';
 export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'failed';
 export type JoinParams = Omit<JoinMessage, 't'>;
 
+/**
+ * Reconnect delay (ms). Retry every 250ms for the first ~5s, since the common
+ * case is the server restarting (deploy, or `tsx watch` in dev) and being back
+ * within a couple of seconds; then back off to every 5s.
+ */
+function retryDelay(attempt: number): number {
+  if (attempt < 20) return 250;
+  return Math.min(5000, 1000 * 2 ** (attempt - 20));
+}
+
 type MessageListener = (msg: ServerMessage) => void;
 type StatusListener = (status: ConnectionStatus, error?: string) => void;
 
@@ -23,15 +33,27 @@ export class GameConnection {
 
   start() {
     this.stopped = false;
+    window.addEventListener('online', this.retryNow);
+    document.addEventListener('visibilitychange', this.retryNow);
     this.open();
   }
 
   close() {
     this.stopped = true;
+    window.removeEventListener('online', this.retryNow);
+    document.removeEventListener('visibilitychange', this.retryNow);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();
     this.setStatus('closed');
   }
+
+  /** Skip the remaining backoff (network came back, or the tab was refocused). */
+  private retryNow = () => {
+    if (this.stopped || this.ws || !this.reconnectTimer || document.visibilityState === 'hidden') return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.open();
+  };
 
   /** Returns false if the message could not be sent (not connected). */
   send(msg: ClientMessage): boolean {
@@ -80,8 +102,11 @@ export class GameConnection {
       if (this.ws === ws) this.ws = null;
       if (this.stopped) return;
       this.setStatus('connecting');
-      const delay = Math.min(10_000, 500 * 2 ** this.retries++);
-      this.reconnectTimer = setTimeout(() => this.open(), delay);
+      const delay = retryDelay(this.retries++);
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        this.open();
+      }, delay);
     };
   }
 

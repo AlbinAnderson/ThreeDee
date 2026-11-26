@@ -3,6 +3,7 @@ export * from './dice';
 export * from './geometry';
 export * from './util';
 export * from './protocol';
+export * from './rpc';
 export * from './migrations';
 export * from './actions/define';
 export * from './actions/auth';

@@ -1,13 +1,15 @@
 import http from 'node:http';
 import path from 'node:path';
 import express from 'express';
-import { config } from './config';
+import { config, paths } from './config';
 import { assetRouter } from './net/assets';
 import { attachWebSocket } from './net/socket';
-import { FileRoomStore } from './persistence/RoomStore';
+import { importLegacyRooms } from './persistence/importLegacy';
+import { SqliteRoomStore } from './persistence/SqliteRoomStore';
 import { RoomManager } from './rooms/RoomManager';
 
-const store = new FileRoomStore(path.join(config.dataDir, 'rooms'));
+const store = new SqliteRoomStore(paths.db);
+await importLegacyRooms(store, paths.legacyRooms);
 const rooms = new RoomManager(store);
 
 const app = express();
@@ -20,7 +22,7 @@ app.use((_req, res, next) => {
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
-app.use(assetRouter(path.join(config.dataDir, 'assets'), config.maxUploadBytes));
+app.use(assetRouter(paths.assets, config.maxUploadBytes));
 
 if (config.serveClient) {
   app.use(express.static(config.clientDist));
@@ -42,7 +44,7 @@ attachWebSocket(server, rooms);
 
 server.listen(config.port, config.host, () => {
   console.log(`[server] listening on http://${config.host}:${config.port}`);
-  console.log(`[server] data directory: ${config.dataDir}`);
+  console.log(`[server] database: ${paths.db}`);
   if (!config.gmPassword) console.log('[server] GM_PASSWORD not set: anyone can join as GM');
 });
 
@@ -52,6 +54,7 @@ async function shutdown(signal: string) {
   shuttingDown = true;
   console.log(`[server] ${signal} received, saving rooms...`);
   await rooms.flushAll();
+  store.close();
   process.exit(0);
 }
 process.on('SIGINT', () => void shutdown('SIGINT'));

@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { RollResultSchema } from './dice';
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export const IdSchema = z
   .string()
@@ -97,6 +97,64 @@ export const TokenSchema = z.object({
 });
 export type Token = z.infer<typeof TokenSchema>;
 
+// ---------------------------------------------------------------- drawings
+
+const DrawCoordSchema = z.number().min(-100000).max(100000);
+
+export const DrawingShapeSchema = z.enum(['freehand', 'line', 'rect', 'ellipse']);
+export type DrawingShape = z.infer<typeof DrawingShapeSchema>;
+
+export const DRAWING_MAX_COORDS = 10000;
+
+export const DrawingSchema = z.object({
+  id: IdSchema,
+  sceneId: IdSchema,
+  authorId: IdSchema,
+  shape: DrawingShapeSchema,
+  /**
+   * Flat [x0, y0, x1, y1, ...] in scene pixels. Freehand uses every point;
+   * line/rect/ellipse use the first two points (start and end corners).
+   */
+  points: z.array(DrawCoordSchema).min(4).max(DRAWING_MAX_COORDS),
+  color: ColorSchema,
+  width: z.number().min(1).max(100),
+  fill: z.boolean(),
+});
+export type Drawing = z.infer<typeof DrawingSchema>;
+
+// ---------------------------------------------------------------- notes
+
+export const NOTE_MAX_LENGTH = 50000;
+
+/** A player's private notepad (visible to its owner and the GM). */
+export const NoteSchema = z.object({
+  text: z.string().max(NOTE_MAX_LENGTH),
+  updatedAt: z.number(),
+});
+export type Note = z.infer<typeof NoteSchema>;
+
+// ---------------------------------------------------------------- loot
+
+export const LootItemSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(120),
+  imageUrl: AssetUrlSchema.nullable(),
+  quantity: z.number().int().min(0).max(1_000_000),
+  /** Free text so any currency/system works ("250 gp", "3 gems"). */
+  value: z.string().trim().max(60),
+  /** User carrying it, or null for the party stash. */
+  holderId: IdSchema.nullable(),
+  /** Party notes: what we think it does. Anyone can edit. */
+  notes: z.string().max(10000),
+  /** Once true, `secretNotes` is revealed to players. */
+  identified: z.boolean(),
+  /** GM-only true properties. Redacted for players until identified. */
+  secretNotes: z.string().max(10000),
+  createdBy: IdSchema,
+  createdAt: z.number(),
+});
+export type LootItem = z.infer<typeof LootItemSchema>;
+
 // ---------------------------------------------------------------- chat
 
 export const ChatMessageSchema = z.object({
@@ -120,7 +178,10 @@ export const GameStateSchema = z.object({
   /** The scene players are looking at. */
   activeSceneId: IdSchema.nullable(),
   tokens: z.record(IdSchema, TokenSchema),
+  drawings: z.record(IdSchema, DrawingSchema),
   chat: z.array(ChatMessageSchema),
+  notes: z.record(IdSchema, NoteSchema),
+  loot: z.record(IdSchema, LootItemSchema),
 });
 export type GameState = z.infer<typeof GameStateSchema>;
 
@@ -158,6 +219,9 @@ export function createInitialState(firstSceneId: string): GameState {
     sceneOrder: [scene.id],
     activeSceneId: scene.id,
     tokens: {},
+    drawings: {},
     chat: [],
+    notes: {},
+    loot: {},
   };
 }

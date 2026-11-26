@@ -1,7 +1,9 @@
 import { randomInt } from 'node:crypto';
 import {
   applyAction,
+  getActionDef,
   parseAction,
+  redactState,
   userActions,
   type Action,
   type ActionMeta,
@@ -9,9 +11,12 @@ import {
   type GameAction,
   type GameState,
   type ServerMessage,
+  type SnapshotInfo,
+  type SnapshotReason,
   type User,
 } from '@vtt/shared';
 import type { RoomStore } from '../persistence/RoomStore';
+import { shouldAutoSnapshot, snapshotsToPrune, type SnapshotPolicy } from '../persistence/snapshotPolicy';
 import { config } from '../config';
 
 /** A connected socket, independent of the transport. */
@@ -19,6 +24,8 @@ export interface Client {
   readonly id: string;
   user: User | null;
   room: Room | null;
+  /** Number of actions sent to this client (clients see different subsets). */
+  seq: number;
   send(msg: ServerMessage): void;
 }
 
@@ -29,7 +36,6 @@ export const SYSTEM_USER_ID = 'system';
  * which applies the shared reducer, sequences the action and broadcasts it.
  */
 export class Room {
-  private seq = 0;
   private readonly clients = new Set<Client>();
   private saveTimer: NodeJS.Timeout | null = null;
   private dirty = false;
@@ -38,9 +44,10 @@ export class Room {
     readonly id: string,
     private state: GameState,
     private readonly store: RoomStore,
+    private readonly snapshotPolicy: SnapshotPolicy = config.snapshotPolicy,
   ) {}
 
-  get snapshot(): GameState {
+  get currentState(): GameState {
     return this.state;
   }
 
@@ -51,10 +58,17 @@ export class Room {
   join(client: Client, user: User) {
     client.room = this;
     client.user = user;
+    client.seq = 0;
     this.clients.add(client);
     this.applySystem(userActions.upsert.create({ user }));
-    client.send({ t: 'welcome', self: user, state: this.state, seq: this.seq });
+    this.sendWelcome(client);
     this.broadcastPresence();
+  }
+
+  private sendWelcome(client: Client) {
+    if (!client.user) return;
+    client.seq = 0;
+    client.send({ t: 'welcome', self: client.user, state: redactState(this.state, client.user), seq: 0 });
   }
 
   leave(client: Client) {
@@ -100,11 +114,68 @@ export class Room {
   }
 
   private commit(action: Action, meta: ActionMeta, origin?: Client, clientId?: string) {
-    this.state = applyAction(this.state, action, meta);
-    this.seq++;
-    const base = { t: 'action', seq: this.seq, action, meta } as const;
-    for (const c of this.clients) c.send(c === origin ? { ...base, clientId } : base);
+    const prev = this.state;
+    this.state = applyAction(prev, action, meta);
+    const audience = getActionDef(action.type)?.audience;
+    for (const c of this.clients) {
+      if (!c.user) continue;
+      if (c !== origin && audience && !audience(c.user, action.payload, { state: prev, meta })) continue;
+      c.seq++;
+      c.send({ t: 'action', seq: c.seq, action, meta, ...(c === origin ? { clientId } : {}) });
+    }
     this.scheduleSave();
+  }
+
+  broadcastNotice(message: string) {
+    for (const c of this.clients) c.send({ t: 'notice', message });
+  }
+
+  // ------------------------------------------------------------ snapshots
+
+  listSnapshots(): Promise<SnapshotInfo[]> {
+    return this.store.listSnapshots(this.id);
+  }
+
+  createSnapshot(reason: SnapshotReason, label: string | null): Promise<SnapshotInfo> {
+    return this.store.createSnapshot(this.id, this.state, reason, label);
+  }
+
+  /**
+   * Replace the room with a snapshot. The current state is snapshotted first,
+   * so a restore can itself be undone. Connected users are kept in the
+   * restored state, and every client is re-sent a full welcome.
+   */
+  async restore(snapshotId: number, by: User) {
+    const restored = await this.store.loadSnapshot(this.id, snapshotId);
+    if (!restored) throw new Error('Snapshot not found');
+    await this.createSnapshot('pre-restore', `Before restoring #${snapshotId}`);
+
+    let state = restored;
+    for (const c of this.clients) {
+      if (c.user) state = applyAction(state, userActions.upsert.create({ user: c.user }), { userId: SYSTEM_USER_ID, ts: Date.now() });
+    }
+    this.state = state;
+    this.dirty = true;
+    await this.flush({ autoSnapshot: false });
+
+    for (const c of this.clients) this.sendWelcome(c);
+    this.broadcastPresence();
+    this.broadcastNotice(`${by.name} restored the room to snapshot #${snapshotId}`);
+    console.log(`[room ${this.id}] restored snapshot #${snapshotId} (by ${by.name})`);
+  }
+
+  /** Take an automatic snapshot if the newest one is old enough, and thin out old ones. */
+  async maybeAutoSnapshot() {
+    try {
+      const now = Date.now();
+      const snapshots = await this.store.listSnapshots(this.id);
+      if (shouldAutoSnapshot(snapshots[0], now, this.snapshotPolicy)) {
+        snapshots.unshift(await this.createSnapshot('auto', null));
+      }
+      await this.store.deleteSnapshots(snapshotsToPrune(snapshots, now, this.snapshotPolicy));
+    } catch (e) {
+      console.error(`[room ${this.id}] automatic snapshot failed`, e);
+    }
   }
 
   private broadcastPresence() {
@@ -121,7 +192,7 @@ export class Room {
     }, config.saveDebounceMs);
   }
 
-  async flush() {
+  async flush({ autoSnapshot = true } = {}) {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
@@ -133,6 +204,8 @@ export class Room {
     } catch (e) {
       this.dirty = true;
       console.error(`[room ${this.id}] save failed`, e);
+      return;
     }
+    if (autoSnapshot) await this.maybeAutoSnapshot();
   }
 }

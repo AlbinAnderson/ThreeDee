@@ -9,7 +9,9 @@
     "dev": "concurrently -k -n server,client -c blue,green \"npm run dev -w @vtt/server\" \"npm run dev -w @vtt/client\"",
     "build": "npm run build -w @vtt/client",
     "start": "npm run start -w @vtt/server",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "vtt": "npm run --silent cli -w @vtt/server --",
+    "test": "npm run test -w @vtt/server"
   },
   "devDependencies": {
     "concurrently": "^10.0.7",

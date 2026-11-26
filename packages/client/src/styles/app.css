@@ -103,7 +103,8 @@ button.small {
 }
 
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -114,8 +115,14 @@ select {
   min-width: 0;
 }
 
+textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -437,11 +444,23 @@ fieldset.owners legend {
 
 /* ---------------------------------------------------------- floating ui */
 
-.toolbar {
+.toolbar-wrap {
   position: absolute;
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.toolbar-wrap > * {
+  pointer-events: auto;
+}
+
+.toolbar {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -533,11 +552,13 @@ fieldset.owners legend {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
 }
 
 .tabs button {
-  flex: 1;
+  flex: 1 0 auto;
+  font-size: 13px;
   border: none;
   border-radius: 0;
   background: none;
@@ -704,11 +725,20 @@ fieldset.owners legend {
   padding: 0;
 }
 
-.player-list li {
+.player-list button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 0;
+  width: 100%;
+  padding: 5px 6px;
+  background: none;
+  border-color: transparent;
+  justify-content: flex-start;
+}
+
+.player-list li.selected button {
+  background: var(--panel-2);
+  border-color: var(--accent);
 }
 
 .player-list li.offline {
@@ -761,4 +791,257 @@ fieldset.owners legend {
 .token-list li.selected button {
   background: var(--panel-2);
   border-color: var(--accent);
+}
+
+/* ---------------------------------------------------------- tool options */
+
+.tool-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  max-width: min(640px, 90vw);
+}
+
+.segmented {
+  display: flex;
+}
+
+.segmented button {
+  border-radius: 0;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 6px;
+}
+
+.segmented button:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.segmented button:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.segmented button.active {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+
+.swatches {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.swatch-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+}
+
+.swatch-button.active {
+  border-color: white;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.swatches input[type='color'] {
+  width: 26px;
+  height: 22px;
+}
+
+.inline-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.inline-control input[type='range'] {
+  width: 80px;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------- drawings */
+
+.layer-drawings .drawing-hit {
+  pointer-events: none;
+}
+
+.layer-drawings.erasing .drawing-hit {
+  pointer-events: visiblePainted;
+  cursor: cell;
+}
+
+.layer-drawings.erasing .drawing-hit:hover {
+  stroke: rgba(255, 80, 80, 0.35);
+}
+
+/* ---------------------------------------------------------- player page */
+
+.player-page h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.notes-text {
+  min-height: 260px;
+  font-size: 13px;
+}
+
+.notes-status {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.notes-readonly,
+.identified-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------- loot */
+
+.loot-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.loot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.loot-list li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  background: var(--panel-2);
+}
+
+.loot-list li.open {
+  border-color: var(--accent);
+}
+
+.loot-row {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.loot-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.loot-thumb.empty {
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.loot-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.loot-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loot-sub {
+  font-size: 12px;
+}
+
+.loot-editor {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.loot-image {
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: var(--radius);
+  display: block;
+}
+
+.gm-box {
+  border: 1px dashed var(--warn);
+  border-radius: var(--radius);
+  padding: 8px 8px 0;
+  margin-bottom: 8px;
+}
+
+.identified-box {
+  margin-bottom: 8px;
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.loot-toolbar button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------- history */
+
+.snapshot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.snapshot-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.snapshot-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.snapshot-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

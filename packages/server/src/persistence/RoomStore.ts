@@ -1,42 +1,21 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { migrateState, type GameState } from '@vtt/shared';
+import type { GameState, SnapshotInfo, SnapshotReason } from '@vtt/shared';
 
 /**
- * Storage abstraction for rooms. The default stores JSON files; swap in a
- * database-backed implementation later without touching room logic.
+ * Storage abstraction for rooms and their snapshots. Room logic only talks to
+ * this interface, so the backing store (currently SQLite) can be swapped.
  */
 export interface RoomStore {
   /** Returns null if the room has never been saved. Throws if data exists but is unreadable. */
   load(roomId: string): Promise<GameState | null>;
   save(roomId: string, state: GameState): Promise<void>;
-}
+  listRooms(): Promise<{ id: string; createdAt: number; updatedAt: number; snapshots: number }[]>;
 
-export class FileRoomStore implements RoomStore {
-  constructor(private readonly dir: string) {}
+  createSnapshot(roomId: string, state: GameState, reason: SnapshotReason, label: string | null): Promise<SnapshotInfo>;
+  /** Newest first. */
+  listSnapshots(roomId: string): Promise<SnapshotInfo[]>;
+  /** The snapshot's state, migrated to the current schema. Null if it doesn't exist in this room. */
+  loadSnapshot(roomId: string, snapshotId: number): Promise<GameState | null>;
+  deleteSnapshots(ids: number[]): Promise<void>;
 
-  private file(roomId: string) {
-    return path.join(this.dir, `${roomId}.json`);
-  }
-
-  async load(roomId: string): Promise<GameState | null> {
-    let raw: string;
-    try {
-      raw = await fs.readFile(this.file(roomId), 'utf8');
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw e;
-    }
-    // Deliberately throws on corrupt/invalid data rather than silently starting
-    // a fresh room that would overwrite the file on the next save.
-    return migrateState(JSON.parse(raw));
-  }
-
-  async save(roomId: string, state: GameState): Promise<void> {
-    await fs.mkdir(this.dir, { recursive: true });
-    const target = this.file(roomId);
-    const tmp = `${target}.${process.pid}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(state));
-    await fs.rename(tmp, target);
-  }
+  close(): void;
 }

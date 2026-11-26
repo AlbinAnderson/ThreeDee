@@ -9,6 +9,7 @@ export function Toolbar() {
   const setTool = useUi((s) => s.setTool);
   const zoom = useUi((s) => s.camera.zoom);
   const scene = useCurrentScene();
+  const Options = tools.find((t) => t.id === toolId)?.Options;
 
   function zoomBy(factor: number) {
     const { camera, viewport, setCamera } = useUi.getState();
@@ -20,6 +21,7 @@ export function Toolbar() {
   }
 
   return (
+    <div className="toolbar-wrap">
     <div className="toolbar">
       {tools
         .filter((t) => gm || !t.gmOnly)
@@ -50,6 +52,8 @@ export function Toolbar() {
       >
         ⤢
       </button>
+    </div>
+    {Options && <Options />}
     </div>
   );
 }

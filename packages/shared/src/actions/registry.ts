@@ -1,11 +1,13 @@
 import { produce } from 'immer';
 import { gameModules, type GameAction } from '../modules';
-import type { GameState } from '../state';
-import type { Action, ActionMeta, AnyActionDef } from './define';
+import type { GameState, User } from '../state';
+import type { Action, ActionMeta, AnyActionDef, GameModule, Redactor } from './define';
 
 const registry = new Map<string, AnyActionDef>();
-for (const mod of Object.values(gameModules)) {
-  for (const def of Object.values(mod) as AnyActionDef[]) {
+const redactors: Redactor[] = [];
+for (const mod of Object.values(gameModules) as GameModule[]) {
+  if (mod.redact) redactors.push(mod.redact);
+  for (const def of Object.values(mod.actions)) {
     if (registry.has(def.type)) throw new Error(`Duplicate action type "${def.type}"`);
     registry.set(def.type, def);
   }
@@ -37,4 +39,11 @@ export function parseAction(raw: { type: string; payload: unknown }): ParseResul
     return { ok: false, error: `Invalid ${raw.type}: ${issue?.message ?? 'bad payload'}${where}` };
   }
   return { ok: true, action: { type: def.type, payload: result.data } as GameAction, def };
+}
+
+/** The state as `viewer` is allowed to see it. */
+export function redactState(state: GameState, viewer: User): GameState {
+  return produce(state, (draft) => {
+    for (const redact of redactors) redact(draft, viewer);
+  });
 }
