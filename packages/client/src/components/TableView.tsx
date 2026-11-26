@@ -9,6 +9,7 @@ import { AudioEngine } from '../audio/AudioEngine';
 import { ImportDialog } from '../characters/ImportDialog';
 import { HandoutViewer } from '../handouts/HandoutsPanel';
 import { Hotbar } from '../player/MacrosSection';
+import { TurnBar } from '../pf1e/ActionsPanel';
 import { Sidebar } from './Sidebar';
 import { TokenInspector } from './TokenInspector';
 import { Toolbar } from './Toolbar';
@@ -51,6 +52,7 @@ export function TableView() {
           <Toolbar />
           <TokenInspector />
           <Hotbar />
+          <TurnBar />
         </div>
         <Sidebar />
       </div>

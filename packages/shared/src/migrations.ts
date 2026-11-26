@@ -57,6 +57,7 @@ const migrations: Record<number, Migration> = {
       ),
     };
   },
+  5: (raw) => ({ ...raw, schemaVersion: 6, pf1eTurns: {} }),
 };
 
 export function migrateState(raw: unknown): GameState {

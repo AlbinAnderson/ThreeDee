@@ -16,3 +16,6 @@ export * from './pf1e/modifiers';
 export * from './pf1e/rules';
 export * from './pf1e/engine';
 export * from './pf1e/tokenSync';
+export * from './pf1e/actions';
+export * from './pf1e/economy';
+export * from './pf1e/resources';

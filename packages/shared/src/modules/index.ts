@@ -16,6 +16,7 @@ import { lootActions, redactLoot } from './loot';
 import { macroActions } from './macros';
 import { notesActions, redactNotes } from './notes';
 import { characterActions, characterSheetActions, redactCharacters } from './pf1e/characters';
+import { pf1eTurnActions } from './pf1e/turns';
 import { sceneActions } from './scenes';
 import { redactTables, tableActions } from './tables';
 import { templateActions } from './templates';
@@ -44,6 +45,7 @@ export const gameModules = {
   // ---- PF1e
   characters: { actions: characterActions, redact: redactCharacters },
   characterSheets: { actions: characterSheetActions },
+  pf1eTurns: { actions: pf1eTurnActions },
 } satisfies Record<string, GameModule>;
 
 type Modules = typeof gameModules;
@@ -51,10 +53,11 @@ type Modules = typeof gameModules;
 /** Union of every action the game understands. */
 export type GameAction = { [K in keyof Modules]: ModuleActions<Modules[K]['actions']> }[keyof Modules];
 
-export { audioActions, characterActions, characterSheetActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
+export { audioActions, characterActions, characterSheetActions, pf1eTurnActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
 export { canDeleteDrawing } from './drawings';
 export { canSeeMessage, chatAudience, pushMessage, validateWhisper } from './chat';
 export { canControlCombatant, combatantName, compareCombatants, isCombatantHidden } from './combat';
 export { canDeleteTemplate, templateCells, templateContains } from './templates';
 export { canSeeHandout } from './handouts';
 export { canManageCharacter, canSeeCharacter } from './pf1e/characters';
+export { characterResources } from './pf1e/turns';

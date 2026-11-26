@@ -115,3 +115,21 @@ export const CharacterSchema = z.object({
 export type Character = z.infer<typeof CharacterSchema>;
 
 export const MAX_CHARACTERS_PER_ROOM = 200;
+
+/** One combatant's PF1e action economy for one turn window (see pf1e/economy.ts). */
+export const Pf1TurnStateSchema = z.object({
+  /** Round in which the turn this state belongs to started (0 = before their first turn). */
+  window: z.number().int().min(0).max(100000),
+  standard: z.boolean(),
+  move: z.boolean(),
+  fullRound: z.boolean(),
+  swift: z.boolean(),
+  fiveFoot: z.boolean(),
+  /** Moved this turn (no 5-foot step allowed). */
+  moved: z.boolean(),
+  /** Attacks of opportunity made since this turn started. */
+  aoo: z.number().int().min(0).max(50),
+  /** Window whose swift action an off-turn immediate action already used. */
+  immediateLock: z.number().int().min(0).max(100001).nullable(),
+});
+export type Pf1TurnState = z.infer<typeof Pf1TurnStateSchema>;
