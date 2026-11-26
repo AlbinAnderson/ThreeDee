@@ -37,12 +37,14 @@ export const lootActions = {
 
   update: defineAction('loot/update', z.object({ id: IdSchema, changes: SharedFieldsSchema.partial() }), {
     authorize(ctx, { id, changes }) {
-      const item = requireItem(ctx, id);
-      return item === true ? requireValidHolder(ctx, changes.holderId) : item;
+      const ok = requireItem(ctx, id);
+      if (ok !== true) return ok;
+      if (ctx.state.loot[id]!.stowed) return 'Item is stowed in an inventory';
+      return requireValidHolder(ctx, changes.holderId);
     },
     apply(draft, { id, changes }) {
       const item = draft.loot[id];
-      if (item) Object.assign(item, changes);
+      if (item && !item.stowed) Object.assign(item, changes);
     },
   }),
 
@@ -88,6 +90,7 @@ export const lootActions = {
     authorize(ctx, { id }) {
       const item = ctx.state.loot[id];
       if (!item) return 'Item not found';
+      if (item.stowed && !isGm(ctx.user)) return 'Only the GM can delete a stowed loot record';
       return isGm(ctx.user) || item.createdBy === ctx.user.id || 'Only the GM or whoever added it can delete this';
     },
     apply(draft, { id }) {

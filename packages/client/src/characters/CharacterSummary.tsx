@@ -84,7 +84,7 @@ export function CharacterSummary({ build, compact = false }: { build: PcgenChara
         </div>
       )}
       <p className="muted small-text">
-        Base scores from PCGen (racial and item bonuses are applied by the character sheet in a later update). Rolled HP:{' '}
+        Base scores from PCGen (racial, level-up and temporary adjustments are applied on the Sheet tab). Rolled HP:{' '}
         {hpRolled}.
       </p>
 

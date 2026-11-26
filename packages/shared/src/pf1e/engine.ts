@@ -181,14 +181,14 @@ export function computeCharacterStats(c: Character): CharacterStats {
   // Determine worn armor up front so light-armor-only feats (e.g. Fleet) know whether they apply.
   const size: SizeName = sheet.size ?? race?.size ?? 'Medium';
   const worn = wornArmor(c);
-  const armorItem = worn
+  const effectiveWorn = worn.filter((w) => (w.armor.kind === 'armor' ? sheet.armorBonus !== 0 : sheet.shieldBonus !== 0));
+  const armorItem = effectiveWorn
     .filter((w) => w.armor.kind === 'armor')
     .sort((a, b) => b.armor.bonus + b.armor.enhancement - (a.armor.bonus + a.armor.enhancement))[0];
-  const shieldItem = worn
+  const shieldItem = effectiveWorn
     .filter((w) => w.armor.kind === 'shield')
     .sort((a, b) => b.armor.bonus + b.armor.enhancement - (a.armor.bonus + a.armor.enhancement))[0];
-  const heavyArmor =
-    sheet.armorBonus !== 0 && !!armorItem && (armorItem.armor.category === 'medium' || armorItem.armor.category === 'heavy');
+  const heavyArmor = !!armorItem && (armorItem.armor.category === 'medium' || armorItem.armor.category === 'heavy');
 
   // Load: carried weight against carrying capacity by Str score and size.
   const weight = carriedWeight(c.inventory);
@@ -259,13 +259,13 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const shieldBonus = sheet.shieldBonus ?? (shieldItem ? shieldItem.armor.bonus + shieldItem.armor.enhancement : 0);
   const loadFx = LOAD_EFFECTS[loadLevel];
   // Armor and load don't stack: the worse cap and the worse penalty apply.
-  const caps = [...worn.map((w) => w.armor.maxDex), loadFx.maxDex].filter((m): m is number => m !== null);
+  const caps = [...effectiveWorn.map((w) => w.armor.maxDex), loadFx.maxDex].filter((m): m is number => m !== null);
   const maxDex = sheet.maxDex ?? (caps.length ? Math.min(...caps) : null);
   const loadCapsDex = sheet.maxDex === null && loadFx.maxDex !== null && loadFx.maxDex === maxDex;
   const dexToAc = maxDex === null ? mod('DEX') : Math.min(mod('DEX'), maxDex);
-  const armorAcp = worn.reduce((s, w) => s + w.armor.acp, 0);
+  const armorAcp = effectiveWorn.reduce((s, w) => s + w.armor.acp, 0);
   const acp = Math.min(armorAcp, loadFx.acp);
-  const asf = Math.min(100, worn.reduce((s, w) => s + w.armor.asf, 0));
+  const asf = Math.min(100, effectiveWorn.reduce((s, w) => s + w.armor.asf, 0));
 
   const acDex: Modifier = {
     value: dexToAc,
@@ -423,7 +423,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
     size,
     speed,
     senses: { darkvision: sheet.darkvision ?? race?.darkvision ?? 0, lowLight: race?.lowLight ?? false },
-    armor: { worn: worn.map((w) => w.name), maxDex, acp, asf, heavyArmor },
+    armor: { worn: effectiveWorn.map((w) => w.name), maxDex, acp, asf, heavyArmor },
     load: { weight, capacity, level: loadLevel },
     attacks,
     twoWeapon,

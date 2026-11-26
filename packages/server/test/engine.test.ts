@@ -14,6 +14,7 @@ import {
   createInitialState,
   createToken,
   CURRENT_SCHEMA_VERSION,
+  GameStateSchema,
   migrateState,
   newId,
   parsePcg,
@@ -286,5 +287,36 @@ describe('character ↔ token sync', () => {
 
     act(a, characterActions.linkToken.create({ id: c.id, tokenId: null }));
     assert.equal(room.currentState.characters[c.id]!.runtime.hp!.current, 10, 'unlinking copies live HP back');
+  });
+
+  test('token sync clamps initiative to CombatantSchema bounds, updates combatant name, and armorBonus=0 disables worn armor penalties', () => {
+    const room = new Room('main', createInitialState('scene1'), store, { autoIntervalMs: 1e12, keepAllForMs: 1e12, keepDailyForMs: 1e12 });
+    openRooms.push(room);
+    const g = client();
+    const a = client();
+    room.join(g, gmUser);
+    room.join(a, alice);
+    const act = (c: Client, action: GameAction) => room.handleClientAction(c, newId(), action);
+    const c = character(`${SAMPLE}\nEQUIPNAME:Full Plate|OUTPUTORDER:4|COST:1500|WT:50|QUANTITY:1.0\nEQUIPSET:Armor|ID:0.1.3|VALUE:Full Plate|QUANTITY:1.0\n`);
+    c.sheet.misc.initiative = 250;
+    act(a, characterActions.import.create({ character: c }));
+    act(g, tokenActions.create.create({ token: createToken({ id: 'tok', sceneId: 'scene1', x: 0, y: 0, name: 'Token' }) }));
+    act(g, combatActions.add.create({ combatant: { id: 'cb', name: 'Token', tokenId: 'tok', initiative: null, modifier: 0, hidden: false } }));
+    act(g, characterActions.linkToken.create({ id: c.id, tokenId: 'tok' }));
+
+    assert.equal(room.currentState.combat.combatants[0]!.modifier, 100, 'initiative modifier clamped to CombatantSchema max');
+    assert.equal(room.currentState.combat.combatants[0]!.name, 'Valeros & Friends', 'combatant name synced with token');
+    assert.doesNotThrow(() => GameStateSchema.parse(room.currentState));
+
+    // Overriding armorBonus to 0 disables worn armor's maxDex, acp, asf and heavyArmor speed penalty.
+    const withArmor = computeCharacterStats(room.currentState.characters[c.id]!);
+    assert.equal(withArmor.armor.acp, -6);
+    assert.equal(withArmor.armor.asf, 35);
+    act(a, characterSheetActions.updateSheet.create({ id: c.id, changes: { armorBonus: 0 } }));
+    const withoutArmor = computeCharacterStats(room.currentState.characters[c.id]!);
+    assert.equal(withoutArmor.armor.acp, 0);
+    assert.equal(withoutArmor.armor.asf, 0);
+    assert.equal(withoutArmor.armor.maxDex, null);
+    assert.deepEqual(withoutArmor.armor.worn, []);
   });
 });

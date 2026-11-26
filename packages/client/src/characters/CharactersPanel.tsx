@@ -5,6 +5,7 @@ import {
   characterActions,
   classSummary,
   isGm,
+  tokenActions,
   type Character,
 } from '@vtt/shared';
 import { CheckboxField, TextField } from '../components/fields';
@@ -196,14 +197,23 @@ function ManageCharacter({ character: c, onBack }: { character: Character; onBac
       <TextField
         label="Name in the VTT"
         value={c.name}
-        onCommit={(name) => {
-          if (name.trim() && dispatch(characterActions.update.create({ id: c.id, changes: { name } }))) syncLinkedToken({ ...c, name });
+        onCommit={(raw) => {
+          const name = raw.trim().slice(0, 80);
+          if (name && dispatch(characterActions.update.create({ id: c.id, changes: { name } }))) syncLinkedToken({ ...c, name });
         }}
       />
       <div className="field">
         <label>Played by</label>
         {gm ? (
-          <select value={c.ownerId ?? ''} onChange={(e) => dispatch(characterActions.setOwner.create({ id: c.id, ownerId: e.target.value || null }))}>
+          <select
+            value={c.ownerId ?? ''}
+            onChange={(e) => {
+              const ownerId = e.target.value || null;
+              if (dispatch(characterActions.setOwner.create({ id: c.id, ownerId })) && ownerId && linked && !linked.ownerIds.includes(ownerId) && linked.ownerIds.length < 50) {
+                dispatch(tokenActions.update.create({ id: linked.id, changes: { ownerIds: [...linked.ownerIds, ownerId] } }));
+              }
+            }}
+          >
             <option value="">GM (NPC)</option>
             {ownerUser && ownerUser.role === 'gm' && <option value={ownerUser.id}>{ownerUser.name} (GM)</option>}
             {players.map((u) => (
