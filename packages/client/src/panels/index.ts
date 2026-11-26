@@ -3,6 +3,7 @@
  */
 import { AudioPanel } from '../audio/AudioPanel';
 import { CharactersPanel } from '../characters/CharactersPanel';
+import { ActionsPanel } from '../pf1e/ActionsPanel';
 import { HandoutsPanel } from '../handouts/HandoutsPanel';
 import { LootPanel } from '../loot/LootPanel';
 import { RandomPanel } from '../random/RandomPanel';
@@ -18,6 +19,7 @@ import type { PanelDef } from './types';
 export const panels: PanelDef[] = [
   { id: 'chat', label: 'Chat', icon: '💬', Component: ChatPanel },
   { id: 'combat', label: 'Combat', icon: '⚔', Component: CombatPanel },
+  { id: 'actions', label: 'Actions', icon: '⚡', Component: ActionsPanel },
   { id: 'status', label: 'Status', icon: '❤', Component: StatusPanel },
   { id: 'players', label: 'Players', icon: '👥', Component: PlayersPanel },
   { id: 'characters', label: 'Characters', icon: '📇', Component: CharactersPanel },

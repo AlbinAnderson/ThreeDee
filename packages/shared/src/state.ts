@@ -17,7 +17,7 @@ import {
   RollTableSchema,
   TemplateSchema,
 } from './entities/play';
-import { CharacterSchema } from './entities/pf1e';
+import { CharacterSchema, Pf1TurnStateSchema } from './entities/pf1e';
 import { FogSchema, LightEmissionSchema, LightSchema, VisionSettingsSchema, WallSchema } from './entities/vision';
 import { AssetUrlSchema, ColorSchema, IdSchema } from './primitives';
 
@@ -27,7 +27,7 @@ export * from './entities/vision';
 export * from './entities/pf1e';
 
 /** Bump when the shape changes, and add a step in migrations.ts. */
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 // ---------------------------------------------------------------- users
 
@@ -242,6 +242,8 @@ export const GameStateSchema = z.object({
   decks: z.record(IdSchema, DeckSchema),
   /** PF1e characters (imported from PCGen). */
   characters: z.record(IdSchema, CharacterSchema),
+  /** PF1e action economy per combatant id. */
+  pf1eTurns: z.record(IdSchema, Pf1TurnStateSchema),
 });
 export type GameState = z.infer<typeof GameStateSchema>;
 
@@ -295,5 +297,6 @@ export function createInitialState(firstSceneId: string): GameState {
     tables: {},
     decks: {},
     characters: {},
+    pf1eTurns: {},
   };
 }

@@ -96,7 +96,7 @@ export const tokenActions = {
     apply(draft, { id }) {
       delete draft.tokens[id];
       // A deleted token leaves the turn order too, and characters lose their link to it.
-      for (const c of [...draft.combat.combatants]) if (c.tokenId === id) removeCombatant(draft.combat, c.id);
+      for (const c of [...draft.combat.combatants]) if (c.tokenId === id) removeCombatant(draft, c.id);
       unlinkToken(draft, id);
     },
   }),
