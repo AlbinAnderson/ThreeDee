@@ -44,7 +44,7 @@ const feetPerCell = (grid: GridSettings) => (grid.unitsPerCell > 0 ? grid.unitsP
 /** Template size in cells for an armed area: radius, length, or half the side of a square. */
 function armedSize(kind: TemplateKind, armed: ArmedArea, grid: GridSettings): number {
   const cells = armed.feet / feetPerCell(grid);
-  return Math.max(0.5, kind === 'square' ? cells / 2 : cells);
+  return Math.min(200, Math.max(0.5, kind === 'square' ? cells / 2 : cells));
 }
 
 /** Templates originate on grid intersections (PF1e/3.5 style); Alt = free. */
@@ -58,7 +58,7 @@ function snapOrigin(p: Point, grid: GridSettings, free: boolean): Point {
 function build(origin: Point, to: Point, grid: GridSettings, sceneId: string, authorId: string, id: string): Template {
   const { kind, coneAngle, width, color, armed } = useTemplateTool.getState();
   const dist = Math.hypot(to.x - origin.x, to.y - origin.y) / grid.size;
-  const lineWidth = armed?.widthFeet ? Math.max(0.5, armed.widthFeet / feetPerCell(grid)) : width;
+  const lineWidth = armed?.widthFeet ? Math.min(20, Math.max(0.5, armed.widthFeet / feetPerCell(grid))) : width;
   return {
     id,
     sceneId,

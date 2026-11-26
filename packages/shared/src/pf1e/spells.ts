@@ -169,12 +169,13 @@ function conversionsFor(c: Character, def: CasterClass | null): ConversionKind[]
   return ['cure', 'inflict'];
 }
 
-/** Times-expanded prepared list from the first prepared book in the .pcg. */
-function preparedFromBook(model: CastingModel, books: CasterInfo['books']): PreparedSpell[] {
+/** Times-expanded prepared list from the first prepared book in the .pcg, overflowing into domain/school slots when normal slots are full. */
+function preparedFromBook(model: CastingModel, books: CasterInfo['books'], levels: SpellLevelInfo[]): PreparedSpell[] {
   const book = books.find((b) => b.spells.length > 0);
   if (!book) return [];
   const out: PreparedSpell[] = [];
   const seen = new Set<string>();
+  const used = new Map<string, number>();
   for (const s of book.spells) {
     const times = model === 'hybrid' ? 1 : Math.max(1, Math.min(10, s.times));
     if (model === 'hybrid') {
@@ -182,8 +183,14 @@ function preparedFromBook(model: CastingModel, books: CasterInfo['books']): Prep
       if (seen.has(k)) continue;
       seen.add(k);
     }
+    const li = levels.find((x) => x.level === s.level);
     for (let i = 0; i < times; i++) {
-      out.push({ id: `pcg-${out.length}`, name: s.name.slice(0, 80), level: s.level, metamagic: s.metamagic.slice(0, 6), slot: 'normal', cast: false });
+      const normalCount = used.get(`${s.level}|normal`) ?? 0;
+      const bonusCount = used.get(`${s.level}|bonus`) ?? 0;
+      const slot: 'normal' | 'bonus' =
+        model === 'prepared' && li && normalCount >= li.prepareLimit && bonusCount < li.extra ? 'bonus' : 'normal';
+      used.set(`${s.level}|${slot}`, (used.get(`${s.level}|${slot}`) ?? 0) + 1);
+      out.push({ id: `pcg-${out.length}`, name: s.name.slice(0, 80), level: s.level, metamagic: s.metamagic.slice(0, 6), slot, cast: false });
     }
   }
   return out.slice(0, 120);
@@ -235,7 +242,7 @@ export function characterSpellcasting(c: Character, stats: CharacterStats = comp
     const stat: StatKey = o?.stat ?? def?.stat ?? fileStat ?? 'INT';
     if (!def && !o?.stat && !fileStat) warnings.push(`Set the casting ability for ${k.name} in casting settings.`);
     const ability = stats.abilities[stat];
-    const casterLevel = o?.casterLevel ?? Math.max(0, k.level + (def?.clOffset ?? 0));
+    const casterLevel = o?.casterLevel ?? (def?.minLevel && k.level < def.minLevel ? 0 : Math.max(0, k.level + (def?.clOffset ?? 0)));
     const row = perDayRow(c, k.name, k.level, def, o);
     if (!row) warnings.push(`Spells per day for ${k.name} aren't in the rules tables: set them in casting settings.`);
     const cantrips = def ? def.cantrips : true;
@@ -261,7 +268,7 @@ export function characterSpellcasting(c: Character, stats: CharacterStats = comp
     if (lowScore) warnings.push(`${stat} ${ability.score} is too low to cast ${ordinal(lowScore.level)}-level ${k.name} spells (needs ${10 + lowScore.level}).`);
 
     const stored = model === 'spontaneous' ? undefined : c.runtime.prepared[k.name];
-    const prepared = model === 'spontaneous' ? [] : (stored ?? preparedFromBook(model, books));
+    const prepared = model === 'spontaneous' ? [] : (stored ?? preparedFromBook(model, books, levels));
 
     out.push({
       className: k.name,
@@ -305,7 +312,7 @@ export function metamagicLevels(metamagic: string[]): number {
  * known, else the slot minus metamagic. Heightened spells use the slot level.
  */
 export function spellDcLevel(info: CasterInfo, name: string, slotLevel: number, metamagic: string[]): number {
-  if (metamagic.some(isHeighten)) return slotLevel;
+  if (metamagic.some(isHeighten)) return Math.max(0, slotLevel - metamagicLevels(metamagic));
   const known = info.known.filter((k) => sameSpell(k.name, name)).map((k) => k.level);
   if (known.length) return Math.min(...known);
   return Math.max(0, slotLevel - metamagicLevels(metamagic));
@@ -460,8 +467,9 @@ export function spellCard(c: Character, plan: CastPlan, who = c.name): SpellCard
     const asf = computeCharacterStats(c).armor.asf;
     if (asf > 0 && !plan.metamagic.some((m) => featKey(m) === 'stillspell')) lines.push(`Arcane spell failure ${asf}% if it has somatic components.`);
   }
-  const rolls = [{ label: 'Concentration', bonus: info.concentration }];
-  if (!ref || !/^no\b/i.test(ref.sr)) rolls.push({ label: 'Caster level vs. SR', bonus: info.casterLevel + info.spellPenetration });
+  const clampBonus = (n: number) => Math.max(-100, Math.min(200, Math.round(n)));
+  const rolls = [{ label: 'Concentration', bonus: clampBonus(info.concentration) }];
+  if (!ref || !/^no\b/i.test(ref.sr)) rolls.push({ label: 'Caster level vs. SR', bonus: clampBonus(info.casterLevel + info.spellPenetration) });
   let area: SpellCard['area'];
   if (ref?.area) {
     const widen = plan.metamagic.some((m) => featKey(m) === 'widenspell');
@@ -495,13 +503,19 @@ export function checkPrepared(c: Character, className: string, list: PrepareEntr
   if (new Set(list.map((p) => p.id)).size !== list.length) return 'Duplicate prepared spell id';
   const owned = new Set(info.metamagic.map(featKey));
   const counts = new Map<string, number>();
+  const hybridSeen = new Set<string>();
   for (const p of list) {
     const li = info.levels.find((x) => x.level === p.level);
     if (!li || !li.castable) return `You can't prepare ${ordinal(p.level)}-level ${info.className} spells`;
     if (p.slot === 'bonus' && (p.level === 0 || li.extra === 0)) return `No ${info.bonusSlot ?? 'bonus'} slot at ${ordinal(p.level)} level`;
     if (new Set(p.metamagic.map(featKey)).size !== p.metamagic.length) return 'Each metamagic feat applies once';
     for (const m of p.metamagic) if (!owned.has(featKey(m))) return `You don't have ${m}`;
-    if (info.model === 'hybrid' && p.metamagic.length) return 'Arcanists apply metamagic when casting, not when preparing';
+    if (info.model === 'hybrid') {
+      if (p.metamagic.length) return 'Arcanists apply metamagic when casting, not when preparing';
+      const hk = `${normalizeName(p.name)}|${p.level}`;
+      if (hybridSeen.has(hk)) return `${p.name} is already prepared at ${ordinal(p.level)} level`;
+      hybridSeen.add(hk);
+    }
     const knownLevels = info.known.filter((k) => sameSpell(k.name, p.name)).map((k) => k.level);
     const inBook = knownLevels.length > 0;
     if (info.def?.book && !inBook) return `${p.name} isn't in your ${info.def.noun === 'extracts' ? 'formula book' : 'spellbook'}`;

@@ -116,12 +116,15 @@ export class Room {
   private commit(action: Action, meta: ActionMeta, origin?: Client, clientId?: string) {
     const prev = this.state;
     this.state = applyAction(prev, action, meta);
-    const audience = getActionDef(action.type)?.audience;
+    const def = getActionDef(action.type);
+    const audience = def?.audience;
+    const redactPayload = def?.redactPayload;
     for (const c of this.clients) {
       if (!c.user) continue;
       if (c !== origin && audience && !audience(c.user, action.payload, { state: prev, meta })) continue;
+      const outAction = c !== origin && redactPayload ? { ...action, payload: redactPayload(c.user, action.payload, { state: prev, meta }) } : action;
       c.seq++;
-      c.send({ t: 'action', seq: c.seq, action, meta, ...(c === origin ? { clientId } : {}) });
+      c.send({ t: 'action', seq: c.seq, action: outAction, meta, ...(c === origin ? { clientId } : {}) });
     }
     this.scheduleSave();
   }

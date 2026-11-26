@@ -15,8 +15,10 @@ import {
   isHeighten,
   KNOWN_BOOK,
   lookupSpell,
+  MAX_PREPARED_PER_CLASS,
   metamagicLevels,
   newId,
+  normalizeName,
   ordinal,
   pf1eTurnActions,
   planCast,
@@ -164,7 +166,7 @@ function CasterSection({ character: c, info, manage, placeArea, asf }: { charact
         </div>
       )}
 
-      {info.model === 'prepared' && info.preparedFromFile && info.prepared.length > 0 && (
+      {info.model !== 'spontaneous' && info.preparedFromFile && info.prepared.length > 0 && (
         <p className="muted small-text">Prepared spells from the .pcg file{info.books[0] ? ` (${info.books[0].name})` : ''}. Use Prepare… to change them.</p>
       )}
       {info.model !== 'spontaneous' && info.prepared.length === 0 && <p className="muted small-text">Nothing prepared yet{manage ? ': use Prepare…' : ''}.</p>}
@@ -414,11 +416,12 @@ function PreparePanel({ character: c, info, onDone }: { character: Character; in
   const [mm, setMm] = useState<string[]>([]);
   const [mmSpell, setMmSpell] = useState('');
   const [freeName, setFreeName] = useState('');
-  const [freeLevel, setFreeLevel] = useState(1);
+  const levels = info.levels.filter((l) => l.castable && (l.prepareLimit > 0 || l.extra > 0));
+  const [freeLevel, setFreeLevel] = useState(() => levels.find((l) => l.level === 1)?.level ?? levels[0]?.level ?? 0);
+  const selectedFreeLevel = levels.some((l) => l.level === freeLevel) ? freeLevel : (levels[0]?.level ?? 0);
   const choices = useMemo(() => preparableSpells(info), [info]);
   const check = checkPrepared(c, info.className, draft);
   const hybrid = info.model === 'hybrid';
-  const levels = info.levels.filter((l) => l.castable && (l.prepareLimit > 0 || l.extra > 0));
   const prepMetamagic = hybrid ? [] : info.metamagic.filter((m) => !isHeighten(m));
 
   const add = (name: string, level: number, metamagic: string[] = []) => {
@@ -442,14 +445,27 @@ function PreparePanel({ character: c, info, onDone }: { character: Character; in
             type="button"
             className="small"
             title={`Replace the list with the .pcg book "${b.name}"`}
-            onClick={() =>
-              setDraft(
-                fitSlots(
-                  info,
-                  b.spells.flatMap((s) => Array.from({ length: hybrid ? 1 : Math.max(1, s.times) }, () => ({ id: newId(), name: s.name, level: s.level, metamagic: hybrid ? [] : [...s.metamagic], slot: 'normal' as const }))),
-                ),
-              )
-            }
+            onClick={() => {
+              const seen = new Set<string>();
+              const loaded = b.spells
+                .flatMap((s) => {
+                  if (hybrid) {
+                    const k = `${normalizeName(s.name)}|${s.level}`;
+                    if (seen.has(k)) return [];
+                    seen.add(k);
+                  }
+                  const count = hybrid ? 1 : Math.max(1, Math.min(10, s.times));
+                  return Array.from({ length: count }, () => ({
+                    id: newId(),
+                    name: s.name.slice(0, 80),
+                    level: s.level,
+                    metamagic: hybrid ? [] : s.metamagic.slice(0, 6),
+                    slot: 'normal' as const,
+                  }));
+                })
+                .slice(0, MAX_PREPARED_PER_CLASS);
+              setDraft(fitSlots(info, loaded));
+            }}
           >
             Load “{b.name}”
           </button>
@@ -561,7 +577,7 @@ function PreparePanel({ character: c, info, onDone }: { character: Character; in
         <div className="prepare-metamagic">
           <span className="small-text muted">Any {info.className} spell:</span>
           <input value={freeName} maxLength={80} placeholder="Spell name" onChange={(e) => setFreeName(e.target.value)} />
-          <select value={freeLevel} onChange={(e) => setFreeLevel(Number(e.target.value))} aria-label="Spell level">
+          <select value={selectedFreeLevel} onChange={(e) => setFreeLevel(Number(e.target.value))} aria-label="Spell level">
             {levels.map((l) => (
               <option key={l.level} value={l.level}>
                 {ordinal(l.level)}
@@ -573,7 +589,7 @@ function PreparePanel({ character: c, info, onDone }: { character: Character; in
             className="small"
             disabled={!freeName.trim()}
             onClick={() => {
-              add(freeName.trim(), freeLevel);
+              add(freeName.trim(), selectedFreeLevel);
               setFreeName('');
             }}
           >

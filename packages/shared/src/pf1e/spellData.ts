@@ -23,6 +23,8 @@ export interface CasterClass {
   book: boolean;
   /** Caster level = class level + this (paladins and rangers cast at level − 3). */
   clOffset: number;
+  /** Minimum class level before spellcasting begins (Bloodrager casts at full CL starting at level 4). */
+  minLevel?: number;
   /** Extra prepared slot per spell level 1+: domain (cleric, druid with a domain), school (specialist wizard). */
   bonusSlot?: 'domain' | 'school';
   /** Spontaneously convert a prepared spell: Cure/Inflict (cleric, warpriest) or Summon Nature's Ally (druid). */
@@ -65,11 +67,17 @@ const SIX_PREPARED = table([
   '5,5,4,4,2', '5,5,5,4,3', '5,5,5,4,3,1', '5,5,5,4,4,2', '5,5,5,5,4,3', '5,5,5,5,4,3,1',
   '5,5,5,5,4,4,2', '5,5,5,5,5,4,3', '5,5,5,5,5,5,4', '5,5,5,5,5,5,5',
 ]);
-/** Paladin, ranger, antipaladin, bloodrager: 0 = bonus spells only. */
+/** Paladin, ranger, antipaladin: 0 = bonus spells only. */
 const FOUR_LEVEL = table([
   '-', '-', '-', '-,0', '-,1', '-,1', '-,1,0', '-,1,1', '-,2,1', '-,2,1,0',
   '-,2,1,1', '-,2,2,1', '-,3,2,1,0', '-,3,2,1,1', '-,3,2,2,1', '-,3,3,2,1',
   '-,4,3,2,1', '-,4,3,2,2', '-,4,3,3,2', '-,4,4,3,3',
+]);
+/** Bloodrager (ACG): spontaneous 4-level caster, 1 base slot when each level unlocks (no 0 entries). */
+const FOUR_SPONTANEOUS = table([
+  '-', '-', '-', '-,1', '-,1', '-,1', '-,1,1', '-,1,1', '-,2,1', '-,2,1,1',
+  '-,2,1,1', '-,2,2,1', '-,3,2,1,1', '-,3,2,1,1', '-,3,2,2,1', '-,3,3,2,1',
+  '-,4,3,2,1', '-,4,3,2,2', '-,4,3,3,2', '-,4,4,3,2',
 ]);
 
 const cls = (model: CastingModel, stat: StatKey, tradition: CastingTradition, perDay: (number | null)[][], extra: Partial<CasterClass> = {}): CasterClass => ({
@@ -112,7 +120,7 @@ const CASTERS: Record<string, CasterClass> = {
   mesmerist: cls('spontaneous', 'CHA', 'psychic', SIX_SPONTANEOUS),
   occultist: cls('spontaneous', 'INT', 'psychic', SIX_SPONTANEOUS),
   spiritualist: cls('spontaneous', 'WIS', 'psychic', SIX_SPONTANEOUS),
-  bloodrager: cls('spontaneous', 'CHA', 'arcane', FOUR_LEVEL, { cantrips: false, clOffset: -3 }),
+  bloodrager: cls('spontaneous', 'CHA', 'arcane', FOUR_SPONTANEOUS, { cantrips: false, minLevel: 4 }),
   // Hybrid: prepares spells known for the day, casts them with shared slots
   arcanist: cls('hybrid', 'INT', 'arcane', ARCANIST_SLOTS, { book: true, preparedPerDay: ARCANIST_PREPARED }),
 };
@@ -375,14 +383,32 @@ const SPELLS = new Map<string, SpellRef>(
   }),
 );
 
-/** Reference data for a spell, if the curated table has it. Ignores "Lesser"/"Greater" ordering and punctuation. */
-export function lookupSpell(name: string): SpellRef | undefined {
-  return SPELLS.get(normalizeName(name.replace(/\(.*\)$/, '')));
+const VARIANT = /^(.+?)\s*(?:\(\s*(greater|lesser|mass|communal)\s*\)|,\s*(greater|lesser|mass|communal))$/i;
+
+/**
+ * "Invisibility (Greater)" (PCGen Pathfinder data), "Invisibility, Greater"
+ * (3.5-style) -> ["Invisibility", "Greater"]; anything else -> [name, null].
+ */
+function splitVariant(name: string): [string, string | null] {
+  const m = VARIANT.exec(name.trim());
+  return m ? [m[1]!.trim(), (m[2] ?? m[3])!] : [name.trim(), null];
 }
 
-/** The school word ("Evocation") of a spell, for Spell Focus. */
+/**
+ * Reference data for a spell, if the curated table has it. A Greater/Lesser/
+ * Mass/Communal variant only matches that variant (never the base spell, whose
+ * numbers differ); other trailing parentheses ("Fireball (EB)") are ignored.
+ */
+export function lookupSpell(name: string): SpellRef | undefined {
+  const [base, variant] = splitVariant(name);
+  if (variant) return SPELLS.get(normalizeName(`${variant} ${base}`));
+  return SPELLS.get(normalizeName(base.replace(/\(.*\)$/, '')));
+}
+
+/** The school word ("Evocation") of a spell, for Spell Focus. Variants share their base spell's school. */
 export function spellSchool(name: string): string | null {
-  return lookupSpell(name)?.school.split(/[\s(]/)[0] ?? null;
+  const ref = lookupSpell(name) ?? lookupSpell(splitVariant(name)[0]);
+  return ref?.school.split(/[\s(]/)[0] ?? null;
 }
 
 const CURE = ['Cure Light Wounds', 'Cure Moderate Wounds', 'Cure Serious Wounds', 'Cure Critical Wounds', 'Mass Cure Light Wounds', 'Mass Cure Moderate Wounds', 'Mass Cure Serious Wounds', 'Mass Cure Critical Wounds'];

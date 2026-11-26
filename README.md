@@ -126,6 +126,8 @@ Some data must never reach certain players (notes, whispers, unshared handouts, 
 - A module may export a **redactor** `(draft, viewer) => void` that strips hidden data from a snapshot before the server sends it to that viewer (see `modules/notes.ts`, `modules/loot.ts`).
 - An action may declare an **`audience(viewer, payload, { state, meta })`**. The server only delivers it to matching users (the author always gets their own). An action with a restricted audience must only touch data the redactor hides; otherwise excluded clients' state drifts.
 
+If some recipients need an action's state change but not all of its payload, add **`redactPayload(viewer, payload, ctx)`**: the server sends each non-author the payload it returns (see `pf1e/castSpell`, which syncs a shared caster's spent slot to the party while a GM-only spell card stays with the GM). `apply` must cope with the stripped payload.
+
 To reveal a secret later, have a server `prepare` step copy it into the action (that's how `loot/setIdentified` and `handout/update` work). Clients re-run the redactors after every action, so data that stops being visible to someone (an un-shared handout) disappears from their screen immediately.
 
 ### Where things live

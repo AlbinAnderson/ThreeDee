@@ -6,8 +6,8 @@
  *
  * Privacy: the cast card follows the chat mode. The action also goes to
  * everyone who can see the character, so their copy of its prepared spells and
- * slots stays in sync; a GM-only card they receive is dropped by the chat
- * redactor, and reveals nothing the character sheet doesn't already show them.
+ * slots stays in sync; those who may not read the card get the action with
+ * `redactPayload` stripping it down to the spend (no card, spell or whisper).
  */
 import { z } from 'zod';
 import type { Draft } from 'immer';
@@ -104,8 +104,12 @@ export const spellActions = {
         };
       },
       audience: (viewer, { characterId, whisper }, { state, meta }) => canSeeMessage(viewer, meta.userId, whisper) || canSeeIt(viewer, characterId, state),
+      redactPayload: (viewer, payload, { meta }) =>
+        canSeeMessage(viewer, meta.userId, payload.whisper)
+          ? payload
+          : { characterId: payload.characterId, className: payload.className, chatId: payload.chatId, spend: payload.spend },
       apply(draft, { characterId, chatId, whisper, card, spend }, meta) {
-        if (!card || !spend) return;
+        if (!spend) return;
         const c = draft.characters[characterId];
         if (c) {
           if (spend.preparedId && spend.markCast) {
@@ -115,7 +119,7 @@ export const spellActions = {
           if (spend.slotKey) c.runtime.uses[spend.slotKey] = (c.runtime.uses[spend.slotKey] ?? 0) + 1;
           c.updatedAt = meta.ts;
         }
-        pushMessage(draft.chat, { id: chatId, userId: meta.userId, ts: meta.ts, text: '', card, ...(whisper ? { whisper } : {}) });
+        if (card) pushMessage(draft.chat, { id: chatId, userId: meta.userId, ts: meta.ts, text: '', card, ...(whisper ? { whisper } : {}) });
       },
     },
   ),

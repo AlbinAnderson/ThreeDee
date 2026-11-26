@@ -59,6 +59,11 @@ export interface ActionSpec<P> {
    * otherwise their copy of the state drifts.
    */
   audience?: (viewer: User, payload: P, ctx: { state: GameState; meta: ActionMeta }) => boolean;
+  /**
+   * Server-side: optional per-recipient payload redaction (e.g. strip a private
+   * chat card while still syncing a shared character's spent slot).
+   */
+  redactPayload?: (viewer: User, payload: P, ctx: { state: GameState; meta: ActionMeta }) => P;
   apply: (draft: Draft<GameState>, payload: P, meta: ActionMeta) => void;
 }
 

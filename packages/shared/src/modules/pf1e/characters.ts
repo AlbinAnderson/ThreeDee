@@ -90,6 +90,7 @@ export const characterActions = {
       if (!isGm(ctx.user) && c.ownerId !== ctx.user.id) return 'Players can only import their own characters';
       if (c.inventory.items.some((i) => i.lootId !== null)) return 'Imported items cannot reference party loot';
       if (!c.inventory.loadouts.some((l) => l.id === c.inventory.activeLoadoutId)) return 'Invalid active loadout';
+      if (Object.keys(c.runtime.prepared).length > 0) return 'Prepare spells after importing';
       return true;
     },
     prepare(ctx, { character }) {
