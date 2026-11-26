@@ -4,6 +4,7 @@ import { canControlToken, isGm } from '../actions/auth';
 import { IdSchema, TokenSchema } from '../state';
 import { blockingSegments, isPathBlocked } from '../visibility';
 import { removeCombatant } from './combat';
+import { unlinkToken } from './pf1e/characters';
 
 const CoordSchema = TokenSchema.shape.x;
 
@@ -94,8 +95,9 @@ export const tokenActions = {
     authorize: (ctx, { id }) => requireTokenControl(ctx, id),
     apply(draft, { id }) {
       delete draft.tokens[id];
-      // A deleted token leaves the turn order too.
+      // A deleted token leaves the turn order too, and characters lose their link to it.
       for (const c of [...draft.combat.combatants]) if (c.tokenId === id) removeCombatant(draft.combat, c.id);
+      unlinkToken(draft, id);
     },
   }),
 };

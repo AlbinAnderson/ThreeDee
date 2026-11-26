@@ -1618,3 +1618,146 @@ button.wide {
   font-size: 9.5px;
   letter-spacing: 0.02em;
 }
+
+/* ---------------------------------------------------------- characters */
+
+.characters-panel.drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  background: rgba(108, 140, 255, 0.06);
+}
+
+.drop-hint {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.character-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.character-list button {
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  margin-bottom: 6px;
+  background: var(--panel-2);
+  text-align: left;
+}
+
+.character-name {
+  font-weight: 700;
+}
+
+.character-meta {
+  color: var(--muted);
+}
+
+.character-title {
+  font-size: 18px;
+  margin: 6px 0 10px;
+}
+
+.char-summary {
+  margin-top: 8px;
+}
+
+.char-identity {
+  margin-bottom: 8px;
+}
+
+.char-stats {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.char-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 0;
+}
+
+.char-stat-name {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.char-stat-score {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.char-stat-mod {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.char-chips {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.char-chips li {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+
+.warning-list {
+  color: var(--warn);
+  margin: 0;
+  padding-left: 18px;
+}
+
+.import-modal {
+  width: min(640px, 92vw);
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.reimport-diff {
+  margin-bottom: 8px;
+}
+
+.diff-section ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.diff-added {
+  color: var(--ok);
+}
+
+.diff-removed {
+  color: var(--danger);
+}
+
+.diff-changed {
+  color: var(--warn);
+}

@@ -120,7 +120,7 @@ describe('state migrations', () => {
       drawings: {}, chat: [], notes: {}, loot: {},
     };
     const s = migrateState(v2);
-    assert.equal(s.schemaVersion, 3);
+    assert.equal(s.schemaVersion, CURRENT_SCHEMA_VERSION);
     assert.deepEqual(s.scenes.s1!.fog, { enabled: false, ops: [] });
     assert.equal(s.tokens.t1!.hp, null);
     assert.deepEqual(s.tokens.t1!.conditions, []);

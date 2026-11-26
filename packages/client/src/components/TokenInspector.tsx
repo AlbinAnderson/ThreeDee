@@ -8,6 +8,7 @@ import { useUi } from '../state/uiStore';
 import { addSelectedToCombat } from '../panels/CombatPanel';
 import { CheckboxField, ColorField, ImageUploadButton, NumberField, TextField } from './fields';
 import { ConditionsEditor, HpEditor, VisionEditor } from './TokenStatusEditors';
+import { CharacterLinkField } from '../characters/CharacterLinkField';
 
 /** Floating editor for the single selected token. */
 export function TokenInspector() {
@@ -63,6 +64,7 @@ function Inspector({ token }: { token: Token }) {
         )}
       </div>
       <CheckboxField label="Show name" value={token.showName} onCommit={(showName) => update({ showName })} />
+      <CharacterLinkField token={token} />
       <details className="inspector-section" open>
         <summary>Hit points</summary>
         <HpEditor token={token} />
