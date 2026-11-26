@@ -90,6 +90,19 @@ export function combatantName(state: GameState, c: Combatant): string {
   return token?.name.trim() || c.name;
 }
 
+/** Run turn-start duration hooks once per combatant per round (safe against prev/next or delay). */
+function tickCurrentTurn(draft: Draft<GameState>, meta: ActionMeta, allowNewRound: boolean) {
+  const combat = draft.combat;
+  if (!combat.active) return;
+  const newRound = allowNewRound && combat.round > combat.ticks.round;
+  if (newRound) combat.ticks = { round: combat.round, ids: [] };
+  const id = combat.currentId;
+  const fresh = combat.round === combat.ticks.round && !!id && !combat.ticks.ids.includes(id);
+  if (fresh) combat.ticks.ids.push(id!);
+  if (!fresh && !newRound) return;
+  for (const hook of turnStartHooks) hook(draft, { combatantId: fresh ? id : null, newRound, meta });
+}
+
 /** Remove a combatant, passing the turn on if it was theirs and dropping its PF1e turn state. */
 export function removeCombatant(draft: Draft<GameState>, id: string) {
   const { combat } = draft;
@@ -177,8 +190,10 @@ export const combatActions = {
 
   remove: defineAction('combat/remove', z.object({ id: IdSchema }), {
     authorize: (ctx, { id }) => requireCombatant(ctx, id),
-    apply(draft, { id }) {
+    apply(draft, { id }, meta) {
+      const wasCurrent = draft.combat.active && draft.combat.currentId === id;
       removeCombatant(draft, id);
+      if (wasCurrent && draft.combat.currentId) tickCurrentTurn(draft, meta, false);
     },
   }),
 
@@ -281,13 +296,7 @@ export const combatActions = {
       advance(combat, 1);
       // Durations count down as turns start, once per combatant per round: stepping back
       // with prev and forward again doesn't tick twice (nor does prev give rounds back).
-      const newRound = combat.round > combat.ticks.round;
-      if (newRound) combat.ticks = { round: combat.round, ids: [] };
-      const id = combat.currentId;
-      const fresh = combat.round === combat.ticks.round && !!id && !combat.ticks.ids.includes(id);
-      if (fresh) combat.ticks.ids.push(id!);
-      if (!fresh && !newRound) return;
-      for (const hook of turnStartHooks) hook(draft, { combatantId: fresh ? id : null, newRound, meta });
+      tickCurrentTurn(draft, meta, true);
     },
   }),
 
@@ -304,17 +313,19 @@ export const combatActions = {
    */
   move: defineAction('combat/move', z.object({ id: IdSchema, beforeId: IdSchema.nullable() }), {
     authorize: (ctx, { id }) => requireCombatant(ctx, id),
-    apply(draft, { id, beforeId }) {
+    apply(draft, { id, beforeId }, meta) {
       const combat = draft.combat;
       const from = combat.combatants.findIndex((c) => c.id === id);
       if (from === -1 || id === beforeId) return;
-      if (combat.active && combat.currentId === id) {
+      const wasCurrent = combat.active && combat.currentId === id;
+      if (wasCurrent) {
         const next = combat.combatants[from + 1];
         combat.currentId = next ? next.id : (combat.combatants[0]?.id ?? null);
       }
       const [moved] = combat.combatants.splice(from, 1);
       const to = beforeId ? combat.combatants.findIndex((c) => c.id === beforeId) : -1;
       combat.combatants.splice(to === -1 ? combat.combatants.length : to, 0, moved!);
+      if (wasCurrent && combat.currentId && combat.currentId !== id) tickCurrentTurn(draft, meta, false);
     },
   }),
 

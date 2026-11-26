@@ -126,8 +126,8 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
       <CombatToggles character={c} stats={stats} />
       {stats.effects.sources.length > 0 && (
         <div className="active-effects" title="Buffs and conditions included in these numbers (Effects tab)">
-          {stats.effects.sources.map((s) => (
-            <span key={`${s.kind}|${s.name}`} className={`badge${s.kind === 'condition' ? ' warn' : ''}`}>
+          {stats.effects.sources.map((s, i) => (
+            <span key={`${s.kind}|${s.name}|${i}`} className={`badge${s.kind === 'condition' ? ' warn' : ''}`}>
               {s.name}
               {s.roundsLeft !== null ? ` ⏱${s.roundsLeft}` : ''}
             </span>

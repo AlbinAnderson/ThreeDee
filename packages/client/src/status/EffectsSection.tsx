@@ -22,8 +22,8 @@ export function EffectsSection() {
             <span className="status-name">{c.name}</span>
           </span>
           <span className="active-effects">
-            {sources.map((s) => (
-              <span key={`${s.kind}|${s.name}`} className={`badge${s.kind === 'condition' ? ' warn' : ''}`}>
+            {sources.map((s, i) => (
+              <span key={`${s.kind}|${s.name}|${i}`} className={`badge${s.kind === 'condition' ? ' warn' : ''}`}>
                 {s.name}
                 {s.roundsLeft !== null ? ` ⏱${s.roundsLeft}` : ''}
               </span>

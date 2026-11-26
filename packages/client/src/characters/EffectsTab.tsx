@@ -306,20 +306,29 @@ const TARGET_LABEL: Record<BuffEffect['target'], string> = {
   extraAttack: 'Extra attack (haste)',
 };
 
+type DraftEffect = { target: BuffEffect['target']; valueText: string; type: BuffEffect['type'] };
 type Draft = { name: string; note: string; effects: BuffEffect[] };
 
+const clampEffectValue = (text: string) => {
+  const n = Math.round(Number(text));
+  return Number.isFinite(n) ? Math.max(-50, Math.min(50, n)) : 0;
+};
+
 function BuffEditor({ initial, submitLabel, onSubmit, onCancel }: { initial: Draft; submitLabel: string; onSubmit: (d: Draft) => void; onCancel: () => void }) {
-  const [d, setD] = useState<Draft>(() => ({ ...initial, effects: initial.effects.map((x) => ({ ...x })) }));
-  const setEffect = (i: number, changes: Partial<BuffEffect>) => setD({ ...d, effects: d.effects.map((x, j) => (j === i ? { ...x, ...changes } : x)) });
+  const [name, setName] = useState(initial.name);
+  const [note, setNote] = useState(initial.note);
+  const [effects, setEffects] = useState<DraftEffect[]>(() => initial.effects.map((x) => ({ target: x.target, valueText: String(x.value), type: x.type })));
+  const setEffect = (i: number, changes: Partial<DraftEffect>) => setEffects(effects.map((x, j) => (j === i ? { ...x, ...changes } : x)));
   const submit = () => {
-    const name = d.name.trim().slice(0, 60);
-    if (!name) return notify('Give the buff a name');
-    onSubmit({ name, note: d.note.slice(0, 300), effects: d.effects.slice(0, 20) });
+    const cleanName = name.trim().slice(0, 60);
+    if (!cleanName) return notify('Give the buff a name');
+    const cleanEffects: BuffEffect[] = effects.slice(0, 20).map((x) => ({ target: x.target, value: clampEffectValue(x.valueText), type: x.type }));
+    onSubmit({ name: cleanName, note: note.slice(0, 300), effects: cleanEffects });
   };
   return (
     <div className="buff-editor">
-      <input placeholder="Name (e.g. Heroism)" value={d.name} maxLength={60} onChange={(e) => setD({ ...d, name: e.target.value })} />
-      {d.effects.map((fx, i) => (
+      <input placeholder="Name (e.g. Heroism)" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+      {effects.map((fx, i) => (
         <div key={i} className="buff-effect-row">
           <select value={fx.target} aria-label="Applies to" onChange={(e) => setEffect(i, { target: e.target.value as BuffEffect['target'] })}>
             {BuffTargetSchema.options.map((t) => (
@@ -332,9 +341,10 @@ function BuffEditor({ initial, submitLabel, onSubmit, onCancel }: { initial: Dra
             type="number"
             min={-50}
             max={50}
-            value={fx.value}
+            value={fx.valueText}
             aria-label="Value"
-            onChange={(e) => setEffect(i, { value: Math.max(-50, Math.min(50, Math.round(Number(e.target.value) || 0))) })}
+            onChange={(e) => setEffect(i, { valueText: e.target.value })}
+            onBlur={() => setEffect(i, { valueText: String(clampEffectValue(fx.valueText)) })}
           />
           <select value={fx.type} aria-label="Bonus type" onChange={(e) => setEffect(i, { type: e.target.value as BuffEffect['type'] })}>
             {BonusTypeSchema.options.map((t) => (
@@ -343,17 +353,17 @@ function BuffEditor({ initial, submitLabel, onSubmit, onCancel }: { initial: Dra
               </option>
             ))}
           </select>
-          <button type="button" className="small icon-button" aria-label="Remove effect" onClick={() => setD({ ...d, effects: d.effects.filter((_, j) => j !== i) })}>
+          <button type="button" className="small icon-button" aria-label="Remove effect" onClick={() => setEffects(effects.filter((_, j) => j !== i))}>
             ×
           </button>
         </div>
       ))}
-      {d.effects.length < 20 && (
-        <button type="button" className="small" onClick={() => setD({ ...d, effects: [...d.effects, { target: 'attack', value: 1, type: 'untyped' }] })}>
+      {effects.length < 20 && (
+        <button type="button" className="small" onClick={() => setEffects([...effects, { target: 'attack', valueText: '1', type: 'untyped' }])}>
           + Effect
         </button>
       )}
-      <textarea placeholder="Reminder (what the numbers don’t cover)" value={d.note} maxLength={300} rows={2} onChange={(e) => setD({ ...d, note: e.target.value })} />
+      <textarea placeholder="Reminder (what the numbers don’t cover)" value={note} maxLength={300} rows={2} onChange={(e) => setNote(e.target.value)} />
       <div className="button-row">
         <button type="button" className="primary small" onClick={submit}>
           {submitLabel}

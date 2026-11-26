@@ -106,10 +106,12 @@ describe('[Epic 8] buff presets in the engine', () => {
     // Attack: −1 size, Str +1 mod.
     assert.equal(after.attacks[0]!.attack.total, before.attacks[0]!.attack.total - 1 + (after.abilities.STR.mod - before.abilities.STR.mod));
     assert.equal(after.cmb.total - before.cmb.total, 1 + (after.abilities.STR.mod - before.abilities.STR.mod));
-    // Reduce + enlarge cancel out; size never goes past Colossal.
+    // Reduce + enlarge cancel out; multiple enlarges don't stack; single huge size step clamps at Colossal.
     c.runtime.buffs.push(preset(c, 'reducePerson'));
     assert.equal(stats(c).size, 'Medium');
-    c.runtime.buffs = Array.from({ length: 6 }, () => preset(c, 'enlargePerson'));
+    c.runtime.buffs = [preset(c, 'enlargePerson'), preset(c, 'enlargePerson')];
+    assert.equal(stats(c).size, 'Large', 'multiple magical size increases do not stack');
+    c.runtime.buffs = [buff('Titanic', [{ target: 'sizeSteps', value: 6, type: 'size' }])];
     assert.equal(stats(c).size, 'Colossal');
   });
 
@@ -252,7 +254,7 @@ describe('[Epic 8] condition mechanics', () => {
     assert.equal(prone.attacks[0]!.attack.total, base.attacks[0]!.attack.total - 4);
     const grap = stats(withConditions('Grappled'));
     assert.equal(grap.abilities.DEX.score, base.abilities.DEX.score - 4);
-    assert.equal(grap.cmb.total, base.cmb.total - 4, '−2 attack and −2 CMB');
+    assert.equal(grap.cmb.total, base.cmb.total - 2, '−2 on attack rolls and CMB (not double-counted)');
     const ent = stats(withConditions('Entangled'));
     assert.equal(ent.attacks[0]!.attack.total, base.attacks[0]!.attack.total - 2);
     assert.equal(stats(withConditions('Dazzled')).attacks[0]!.attack.total, base.attacks[0]!.attack.total - 1);

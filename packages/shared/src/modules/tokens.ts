@@ -46,7 +46,8 @@ export const tokenActions = {
     },
     apply(draft, { token }) {
       if (!draft.scenes[token.sceneId] || draft.tokens[token.id]) return;
-      draft.tokens[token.id] = token;
+      const cleanRounds = Object.fromEntries(Object.entries(token.conditionRounds).filter(([k]) => token.conditions.includes(k)));
+      draft.tokens[token.id] = { ...token, conditionRounds: cleanRounds };
     },
   }),
 

@@ -175,11 +175,12 @@ export function computeCharacterStats(c: Character): CharacterStats {
     if (runtime.abilityDrain[key]) mods.push({ value: -runtime.abilityDrain[key]!, type: 'untyped', source: 'Drain' });
     mods.push(...fx.mods[key]);
     let line = sumModifiers(mods);
-    // Helpless / paralyzed: the ability counts as a score of 0.
-    if (fx.zero.includes(key) && line.total !== 0) line = sumModifiers([...mods, { value: -line.total, type: 'untyped', source: 'Helpless (score 0)' }]);
+    // Helpless / paralyzed: the ability counts as a score of 0 (effective modifier −5).
+    const zeroed = fx.zero.includes(key);
+    if (zeroed && line.total !== 0) line = sumModifiers([...mods, { value: -line.total, type: 'untyped', source: 'Helpless (score 0)' }]);
     const damage = Math.max(0, runtime.abilityDamage[key] ?? 0);
     // PF1e: every 2 points of ability damage apply a -1 penalty without altering the score.
-    const abilityMod = Math.floor((line.total - 10) / 2) - Math.floor(damage / 2);
+    const abilityMod = zeroed ? -5 : Math.floor((line.total - 10) / 2) - Math.floor(damage / 2);
     abilities[key] = { key, score: line.total, damage, mod: abilityMod, line };
   }
   const mod = (k: StatKey) => abilities[k].mod;
@@ -200,8 +201,11 @@ export function computeCharacterStats(c: Character): CharacterStats {
 
   // Determine worn armor up front so light-armor-only feats (e.g. Fleet) know whether they apply.
   // Enlarge/reduce effects move the size category (clamped to Fine..Colossal).
+  // PF1e: multiple magical size increases (or decreases) don't stack; take the largest of each direction.
   const baseSize: SizeName = sheet.size ?? race?.size ?? 'Medium';
-  const sizeSteps = fx.mods.sizeSteps.reduce((sum, m) => sum + m.value, 0);
+  const maxGrow = fx.mods.sizeSteps.reduce((m, x) => (x.value > m ? x.value : m), 0);
+  const maxShrink = fx.mods.sizeSteps.reduce((m, x) => (x.value < m ? x.value : m), 0);
+  const sizeSteps = maxGrow + maxShrink;
   const size: SizeName = SIZES[Math.max(0, Math.min(SIZES.length - 1, SIZES.indexOf(baseSize) + sizeSteps))]!;
   const worn = wornArmor(c);
   const effectiveWorn = worn.filter((w) => (w.armor.kind === 'armor' ? sheet.armorBonus !== 0 : sheet.shieldBonus !== 0));

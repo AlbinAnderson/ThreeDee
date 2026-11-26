@@ -123,9 +123,9 @@ export const BUFF_PRESETS: BuffPreset[] = [
     id: 'barkskin',
     name: 'Barkskin',
     group: 'Spells',
-    note: '+2 enhancement to natural armor, +1 per three caster levels above 3rd (max +5). Counted here as natural armor.',
+    note: '+2 enhancement to natural armor, +1 per three caster levels above 3rd (max +5). Stacks with natural armor.',
     option: { label: 'Bonus', choices: choices([2, 3, 4, 5], (v) => `+${v}`), initial: () => '2' },
-    effects: (_c, o) => [e('ac', Number(o), 'natural')],
+    effects: (_c, o) => [e('ac', Number(o), 'enhancement')],
   },
   {
     id: 'rageSpell',
@@ -151,6 +151,7 @@ export const BUFF_PRESETS: BuffPreset[] = [
     id: 'unchainedRage',
     name: 'Rage (unchained)',
     group: 'Class abilities',
+    condition: 'Raging',
     classes: ['barbarianunchained', 'unchainedbarbarian'],
     note: 'Also +2 temporary hit points per Hit Die (+3 greater, +4 mighty) and the same bonus on thrown weapon damage. Fatigued afterwards.',
     effects: (c) => {
@@ -348,9 +349,9 @@ const CONDITIONS: Record<string, ConditionRule> = {
   shaken: { effects: FEAR, group: { id: 'fear', rank: 1 } },
   frightened: { effects: FEAR, group: { id: 'fear', rank: 2 }, note: 'Frightened: flees from the source of fear.' },
   panicked: { effects: FEAR, group: { id: 'fear', rank: 3 }, note: 'Panicked: drops held items and flees.' },
-  grappled: { effects: [e('attack', -2), e('cmb', -2), e('DEX', -4)], note: 'Grappled: the −2 doesn’t apply to checks to grapple or escape; can’t move; concentration check to cast.' },
+  grappled: { effects: [e('attack', -2), e('DEX', -4)], note: 'Grappled: −2 on attack rolls and CMB (not to grapple or escape); can’t move; concentration check to cast.' },
   pinned: { effects: [e('ac', -4)], loseDexToAc: true, note: 'Pinned: can only try to escape.' },
-  helpless: { effects: [], zero: ['DEX'], note: 'Helpless: melee attacks against you get +4; coup de grace possible.' },
+  helpless: { effects: [], loseDexToAc: true, zero: ['DEX'], note: 'Helpless: melee attacks against you get +4; coup de grace possible.' },
   paralyzed: { effects: [], zero: ['STR', 'DEX'], implies: ['helpless'] },
   unconscious: { effects: [], implies: ['helpless'] },
   prone: { effects: [e('attackMelee', -4)], note: 'Prone: −4 AC against melee, +4 AC against ranged; only crossbows and firearms for ranged attacks.' },
@@ -428,11 +429,15 @@ export function characterEffects(c: Character): CharacterEffects {
   }
 
   const conditions = c.runtime.conditions;
+  const classPresets = presetsFor(c);
   for (const k of effectiveConditions(conditions)) {
     const label = titleCase(k, conditions);
-    const preset = BUFF_PRESETS.find((p) => p.condition && normalizeName(p.condition) === k);
+    // Prefer a preset offered to this character's class (e.g. Unchained Barbarian gets Unchained Rage for "Raging").
+    const preset =
+      classPresets.find((p) => p.condition && normalizeName(p.condition) === k) ??
+      BUFF_PRESETS.find((p) => p.condition && normalizeName(p.condition) === k);
     if (preset) {
-      if (active.some((b) => b.presetId === preset.id)) continue;
+      if (active.some((b) => b.presetId === preset.id || (b.presetId && lookupPreset(b.presetId)?.condition === preset.condition))) continue;
       // Ability-free presets only (conditions can't ask for an option): use the default choice.
       add(preset.effects(c, preset.option?.initial(c) ?? '', { mod: () => 0 }), label);
       out.sources.push({ name: label, kind: 'condition', roundsLeft: null });
@@ -451,8 +456,8 @@ export function characterEffects(c: Character): CharacterEffects {
 
 /** Bonus types that also raise CMD when they apply to AC (and every AC penalty does). */
 export const CMD_FROM_AC = new Set<BonusType>(['circumstance', 'deflection', 'dodge', 'insight', 'luck', 'morale', 'profane', 'sacred']);
-/** AC bonus types that don't apply to touch AC. */
-export const NOT_TOUCH = new Set<BonusType>(['armor', 'shield', 'natural']);
+/** AC bonus types that don't apply to touch AC (enhancement to AC is enhancement to armor/shield/natural armor, e.g. Barkskin). */
+export const NOT_TOUCH = new Set<BonusType>(['armor', 'shield', 'natural', 'enhancement']);
 
 /** "Bless: +1 morale attack" style summary of an effect list. */
 export function describeEffects(effects: BuffEffect[]): string {
