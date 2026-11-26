@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import { PcgenCharacterSchema } from '../pcgen/schema';
-import { IdSchema } from '../primitives';
+import { AssetUrlSchema, IdSchema } from '../primitives';
 
 export const CharacterSourceSchema = z.object({
   kind: z.literal('pcgen'),
@@ -96,6 +96,135 @@ export const EMPTY_SHEET: CharacterSheet = {
   misc: {},
 };
 
+// ------------------------------------------------------------------ inventory
+
+/**
+ * Where an item is in a loadout. Hands, armor and shield drive attacks and AC;
+ * body slots are for magic items; `carried` counts toward load; `notCarried`
+ * (left at camp, dropped) doesn't.
+ */
+export const InventorySlotSchema = z.enum([
+  'carried',
+  'notCarried',
+  'primary',
+  'offHand',
+  'bothHands',
+  'armor',
+  'shield',
+  'head',
+  'headband',
+  'eyes',
+  'shoulders',
+  'neck',
+  'chest',
+  'body',
+  'belt',
+  'wrists',
+  'hands',
+  'ring',
+  'feet',
+]);
+export type InventorySlot = z.infer<typeof InventorySlotSchema>;
+
+export const ItemArmorSchema = z.object({
+  kind: z.enum(['armor', 'shield']),
+  category: z.enum(['light', 'medium', 'heavy', 'shield']),
+  bonus: z.number().int().min(0).max(40),
+  enhancement: z.number().int().min(0).max(10),
+  /** null = no cap. */
+  maxDex: z.number().int().min(0).max(20).nullable(),
+  /** Armor check penalty, 0 or negative (masterwork already applied). */
+  acp: z.number().int().min(-20).max(0),
+  /** Arcane spell failure, percent. */
+  asf: z.number().int().min(0).max(100),
+});
+export type ItemArmor = z.infer<typeof ItemArmorSchema>;
+
+export const ItemWeaponSchema = z.object({
+  /** Damage dice for a Medium weapon, e.g. "1d8" or "2d4". Sized for the wielder automatically. */
+  damage: z.string().regex(/^\d{1,2}d\d{1,3}$/, 'Dice like 1d8'),
+  /** Lowest natural roll that threatens (19 for 19-20). */
+  critRange: z.number().int().min(2).max(20),
+  critMult: z.number().int().min(2).max(6),
+  /** Range increment in feet; 0 = none. A melee weapon with a range can be thrown. */
+  range: z.number().int().min(0).max(1000),
+  /** melee (may also be thrown if it has a range), thrown-only, or a projectile weapon. */
+  type: z.enum(['melee', 'thrown', 'ranged']),
+  hands: z.enum(['light', 'one', 'two']),
+  /** How Strength applies to damage: full (melee, thrown, sling, composite bow), penalty only (plain bows), none (crossbows, firearms, splash weapons). */
+  strDamage: z.enum(['full', 'penalty', 'none']),
+  /** Usable with Weapon Finesse (light weapons, rapier, whip...). */
+  finesse: z.boolean(),
+  enhancement: z.number().int().min(0).max(10),
+  masterwork: z.boolean(),
+});
+export type ItemWeapon = z.infer<typeof ItemWeaponSchema>;
+
+/** Light an item sheds while lit, in feet. */
+export const ItemLightSchema = z.object({
+  bright: z.number().int().min(0).max(1000),
+  dim: z.number().int().min(0).max(2000),
+});
+
+export const ItemContainerSchema = z.object({
+  /** Contents don't count toward load (bag of holding, handy haversack). */
+  extradimensional: z.boolean(),
+  /** Pounds, for display; null = not tracked. */
+  capacity: z.number().min(0).max(100000).nullable(),
+});
+
+export const InventoryItemSchema = z.object({
+  /** Unique within the character's inventory. */
+  id: IdSchema,
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().int().min(0).max(1_000_000),
+  /** Pounds, each. */
+  weight: z.number().min(0).max(100000),
+  /** Gold pieces, each. */
+  value: z.number().min(0).max(1e9),
+  notes: z.string().max(4000),
+  /** Container item this one is inside. */
+  containerId: IdSchema.nullable(),
+  charges: z.object({ current: z.number().int().min(0).max(10000), max: z.number().int().min(0).max(10000) }).nullable(),
+  armor: ItemArmorSchema.nullable(),
+  weapon: ItemWeaponSchema.nullable(),
+  light: ItemLightSchema.nullable(),
+  lit: z.boolean(),
+  container: ItemContainerSchema.nullable(),
+  /** Party-loot record this came from; it keeps the GM's true properties (see modules/loot). */
+  lootId: IdSchema.nullable(),
+  imageUrl: AssetUrlSchema.nullable(),
+});
+export type InventoryItem = z.infer<typeof InventoryItemSchema>;
+
+/** A named equipment set: where each item is. Items not listed are `carried`. */
+export const LoadoutSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(60),
+  slots: z.record(IdSchema, InventorySlotSchema),
+});
+export type Loadout = z.infer<typeof LoadoutSchema>;
+
+export const CoinsSchema = z.object({
+  pp: z.number().int().min(0).max(1e9),
+  gp: z.number().int().min(0).max(1e9),
+  sp: z.number().int().min(0).max(1e9),
+  cp: z.number().int().min(0).max(1e9),
+});
+export type Coins = z.infer<typeof CoinsSchema>;
+
+export const MAX_INVENTORY_ITEMS = 500;
+export const MAX_LOADOUTS = 20;
+
+/** VTT-owned gear: seeded from the .pcg on first import, kept on re-import unless replaced. */
+export const InventorySchema = z.object({
+  items: z.array(InventoryItemSchema).max(MAX_INVENTORY_ITEMS),
+  coins: CoinsSchema,
+  loadouts: z.array(LoadoutSchema).min(1).max(MAX_LOADOUTS),
+  activeLoadoutId: IdSchema,
+});
+export type Inventory = z.infer<typeof InventorySchema>;
+
 export const CharacterSchema = z.object({
   id: IdSchema,
   name: z.string().trim().min(1).max(80),
@@ -109,6 +238,7 @@ export const CharacterSchema = z.object({
   build: PcgenCharacterSchema,
   sheet: CharacterSheetSchema,
   runtime: CharacterRuntimeSchema,
+  inventory: InventorySchema,
   createdAt: z.number(),
   updatedAt: z.number(),
 });

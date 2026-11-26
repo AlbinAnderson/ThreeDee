@@ -31,7 +31,7 @@ export const lootActions = {
     authorize: (ctx, { item }) => requireValidHolder(ctx, item.holderId),
     apply(draft, { id, item }, meta) {
       if (draft.loot[id]) return;
-      draft.loot[id] = { ...item, id, identified: false, secretNotes: '', createdBy: meta.userId, createdAt: meta.ts };
+      draft.loot[id] = { ...item, id, identified: false, secretNotes: '', stowed: false, createdBy: meta.userId, createdAt: meta.ts };
     },
   }),
 

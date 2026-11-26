@@ -1,7 +1,9 @@
 /** What a linked token should look like, derived from its character. */
 import type { Character } from '../entities/pf1e';
+import type { LightEmission } from '../entities/vision';
 import type { GameState, Token } from '../state';
 import { computeCharacterStats } from './engine';
+import { litLight } from './inventory';
 import { SIZE_CELLS } from './rules';
 
 export interface TokenSync {
@@ -11,7 +13,15 @@ export interface TokenSync {
   darkvision: number;
   /** Grid cells. */
   size: number;
+  /**
+   * Carried light from lit torches/lanterns (null = none lit). Absent when the
+   * character has no light sources, so a light set on the token by hand stays.
+   */
+  light?: LightEmission | null;
 }
+
+/** Warm torchlight. */
+export const CARRIED_LIGHT_COLOR = '#ffd28a';
 
 /**
  * Values to push onto a linked token. While linked, the token's current and
@@ -28,12 +38,23 @@ export function tokenSyncFor(state: Pick<GameState, 'scenes'>, c: Character, tok
   let value: number;
   if (prev) value = prev.value >= prev.max ? max : Math.min(prev.value, max);
   else value = Math.min(c.runtime.hp?.current ?? max, max);
-  return {
+  const sync: TokenSync = {
     name: c.name.slice(0, 60),
     hp: { value, max, temp: prev?.temp ?? c.runtime.hp?.temp ?? 0 },
     darkvision: Math.min(200, Math.max(0, Math.round(stats.senses.darkvision / unitsPerCell))),
     size: SIZE_CELLS[stats.size],
   };
+  if (c.inventory.items.some((i) => i.light)) {
+    const lit = litLight(c.inventory);
+    sync.light = lit
+      ? {
+          bright: Math.min(200, Math.round(lit.bright / unitsPerCell)),
+          dim: Math.min(400, Math.max(Math.round(lit.bright / unitsPerCell), Math.round(lit.dim / unitsPerCell))),
+          color: token?.light?.color ?? CARRIED_LIGHT_COLOR,
+        }
+      : null;
+  }
+  return sync;
 }
 
 /** The character's live HP: from its linked token if there is one, else its own runtime record. */

@@ -15,6 +15,7 @@ import { syncLinkedToken } from './characterActions';
 import { CharacterSettings } from './CharacterSettings';
 import { CharacterSheet } from './CharacterSheet';
 import { CharacterSummary } from './CharacterSummary';
+import { InventoryTab } from './InventoryTab';
 import { openImport } from './ImportDialog';
 import { useCharactersUi } from './store';
 
@@ -121,7 +122,7 @@ export function CharactersPanel() {
   );
 }
 
-type CharacterTab = 'sheet' | 'imported' | 'settings' | 'manage';
+type CharacterTab = 'sheet' | 'inventory' | 'imported' | 'settings' | 'manage';
 
 function CharacterView({ character: c, onBack }: { character: Character; onBack: () => void }) {
   const self = useSelf();
@@ -130,6 +131,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
   const activeTab: CharacterTab = !manage && (tab === 'settings' || tab === 'manage') ? 'sheet' : tab;
   const tabs: [CharacterTab, string][] = [
     ['sheet', 'Sheet'],
+    ['inventory', 'Inventory'],
     ['imported', 'Imported'],
     ...(manage ? ([['settings', 'Settings'], ['manage', 'Manage']] as [CharacterTab, string][]) : []),
   ];
@@ -148,6 +150,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
         ))}
       </div>
       {activeTab === 'sheet' && <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} />}
+      {activeTab === 'inventory' && <InventoryTab character={c} />}
       {activeTab === 'imported' && <CharacterSummary build={c.build} />}
       {activeTab === 'settings' && manage && <CharacterSettings character={c} />}
       {activeTab === 'manage' && manage && <ManageCharacter character={c} onBack={onBack} />}

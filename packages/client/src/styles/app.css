@@ -2097,3 +2097,137 @@ button.wide {
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
+
+/* ---------------------------------------------------------------- inventory (Epic 4) */
+.checkbox-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.inventory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inv-loadouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.inv-loadouts select {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.inv-load .hp-bar-html {
+  margin: 4px 0;
+}
+.inv-coins {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.inv-list,
+.inv-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.inv-list > li,
+.inv-children > li {
+  border-bottom: 1px solid var(--border);
+}
+.inv-list li.open {
+  background: var(--panel-2);
+}
+.inv-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+  min-height: 28px;
+}
+.inv-row.not-carried .inv-name {
+  opacity: 0.55;
+}
+.inv-name {
+  display: block;
+  flex: 1 1 140px;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inv-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.inv-stepper button {
+  padding: 0 6px;
+  min-width: 22px;
+}
+.inv-slot {
+  width: 104px;
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+.inv-where {
+  width: 96px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inv-weight {
+  margin-left: auto;
+  flex: 0 0 auto;
+  text-align: right;
+  white-space: nowrap;
+}
+.inv-row button {
+  white-space: nowrap;
+}
+.inv-give-qty {
+  width: 64px;
+}
+.inv-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+button.active {
+  border-color: var(--accent);
+  color: #ffd28a;
+}
+.sheet-attacks h3 {
+  margin: 8px 0 4px;
+}
+.sheet-attacks ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sheet-attacks li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.sheet-attacks li > .muted {
+  white-space: nowrap;
+}
+.sheet-attack-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

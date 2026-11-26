@@ -72,6 +72,7 @@ function ImportDialogBody({ state }: { state: ImportState }) {
   const targetMissing = isReimport && !target;
   const players = useMemo(() => Object.values(users).filter((u) => u.role !== 'gm'), [users]);
   const [ownerId, setOwnerId] = useState<string | null>(gm ? null : self.id);
+  const [replaceInventory, setReplaceInventory] = useState(false);
   const changes = useMemo(() => (target ? diffCharacterBuild(target.build, state.build) : null), [target, state.build]);
 
   function save() {
@@ -81,7 +82,7 @@ function ImportDialogBody({ state }: { state: ImportState }) {
         close();
         return;
       }
-      const action = characterActions.reimport.create({ id: target.id, build: state.build, fileName: state.fileName });
+      const action = characterActions.reimport.create({ id: target.id, build: state.build, fileName: state.fileName, replaceInventory });
       if (JSON.stringify(action).length > MAX_PAYLOAD_CHARS) return notify('This character is too large to upload');
       if (dispatch(action)) {
         notify(`${target.name} updated from ${state.fileName}`, 'info');
@@ -121,7 +122,13 @@ function ImportDialogBody({ state }: { state: ImportState }) {
         {targetMissing ? (
           <p className="muted">This character was deleted or is no longer accessible.</p>
         ) : isReimport ? (
-          <ReimportChanges changes={changes ?? []} />
+          <>
+            <ReimportChanges changes={changes ?? []} />
+            <label className="checkbox-row" title="Your VTT inventory (items, slots, loadouts, coins) is kept by default, since it changes in play">
+              <input type="checkbox" checked={replaceInventory} onChange={(e) => setReplaceInventory(e.target.checked)} /> Replace the inventory with
+              this file’s gear and money (discards changes made here)
+            </label>
+          </>
         ) : (
           <div className="field">
             <label>Played by</label>
@@ -164,8 +171,8 @@ function ReimportChanges({ changes }: { changes: BuildChange[] }) {
   return (
     <div className="reimport-diff">
       <p className="small-text">
-        Kept as-is: who plays it, its token link, party sharing, a name you changed here, and table state such as current HP and
-        spent uses.
+        Kept as-is: who plays it, its token link, party sharing, a name you changed here, the inventory, and table state such as
+        current HP and spent uses.
       </p>
       {changes.length === 0 ? (
         <p className="muted">No differences in the build data.</p>

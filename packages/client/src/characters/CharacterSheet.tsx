@@ -16,6 +16,7 @@ import {
   type StatLine,
 } from '@vtt/shared';
 import { applyHpDelta } from '../components/TokenStatusEditors';
+import { rollToChat } from '../panels/ChatPanel';
 import { useGame, useSelf } from '../state/hooks';
 import { rollCheck, rollInitiative, setHp, syncLinkedToken, updateRuntime } from './characterActions';
 
@@ -116,6 +117,17 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
       </div>
       <p className="muted small-text">Click a highlighted number to roll it (uses your chat mode). Hover for the breakdown.</p>
 
+      <Attacks character={c} stats={stats} />
+      <div className="muted small-text">
+        {[
+          `Load: ${stats.load.weight.total} lb (${stats.load.level})`,
+          stats.armor.acp ? `check penalty ${stats.armor.acp}` : null,
+          stats.armor.asf ? `spell failure ${stats.armor.asf}%` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </div>
+
       <details className="inspector-section">
         <summary>Class progression</summary>
         <ul className="sheet-classes">
@@ -142,6 +154,47 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
 
       {manage && <AbilityAdjustments character={c} />}
     </div>
+  );
+}
+
+/** Wielded weapons from the active loadout, with attack and damage rolls. */
+function Attacks({ character: c, stats }: { character: Character; stats: CharacterStats }) {
+  if (stats.attacks.length === 0) return <p className="muted small-text">No weapon in hand: wield one in the Inventory tab for attack rolls.</p>;
+  const label = (a: CharacterStats['attacks'][number]) => `${a.name}${a.mode !== 'melee' ? ` (${a.mode})` : ''}`;
+  const dmg = (a: CharacterStats['attacks'][number]) => `${a.dice}${a.damage.total ? signed(a.damage.total) : ''}`;
+  return (
+    <section className="sheet-attacks">
+      <h3>Attacks</h3>
+      <ul>
+        {stats.attacks.map((a) => (
+          <li key={`${a.itemId}-${a.mode}`}>
+            <span className="sheet-attack-name">{label(a)}</span>
+            <button type="button" className="small rollable" title={`Attack: ${describeLine(a.attack)}. Click to roll.`} onClick={() => rollCheck(c, `${label(a)} attack`, a.attack.total)}>
+              {signed(a.attack.total)}
+              {a.fullAttack.length > 1 ? ` (${a.fullAttack.slice(1).map(signed).join('/')})` : ''}
+            </button>
+            <button
+              type="button"
+              className="small"
+              title={`Damage: ${a.dice}${a.damage.parts.length ? ` + ${describeLine(a.damage)}` : ''}. Click to roll.`}
+              onClick={() => rollToChat(dmg(a), `${c.name}: ${label(a)} damage`.slice(0, 100))}
+            >
+              {dmg(a)}
+            </button>
+            <span className="muted small-text">
+              {a.crit}
+              {a.range ? ` · ${a.range} ft` : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {stats.twoWeapon && (
+        <p className="small-text muted">
+          Two-weapon full attack: {stats.twoWeapon.primaryName} {stats.twoWeapon.primary.map(signed).join('/')}, {stats.twoWeapon.offHandName}{' '}
+          {stats.twoWeapon.offHand.map(signed).join('/')}
+        </p>
+      )}
+    </section>
   );
 }
 

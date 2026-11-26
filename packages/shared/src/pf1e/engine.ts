@@ -3,21 +3,21 @@
  * imported PCGen build, the rules tables, sheet overrides and runtime state.
  * Pure and deterministic, shared by client (sheet) and server (token sync).
  */
-import type { Character } from '../entities/pf1e';
+import type { Character, ItemArmor } from '../entities/pf1e';
+import { carryingCapacity, sizedDamage, type CarryingCapacity } from './gear';
+import { activeLoadout, carriedWeight, itemsInSlot, type LoadWeight } from './inventory';
 import { sumModifiers, type Modifier, type StatLine } from './modifiers';
 import {
   babFor,
   baseSaveFor,
   FEAT_FLAGS,
   featKey,
-  lookupArmor,
   lookupClass,
   lookupFeatEffects,
   lookupRace,
   SIZE_MOD,
   SPECIAL_SIZE_MOD,
   STAT_KEYS,
-  type ArmorData,
   type ClassChassis,
   type FeatTarget,
   type SaveKey,
@@ -57,9 +57,50 @@ export interface CharacterStats {
   size: SizeName;
   speed: StatLine;
   senses: { darkvision: number; lowLight: boolean };
-  armor: { worn: string[]; maxDex: number | null; acp: number; heavyArmor: boolean };
+  armor: {
+    worn: string[];
+    /** Effective max Dex to AC from armor, shield and load; null = no cap. */
+    maxDex: number | null;
+    /** Effective armor check penalty (worse of armor+shield and load). */
+    acp: number;
+    /** Arcane spell failure chance, percent. */
+    asf: number;
+    heavyArmor: boolean;
+  };
+  load: { weight: LoadWeight; capacity: CarryingCapacity; level: LoadLevel };
+  attacks: WeaponAttack[];
+  /** Full-attack bonuses when fighting with a weapon in each hand. */
+  twoWeapon: { primary: number[]; offHand: number[]; primaryName: string; offHandName: string } | null;
   /** Things the user should fill in on the sheet for accurate numbers. */
   warnings: string[];
+}
+
+export type LoadLevel = 'light' | 'medium' | 'heavy' | 'overloaded';
+
+/** Max Dex and check penalty from load (Core Rulebook Table 7-5). */
+const LOAD_EFFECTS: Record<LoadLevel, { maxDex: number | null; acp: number }> = {
+  light: { maxDex: null, acp: 0 },
+  medium: { maxDex: 3, acp: -3 },
+  heavy: { maxDex: 1, acp: -6 },
+  overloaded: { maxDex: 0, acp: -6 },
+};
+
+export interface WeaponAttack {
+  itemId: string;
+  name: string;
+  mode: 'melee' | 'thrown' | 'ranged';
+  hand: 'primary' | 'offHand' | 'bothHands';
+  /** One attack (a standard action). */
+  attack: StatLine;
+  /** Full attack (iterative attacks at -5 each). */
+  fullAttack: number[];
+  /** Dice sized for the wielder, e.g. "1d6". */
+  dice: string;
+  damage: StatLine;
+  /** "19-20/×2" */
+  crit: string;
+  /** Range increment in feet; 0 = none. */
+  range: number;
 }
 
 const ABILITY_FOR_SAVE: Record<SaveKey, StatKey> = { fort: 'CON', ref: 'DEX', will: 'WIS' };
@@ -71,21 +112,22 @@ function abilityNames(c: Character): string[] {
   return [...c.build.abilities.map((a) => a.key), ...c.build.legacyFeats, ...c.build.virtualFeats];
 }
 
-/** Equip-set locations that are not actively worn/wielded armor or shield slots. */
-const NON_WORN_LOCATIONS = /^(carried|not carried|feet|hands|belt|head|headband|eyes|neck|shoulders|ring|wrists|slotless)$/i;
+/** Armor in the armor slot and shields in the shield slot of the active loadout. */
+function wornArmor(c: Character): { name: string; armor: ItemArmor }[] {
+  const inv = c.inventory;
+  const loadout = activeLoadout(inv);
+  return [
+    ...itemsInSlot(inv, loadout, 'armor').filter((i) => i.armor?.kind === 'armor'),
+    ...itemsInSlot(inv, loadout, 'shield').filter((i) => i.armor?.kind === 'shield'),
+  ].map((i) => ({ name: i.name, armor: i.armor! }));
+}
 
-/** Armor and shields worn directly in the active equipment set (not stowed or carried loosely). */
-function wornArmor(c: Character): { name: string; armor: ArmorData; enhancement: number }[] {
-  const set = c.build.equipmentSets.find((s) => s.id === c.build.activeEquipmentSetId) ?? c.build.equipmentSets[0];
-  const names = set
-    ? set.items
-        .filter((i) => i.parentId === set.id && i.itemName && !NON_WORN_LOCATIONS.test(i.location.trim()))
-        .map((i) => i.itemName!)
-    : c.build.equipment.map((e) => e.name);
-  return names.flatMap((name) => {
-    const hit = lookupArmor(name);
-    return hit ? [{ name, ...hit }] : [];
-  });
+const critText = (range: number, mult: number) => `${range < 20 ? `${range}-20/` : ''}×${mult}`;
+
+function iteratives(bab: number, total: number): number[] {
+  const out = [total];
+  for (let k = 1; k < 4 && bab - 5 * k >= 1; k++) out.push(total - 5 * k);
+  return out;
 }
 
 export function computeCharacterStats(c: Character): CharacterStats {
@@ -141,12 +183,19 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const worn = wornArmor(c);
   const armorItem = worn
     .filter((w) => w.armor.kind === 'armor')
-    .sort((a, b) => b.armor.bonus + b.enhancement - (a.armor.bonus + a.enhancement))[0];
+    .sort((a, b) => b.armor.bonus + b.armor.enhancement - (a.armor.bonus + a.armor.enhancement))[0];
   const shieldItem = worn
     .filter((w) => w.armor.kind === 'shield')
-    .sort((a, b) => b.armor.bonus + b.enhancement - (a.armor.bonus + a.enhancement))[0];
+    .sort((a, b) => b.armor.bonus + b.armor.enhancement - (a.armor.bonus + a.armor.enhancement))[0];
   const heavyArmor =
     sheet.armorBonus !== 0 && !!armorItem && (armorItem.armor.category === 'medium' || armorItem.armor.category === 'heavy');
+
+  // Load: carried weight against carrying capacity by Str score and size.
+  const weight = carriedWeight(c.inventory);
+  const capacity = carryingCapacity(abilities.STR.score, size);
+  const loadLevel: LoadLevel =
+    weight.total <= capacity.light ? 'light' : weight.total <= capacity.medium ? 'medium' : weight.total <= capacity.heavy ? 'heavy' : 'overloaded';
+  const heavyLoad = loadLevel !== 'light';
 
   // Feat/trait effects and sheet misc values, collected per target (dedup non-stackable feats).
   const extra: Record<FeatTarget, Modifier[]> = { hp: [], initiative: [], fort: [], ref: [], will: [], ac: [], cmd: [], speed: [] };
@@ -159,7 +208,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
     if (!stackable && appliedFeats.has(fk)) continue;
     appliedFeats.add(fk);
     for (const e of effects) {
-      if (e.lightArmorOnly && heavyArmor) continue;
+      if (e.lightArmorOnly && (heavyArmor || heavyLoad)) continue;
       extra[e.target].push({ value: typeof e.value === 'function' ? e.value(hitDice) : e.value, type: e.type, source: n.replace(/^trait\s*~\s*/i, '') });
     }
   }
@@ -206,13 +255,23 @@ export function computeCharacterStats(c: Character): CharacterStats {
   ]);
 
   // ---------------------------------------------------------------- size, armor, AC
-  const armorBonus = sheet.armorBonus ?? (armorItem ? armorItem.armor.bonus + armorItem.enhancement : 0);
-  const shieldBonus = sheet.shieldBonus ?? (shieldItem ? shieldItem.armor.bonus + shieldItem.enhancement : 0);
-  const caps = worn.map((w) => w.armor.maxDex).filter((m): m is number => m !== null);
+  const armorBonus = sheet.armorBonus ?? (armorItem ? armorItem.armor.bonus + armorItem.armor.enhancement : 0);
+  const shieldBonus = sheet.shieldBonus ?? (shieldItem ? shieldItem.armor.bonus + shieldItem.armor.enhancement : 0);
+  const loadFx = LOAD_EFFECTS[loadLevel];
+  // Armor and load don't stack: the worse cap and the worse penalty apply.
+  const caps = [...worn.map((w) => w.armor.maxDex), loadFx.maxDex].filter((m): m is number => m !== null);
   const maxDex = sheet.maxDex ?? (caps.length ? Math.min(...caps) : null);
+  const loadCapsDex = sheet.maxDex === null && loadFx.maxDex !== null && loadFx.maxDex === maxDex;
   const dexToAc = maxDex === null ? mod('DEX') : Math.min(mod('DEX'), maxDex);
+  const armorAcp = worn.reduce((s, w) => s + w.armor.acp, 0);
+  const acp = Math.min(armorAcp, loadFx.acp);
+  const asf = Math.min(100, worn.reduce((s, w) => s + w.armor.asf, 0));
 
-  const acDex: Modifier = { value: dexToAc, type: 'ability', source: maxDex !== null && mod('DEX') > maxDex ? `Dex (max ${maxDex})` : 'Dex' };
+  const acDex: Modifier = {
+    value: dexToAc,
+    type: 'ability',
+    source: maxDex !== null && mod('DEX') > maxDex ? `Dex (max ${maxDex}${loadCapsDex ? `, ${loadLevel} load` : ''})` : 'Dex',
+  };
   const acArmor: Modifier = { value: armorBonus, type: 'armor', source: sheet.armorBonus !== null ? 'Armor (sheet)' : (armorItem?.name ?? 'Armor') };
   const acShield: Modifier = { value: shieldBonus, type: 'shield', source: sheet.shieldBonus !== null ? 'Shield (sheet)' : (shieldItem?.name ?? 'Shield') };
   const acSize: Modifier = { value: SIZE_MOD[size], type: 'size', source: size };
@@ -255,17 +314,100 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const initiative = sumModifiers([{ value: mod('DEX'), type: 'ability', source: 'Dex' }, ...extra.initiative, ...misc('initiative')]);
 
   const baseSpeed = sheet.speed ?? race?.speed ?? 30;
+  // Steady races (dwarves) aren't slowed by armor or load.
   const armorSlows = heavyArmor && !race?.steady && sheet.speed === null;
+  const loadSlows = heavyLoad && !race?.steady && sheet.speed === null;
   // PF1e Table: Armor and Shields — 20->15, 30->20, 40->30, 50->35, 60->40.
   const reducedSpeed = baseSpeed <= 0 ? 0 : Math.max(5, Math.ceil((baseSpeed * 2) / 3 / 5) * 5);
-  const speed = sumModifiers([
-    {
-      value: armorSlows ? reducedSpeed : baseSpeed,
-      type: 'base',
-      source: armorSlows ? `Base ${baseSpeed} ft, in ${armorItem!.armor.category} armor` : 'Base',
-    },
-    ...extra.speed,
-  ]);
+  const why = [armorSlows ? `${armorItem!.armor.category} armor` : null, loadSlows ? `${loadLevel} load` : null].filter(Boolean).join(', ');
+  const speedBase: Modifier =
+    loadLevel === 'overloaded' && sheet.speed === null
+      ? { value: 5, type: 'base', source: 'Overloaded: can only stagger 5 ft' }
+      : { value: armorSlows || loadSlows ? reducedSpeed : baseSpeed, type: 'base', source: why ? `Base ${baseSpeed} ft, ${why}` : 'Base' };
+  const speed = sumModifiers([speedBase, ...(loadLevel === 'overloaded' ? [] : extra.speed)]);
+
+  // ---------------------------------------------------------------- weapon attacks
+  const finesse = has('weaponfinesse');
+  const loadout = activeLoadout(c.inventory);
+  const wielded = (['primary', 'bothHands', 'offHand'] as const).flatMap((hand) =>
+    itemsInSlot(c.inventory, loadout, hand)
+      .filter((i) => i.weapon)
+      .map((item) => ({ item, weapon: item.weapon!, hand })),
+  );
+  const attacks: WeaponAttack[] = [];
+  for (const { item, weapon, hand } of wielded) {
+    const modes: WeaponAttack['mode'][] = weapon.type === 'melee' ? (weapon.range > 0 ? ['melee', 'thrown'] : ['melee']) : [weapon.type];
+    for (const mode of modes) {
+      const useDex = mode !== 'melee' || (weapon.finesse && finesse && mod('DEX') > mod('STR'));
+      const attackAbility: Modifier = {
+        value: useDex ? mod('DEX') : mod('STR'),
+        type: 'ability',
+        source: useDex ? (mode === 'melee' ? 'Dex (Weapon Finesse)' : 'Dex') : 'Str',
+      };
+      const weaponBonus: Modifier[] = weapon.enhancement
+        ? [{ value: weapon.enhancement, type: 'enhancement', source: `+${weapon.enhancement} weapon` }]
+        : weapon.masterwork
+          ? [{ value: 1, type: 'enhancement', source: 'Masterwork' }]
+          : [];
+      const attack = sumModifiers([
+        { value: bab.total, type: 'base', source: 'BAB' },
+        attackAbility,
+        { value: SIZE_MOD[size], type: 'size', source: size },
+        ...weaponBonus,
+      ]);
+
+      // Strength to damage: x1.5 two-handed (not light weapons), x0.5 off hand; penalties always apply in full.
+      const str = mod('STR');
+      let strDamage = 0;
+      let strSource = 'Str';
+      if (mode === 'ranged') {
+        if (weapon.strDamage === 'full') strDamage = str;
+        else if (weapon.strDamage === 'penalty') strDamage = Math.min(0, str);
+      } else if (weapon.strDamage !== 'none') {
+        if (str > 0 && mode === 'melee' && hand === 'bothHands' && weapon.hands !== 'light') {
+          strDamage = Math.floor(str * 1.5);
+          strSource = 'Str ×1.5 (two hands)';
+        } else if (str > 0 && hand === 'offHand') {
+          strDamage = Math.floor(str / 2);
+          strSource = 'Str ×½ (off hand)';
+        } else strDamage = str;
+      }
+      const damage = sumModifiers([
+        ...(strDamage ? [{ value: strDamage, type: 'ability' as const, source: strSource }] : []),
+        ...(weapon.enhancement ? [{ value: weapon.enhancement, type: 'enhancement' as const, source: `+${weapon.enhancement} weapon` }] : []),
+      ]);
+      attacks.push({
+        itemId: item.id,
+        name: item.name,
+        mode,
+        hand,
+        attack,
+        fullAttack: mode === 'thrown' ? [attack.total] : iteratives(bab.total, attack.total),
+        dice: sizedDamage(weapon.damage, size),
+        damage,
+        crit: critText(weapon.critRange, weapon.critMult),
+        range: weapon.range,
+      });
+    }
+  }
+
+  // Two-weapon fighting: a melee weapon in each hand.
+  const main = attacks.find((a) => a.hand === 'primary' && a.mode === 'melee');
+  const off = attacks.find((a) => a.hand === 'offHand' && a.mode === 'melee');
+  let twoWeapon: CharacterStats['twoWeapon'] = null;
+  if (main && off) {
+    const offWeapon = wielded.find((x) => x.item.id === off.itemId)!.weapon;
+    const light = offWeapon.hands === 'light';
+    const twf = has('twoweaponfighting');
+    const [pMain, pOff] = twf ? (light ? [-2, -2] : [-4, -4]) : light ? [-4, -8] : [-6, -10];
+    const offCount = 1 + (has('improvedtwoweaponfighting') && bab.total >= 6 ? 1 : 0) + (has('greatertwoweaponfighting') && bab.total >= 11 ? 1 : 0);
+    twoWeapon = {
+      primary: main.fullAttack.map((n) => n + pMain),
+      offHand: Array.from({ length: offCount }, (_, k) => off.attack.total + pOff - 5 * k),
+      primaryName: main.name,
+      offHandName: off.name,
+    };
+  }
 
   return {
     abilities,
@@ -281,7 +423,10 @@ export function computeCharacterStats(c: Character): CharacterStats {
     size,
     speed,
     senses: { darkvision: sheet.darkvision ?? race?.darkvision ?? 0, lowLight: race?.lowLight ?? false },
-    armor: { worn: worn.map((w) => w.name), maxDex, acp: worn.reduce((s, w) => s + w.armor.acp, 0), heavyArmor },
+    armor: { worn: worn.map((w) => w.name), maxDex, acp, asf, heavyArmor },
+    load: { weight, capacity, level: loadLevel },
+    attacks,
+    twoWeapon,
     warnings,
   };
 }

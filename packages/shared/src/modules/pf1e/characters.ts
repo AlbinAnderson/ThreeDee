@@ -56,7 +56,7 @@ function putFull(draft: Draft<GameState>, id: string, full: Character | undefine
 const CharacterChangesSchema = CharacterSchema.pick({ name: true, shared: true }).partial();
 
 /** Token fields a character sync may set. */
-const TokenSyncSchema = TokenSchema.pick({ name: true, hp: true, darkvision: true, size: true });
+const TokenSyncSchema = TokenSchema.pick({ name: true, hp: true, darkvision: true, size: true }).extend({ light: TokenSchema.shape.light.optional() });
 
 /** Apply a sync to the token and to its combatants' initiative modifier. */
 function applySync(draft: Draft<GameState>, tokenId: string, sync: z.infer<typeof TokenSyncSchema> | undefined, initiative: number | undefined) {
@@ -215,13 +215,13 @@ export const characterActions = {
   /** Replace the build with a newer .pcg export, keeping owner, token link, sharing and runtime state. */
   reimport: defineAction(
     'character/reimport',
-    z.object({ id: IdSchema, build: PcgenCharacterSchema, fileName: z.string().max(255) }),
+    z.object({ id: IdSchema, build: PcgenCharacterSchema, fileName: z.string().max(255), replaceInventory: z.boolean().optional() }),
     {
       authorize: (ctx, { id }) => requireManage(ctx, id),
       audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
-      apply(draft, { id, build, fileName }, meta) {
+      apply(draft, { id, build, fileName, replaceInventory }, meta) {
         const c = draft.characters[id];
-        if (c) Object.assign(c, mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts }));
+        if (c) Object.assign(c, mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts, replaceInventory }));
       },
     },
   ),
