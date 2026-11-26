@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { canControlCombatant, canControlToken, combatantName, combatActions, isCombatantHidden, newId, type Combatant } from '@vtt/shared';
+import { initiativeForToken } from '../characters/characterActions';
 import { NumberField } from '../components/fields';
 import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
@@ -18,14 +19,16 @@ export function addSelectedToCombat() {
     const token = state.tokens[id];
     if (!token || !canControlToken(self, token)) continue;
     if (state.combat.combatants.some((c) => c.tokenId === id)) continue;
+    // A token linked to a character brings its initiative modifier along.
+    const linked = initiativeForToken(token.id);
     const ok = dispatch(
       combatActions.add.create({
         combatant: {
           id: newId(),
-          name: token.name || 'Token',
+          name: token.name || linked?.name || 'Token',
           tokenId: token.id,
           initiative: null,
-          modifier: 0,
+          modifier: linked?.modifier ?? 0,
           // Follows the token's own hidden flag; this is only the GM's extra override.
           hidden: false,
         },

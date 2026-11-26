@@ -167,7 +167,7 @@ describe('characters: re-import', () => {
     const { room, g, a, act } = setup();
     act(g, tokenActions.create.create({ token: createToken({ id: 'tok', sceneId: 'scene1', x: 0, y: 0, ownerIds: ['alice'] }) }));
     const c = sampleCharacter('alice', 'alice');
-    c.runtime = { hp: { current: 4, temp: 2, nonlethal: 1 }, uses: { 'channel-energy': 2 } };
+    c.runtime = { ...c.runtime, hp: { current: 4, temp: 2, nonlethal: 1 }, uses: { 'channel-energy': 2 }, abilityDamage: { STR: 1 } };
     act(a, characterActions.import.create({ character: c }));
     act(a, characterActions.linkToken.create({ id: c.id, tokenId: 'tok' }));
     act(a, characterActions.update.create({ id: c.id, changes: { shared: true, name: 'Val' } }));

@@ -12,3 +12,7 @@ export * from './actions/registry';
 export * from './modules';
 export * from './pcgen';
 export * from './pf1e/characters';
+export * from './pf1e/modifiers';
+export * from './pf1e/rules';
+export * from './pf1e/engine';
+export * from './pf1e/tokenSync';
