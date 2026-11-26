@@ -159,6 +159,8 @@ export interface RaceData {
   steady?: boolean;
   darkvision: number;
   lowLight: boolean;
+  /** Always-on racial skill bonuses (situational ones, like stonecunning, are left out). */
+  skills?: Record<string, number>;
 }
 
 const r = (
@@ -174,29 +176,29 @@ const RACES: Record<string, RaceData> = {
   // Core
   human: r({}, 'Medium', 30, 0, false, { anyPlusTwo: true }),
   dwarf: r({ CON: 2, WIS: 2, CHA: -2 }, 'Medium', 20, 60, false, { steady: true }),
-  elf: r({ DEX: 2, INT: 2, CON: -2 }, 'Medium', 30, 0, true),
-  gnome: r({ CON: 2, CHA: 2, STR: -2 }, 'Small', 20, 0, true),
-  halfelf: r({}, 'Medium', 30, 0, true, { anyPlusTwo: true }),
-  halforc: r({}, 'Medium', 30, 60, false, { anyPlusTwo: true }),
-  halfling: r({ DEX: 2, CHA: 2, STR: -2 }, 'Small', 20, 0, false),
+  elf: r({ DEX: 2, INT: 2, CON: -2 }, 'Medium', 30, 0, true, { skills: { Perception: 2 } }),
+  gnome: r({ CON: 2, CHA: 2, STR: -2 }, 'Small', 20, 0, true, { skills: { Perception: 2 } }),
+  halfelf: r({}, 'Medium', 30, 0, true, { anyPlusTwo: true, skills: { Perception: 2 } }),
+  halforc: r({}, 'Medium', 30, 60, false, { anyPlusTwo: true, skills: { Intimidate: 2 } }),
+  halfling: r({ DEX: 2, CHA: 2, STR: -2 }, 'Small', 20, 0, false, { skills: { Perception: 2, Acrobatics: 2, Climb: 2 } }),
   // Featured & uncommon
-  aasimar: r({ WIS: 2, CHA: 2 }, 'Medium', 30, 60, false),
-  android: r({ DEX: 2, INT: 2, CHA: -2 }, 'Medium', 30, 60, true),
-  catfolk: r({ DEX: 2, CHA: 2, WIS: -2 }, 'Medium', 30, 0, true),
-  dhampir: r({ DEX: 2, CHA: 2, CON: -2 }, 'Medium', 30, 60, true),
-  drow: r({ DEX: 2, CHA: 2, CON: -2 }, 'Medium', 30, 120, false),
-  fetchling: r({ DEX: 2, CHA: 2, WIS: -2 }, 'Medium', 30, 60, true),
-  goblin: r({ DEX: 4, STR: -2, CHA: -2 }, 'Small', 30, 60, false),
-  hobgoblin: r({ DEX: 2, CON: 2 }, 'Medium', 30, 60, false),
+  aasimar: r({ WIS: 2, CHA: 2 }, 'Medium', 30, 60, false, { skills: { Diplomacy: 2, Perception: 2 } }),
+  android: r({ DEX: 2, INT: 2, CHA: -2 }, 'Medium', 30, 60, true, { skills: { Perception: 2, 'Sense Motive': -4 } }),
+  catfolk: r({ DEX: 2, CHA: 2, WIS: -2 }, 'Medium', 30, 0, true, { skills: { Perception: 2, Stealth: 2, Survival: 2 } }),
+  dhampir: r({ DEX: 2, CHA: 2, CON: -2 }, 'Medium', 30, 60, true, { skills: { Bluff: 2, Perception: 2 } }),
+  drow: r({ DEX: 2, CHA: 2, CON: -2 }, 'Medium', 30, 120, false, { skills: { Perception: 2 } }),
+  fetchling: r({ DEX: 2, CHA: 2, WIS: -2 }, 'Medium', 30, 60, true, { skills: { 'Knowledge (Planes)': 2, Stealth: 2 } }),
+  goblin: r({ DEX: 4, STR: -2, CHA: -2 }, 'Small', 30, 60, false, { skills: { Ride: 4, Stealth: 4 } }),
+  hobgoblin: r({ DEX: 2, CON: 2 }, 'Medium', 30, 60, false, { skills: { Stealth: 4 } }),
   ifrit: r({ DEX: 2, CHA: 2, WIS: -2 }, 'Medium', 30, 60, false),
-  kitsune: r({ DEX: 2, CHA: 2, STR: -2 }, 'Medium', 30, 0, true),
-  kobold: r({ DEX: 2, STR: -4, CON: -2 }, 'Small', 30, 60, false),
+  kitsune: r({ DEX: 2, CHA: 2, STR: -2 }, 'Medium', 30, 0, true, { skills: { Acrobatics: 2 } }),
+  kobold: r({ DEX: 2, STR: -4, CON: -2 }, 'Small', 30, 60, false, { skills: { 'Craft (Traps)': 2, Perception: 2, 'Profession (Miner)': 2 } }),
   orc: r({ STR: 4, INT: -2, WIS: -2, CHA: -2 }, 'Medium', 30, 60, false),
   oread: r({ STR: 2, WIS: 2, CHA: -2 }, 'Medium', 20, 60, false),
-  ratfolk: r({ DEX: 2, INT: 2, STR: -2 }, 'Small', 20, 60, false),
+  ratfolk: r({ DEX: 2, INT: 2, STR: -2 }, 'Small', 20, 60, false, { skills: { 'Craft (Alchemy)': 2, Perception: 2, 'Use Magic Device': 2 } }),
   sylph: r({ DEX: 2, INT: 2, CON: -2 }, 'Medium', 30, 60, false),
-  tengu: r({ DEX: 2, WIS: 2, CON: -2 }, 'Medium', 30, 0, true),
-  tiefling: r({ DEX: 2, INT: 2, CHA: -2 }, 'Medium', 30, 60, false),
+  tengu: r({ DEX: 2, WIS: 2, CON: -2 }, 'Medium', 30, 0, true, { skills: { Linguistics: 4, Perception: 2, Stealth: 2 } }),
+  tiefling: r({ DEX: 2, INT: 2, CHA: -2 }, 'Medium', 30, 60, false, { skills: { Bluff: 2, Stealth: 2 } }),
   undine: r({ DEX: 2, WIS: 2, STR: -2 }, 'Medium', 30, 60, false),
   changeling: r({ WIS: 2, CHA: 2, CON: -2 }, 'Medium', 30, 60, false),
   duergar: r({ CON: 2, WIS: 2, CHA: -4 }, 'Medium', 20, 120, false, { steady: true }),
@@ -205,11 +207,11 @@ const RACES: Record<string, RaceData> = {
   nagaji: r({ STR: 2, CHA: 2, INT: -2 }, 'Medium', 30, 0, true),
   samsaran: r({ INT: 2, WIS: 2, CON: -2 }, 'Medium', 30, 0, true),
   strix: r({ DEX: 2, CHA: -2 }, 'Medium', 30, 60, true),
-  suli: r({ STR: 2, CHA: 2, INT: -2 }, 'Medium', 30, 0, true),
-  svirfneblin: r({ DEX: 2, WIS: 2, STR: -2, CHA: -4 }, 'Small', 20, 120, true),
-  vanara: r({ DEX: 2, WIS: 2, CHA: -2 }, 'Medium', 30, 0, true),
-  vishkanya: r({ DEX: 2, CHA: 2, WIS: -2 }, 'Medium', 30, 0, true),
-  wayang: r({ DEX: 2, INT: 2, WIS: -2 }, 'Small', 20, 60, false),
+  suli: r({ STR: 2, CHA: 2, INT: -2 }, 'Medium', 30, 0, true, { skills: { Diplomacy: 2, 'Sense Motive': 2 } }),
+  svirfneblin: r({ DEX: 2, WIS: 2, STR: -2, CHA: -4 }, 'Small', 20, 120, true, { skills: { Stealth: 2, Perception: 2, 'Craft (Alchemy)': 2 } }),
+  vanara: r({ DEX: 2, WIS: 2, CHA: -2 }, 'Medium', 30, 0, true, { skills: { Acrobatics: 2, Stealth: 2 } }),
+  vishkanya: r({ DEX: 2, CHA: 2, WIS: -2 }, 'Medium', 30, 0, true, { skills: { Perception: 2, 'Escape Artist': 2, Stealth: 2 } }),
+  wayang: r({ DEX: 2, INT: 2, WIS: -2 }, 'Small', 20, 60, false, { skills: { Perception: 2, Stealth: 2 } }),
 };
 
 export function lookupRace(name: string | null): RaceData | undefined {

@@ -8,7 +8,12 @@
     "start": "NODE_ENV=production tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "cli": "tsx src/cli.ts",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts test/unit/*.test.ts test/feature/*.test.ts test/regression/*.test.ts",
+    "test:unit": "tsx --test test/unit/*.test.ts",
+    "test:feature": "tsx --test test/feature/*.test.ts",
+    "test:regression": "tsx --test test/regression/*.test.ts",
+    "test:fast": "tsx --test test/unit/*.test.ts test/feature/*.test.ts",
+    "test:legacy": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@vtt/shared": "^0.1.0",

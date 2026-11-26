@@ -61,6 +61,21 @@ export const ClassChassisSchema = z.object({
 export const MiscTargetSchema = z.enum(['hp', 'ac', 'natural', 'deflection', 'initiative', 'fort', 'ref', 'will', 'cmb', 'cmd']);
 export type MiscTarget = z.infer<typeof MiscTargetSchema>;
 
+/** Sheet-side changes to one skill (kept on re-import). */
+export const SkillOverrideSchema = z.object({
+  /** null = ranks from the .pcg file. */
+  ranks: z.number().int().min(0).max(100).nullable(),
+  /** Extra untyped bonus (traits, items, anything not modelled). */
+  misc: z.number().int().min(-50).max(50),
+  /** null = from the .pcg file. */
+  classSkill: z.boolean().nullable(),
+  favorite: z.boolean(),
+  /** A sub-skill added in the VTT, e.g. "Profession (Sailor)". */
+  custom: z.boolean(),
+});
+export type SkillOverride = z.infer<typeof SkillOverrideSchema>;
+export const MAX_SKILL_OVERRIDES = 200;
+
 /**
  * Manual settings and overrides entered on the character sheet. VTT-owned,
  * so re-importing a .pcg keeps them. null = use the value from the rules data.
@@ -81,6 +96,10 @@ export const CharacterSheetSchema = z.object({
   darkvision: z.number().int().min(0).max(600).nullable(),
   /** Extra untyped modifiers (natural armor, deflection, favored class HP...). */
   misc: z.partialRecord(MiscTargetSchema, z.number().int().min(-100).max(1000)),
+  /** Per-skill overrides keyed by skill name. */
+  skills: z
+    .record(z.string().trim().min(1).max(80), SkillOverrideSchema)
+    .refine((r) => Object.keys(r).length <= MAX_SKILL_OVERRIDES, `At most ${MAX_SKILL_OVERRIDES} skill entries`),
 });
 export type CharacterSheet = z.infer<typeof CharacterSheetSchema>;
 
@@ -94,6 +113,7 @@ export const EMPTY_SHEET: CharacterSheet = {
   speed: null,
   darkvision: null,
   misc: {},
+  skills: {},
 };
 
 // ------------------------------------------------------------------ inventory
