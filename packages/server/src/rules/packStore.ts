@@ -202,13 +202,17 @@ export class RulesPackStore implements RulesProvider {
     for (const k of kinds) {
       for (const rec of this.lists[k]) {
         if (rec.hidden) continue;
+        // PCGen bookkeeping abilities ("Sorcerer Bonus Spell L3 ~ Fireball") aren't rules text.
+        if (rec.kind === 'ability' && (rec as FeatRecord).category.toLowerCase() === 'internal') continue;
         if (!isSourceAllowed(opts.allowedSources, rec.source.campaign)) continue;
         const lowerName = rec.name.toLowerCase();
         if (tokens.length) {
           const hay = `${lowerName} ${rec.key.toLowerCase()} ${rec.types.join(' ').toLowerCase()}`;
           if (!tokens.every((t) => hay.includes(t))) continue;
         }
-        const score = !q ? 1 : lowerName === q ? 100 : lowerName.startsWith(q) ? 50 : lowerName.includes(q) ? 20 : 5;
+        const base = !q ? 1 : lowerName === q ? 100 : lowerName.startsWith(q) ? 50 : lowerName.includes(q) ? 20 : 5;
+        // The canonical record (KEY = name, e.g. Core "Fireball") ranks above copies ("Occultist Spell ~ Fireball").
+        const score = base + (rec.key === rec.name ? 0.5 : 0);
         hits.push({
           score,
           hit: {

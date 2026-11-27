@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Coins, Plus, ShoppingBag, X } from 'lucide-react';
 import {
   allowedMods,
+  baseCost,
   coinsValue,
   inventoryActions,
   itemFromRecord,
@@ -24,7 +25,7 @@ import {
 import { request } from '../net/rpc';
 import { dispatch } from '../state/dispatch';
 import { notify } from '../state/notifications';
-import { openRulesCard } from './store';
+import { openRulesCard, useRulesUi } from './store';
 
 export function CatalogBuyDialog({ character: c, onClose }: { character: Character; onClose: () => void }) {
   const [q, setQ] = useState('');
@@ -32,6 +33,15 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
   const [selected, setSelected] = useState<{ rec: EquipmentRecord | null; custom: CustomRule | null } | null>(null);
   const [mods, setMods] = useState<ItemMods>(NO_MODS);
   const [qtyDraft, setQtyDraft] = useState('1');
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // A rules card opened from the catalog closes first.
+      if (e.key === 'Escape' && !useRulesUi.getState().card) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   useEffect(() => {
     let alive = true;
@@ -68,6 +78,7 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
     return priceWithMods(selected.rec, mods);
   }, [selected, mods]);
 
+  const unpricedPlain = !!selected?.rec && baseCost(selected.rec) === null && !mods.masterwork && mods.material === 'none' && mods.enhancement === 0;
   const unitCost = selected?.custom ? selected.custom.cost : priced && typeof priced !== 'string' ? priced.cost : null;
   const totalCp = unitCost !== null ? priceCp(unitCost, qty) : null;
   const purseGp = coinsValue(c.inventory.coins);
@@ -91,7 +102,7 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
 
   function addFree() {
     if (!selected?.rec) return;
-    const item = itemFromRecord(selected.rec, newId(), mods, qty);
+    const item = itemFromRecord(selected.rec, newId(), mods, qty, { allowUnpriced: true });
     if (typeof item === 'string') return notify(item);
     if (dispatch(inventoryActions.addItem.create({ characterId: c.id, item }))) {
       notify(`Added ${item.name} to ${c.name}`, 'info');
@@ -216,7 +227,13 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
                   <Coins size={12} /> Buy
                 </button>
                 {selected.rec && (
-                  <button type="button" className="small" disabled={typeof priced === 'string'} onClick={addFree} title="Add without spending gold">
+                  <button
+                    type="button"
+                    className="small"
+                    disabled={typeof priced === 'string' && !(selected.rec && unpricedPlain)}
+                    onClick={addFree}
+                    title="Add without spending gold"
+                  >
                     <Plus size={12} /> Add free
                   </button>
                 )}

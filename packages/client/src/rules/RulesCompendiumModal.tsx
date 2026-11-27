@@ -46,7 +46,8 @@ export function RulesCompendiumModal() {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      // A rules card opened from the compendium closes first.
+      if (e.key === 'Escape' && !useRulesUi.getState().card) close();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -4,14 +4,16 @@
  * pricing rules they encode are written out here (Core Rulebook ch. 6 & 15):
  *
  *  - Masterwork: weapon +300 gp, armor/shield +150 gp, ammunition +6 gp each.
- *  - Enhancement +N (implies masterwork): weapon +2,000 × N², armor/shield +1,000 × N².
- *  - Cold iron: weapon cost doubled; adding any enhancement costs another 2,000 gp.
+ *  - Enhancement +N (implies masterwork): weapon +2,000 × N², armor/shield +1,000 × N²,
+ *    ammunition +40 × N² each (magic ammunition is priced per 50).
+ *  - Cold iron: weapon cost doubled; adding any enhancement costs another 2,000 gp (40 gp per piece of ammunition).
  *  - Alchemical silver: light weapon +20, one-handed +90, two-handed +180, ammunition +2 gp.
  *  - Mithral (includes masterwork): light armor +1,000, medium +4,000, heavy +9,000,
  *    shield +1,000; weapons +500 gp per pound of the base item.
  *  - Adamantine (includes masterwork): weapon +3,000, light armor +5,000,
  *    medium +10,000, heavy +15,000; ammunition +60 gp each.
- *  - Darkwood (includes masterwork): +10 gp per pound.
+ *  - Darkwood (always masterwork, priced on top of it): masterwork cost + 10 gp per pound.
+ *  - Stacks ("Arrows (20)", PCGen BASEQTY) pay per-piece ammunition mods for every piece.
  *  - Potion 50 × spell level × CL, scroll 25 × SL × CL, wand 750 × SL × CL (0-level counts as ½).
  */
 import type { InventoryItem, ItemArmor, ItemWeapon } from '../entities/pf1e';
@@ -82,7 +84,11 @@ export function spellItemPrice(rec: Pick<EquipmentRecord, 'types' | 'spellEffect
 /** The record's own price (derived for potions/scrolls/wands); null = unknown. */
 export function baseCost(rec: Pick<EquipmentRecord, 'cost' | 'types' | 'spellEffect'>): number | null {
   if (rec.cost !== null && rec.cost > 0) return rec.cost;
-  return spellItemPrice(rec) ?? rec.cost;
+  const fromSpell = spellItemPrice(rec);
+  if (fromSpell !== null) return fromSpell;
+  // PCGen leaves COST:0 on magic items it prices with EQMOD formulas: the price is unknown, not free.
+  if (has(rec, 'Magic')) return null;
+  return rec.cost;
 }
 
 export interface PricedItem {
@@ -124,8 +130,12 @@ export function priceWithMods(rec: EquipmentRecord, mods: ItemMods = NO_MODS): P
   const kind = gearKind(rec);
   const weight = rec.weight ?? 0;
   const parts: PricedItem['parts'] = [{ label: rec.name, gp: base }];
-  const materialIsMasterwork = mods.material === 'mithral' || mods.material === 'adamantine' || mods.material === 'darkwood';
-  const masterwork = mods.masterwork || enh > 0 || materialIsMasterwork;
+  /** Ammunition mods are priced per piece; a stack record ("Arrows (20)") holds `baseQty` pieces. */
+  const pieces = kind === 'ammo' ? Math.max(1, Math.floor(rec.baseQty ?? 1)) : 1;
+  const each = pieces > 1 ? ` (×${pieces})` : '';
+  /** Mithral and adamantine prices include masterwork; darkwood is masterwork plus 10 gp/lb. */
+  const materialIncludesMasterwork = mods.material === 'mithral' || mods.material === 'adamantine';
+  const masterwork = mods.masterwork || enh > 0 || materialIncludesMasterwork || mods.material === 'darkwood';
   const armorLike = kind === 'armor' || kind === 'shield';
   const category = armorCategory(rec);
 
@@ -133,11 +143,11 @@ export function priceWithMods(rec: EquipmentRecord, mods: ItemMods = NO_MODS): P
   switch (mods.material) {
     case 'coldIron':
       parts.push({ label: 'Cold iron', gp: base });
-      if (enh > 0) parts.push({ label: 'Cold iron enhancement surcharge', gp: 2000 });
+      if (enh > 0) parts.push({ label: `Cold iron enhancement surcharge${each}`, gp: kind === 'ammo' ? 40 * pieces : 2000 });
       break;
     case 'alchemicalSilver': {
       const hands = weaponHands(rec);
-      parts.push({ label: 'Alchemical silver', gp: kind === 'ammo' ? 2 : hands === 'light' ? 20 : hands === 'two' ? 180 : 90 });
+      parts.push({ label: `Alchemical silver${each}`, gp: kind === 'ammo' ? 2 * pieces : hands === 'light' ? 20 : hands === 'two' ? 180 : 90 });
       break;
     }
     case 'mithral':
@@ -146,7 +156,7 @@ export function priceWithMods(rec: EquipmentRecord, mods: ItemMods = NO_MODS): P
       break;
     case 'adamantine':
       if (armorLike) parts.push({ label: 'Adamantine', gp: category === 'heavy' ? 15000 : category === 'medium' ? 10000 : 5000 });
-      else parts.push({ label: 'Adamantine', gp: kind === 'ammo' ? 60 : 3000 });
+      else parts.push({ label: `Adamantine${each}`, gp: kind === 'ammo' ? 60 * pieces : 3000 });
       break;
     case 'darkwood':
       parts.push({ label: 'Darkwood (10 gp/lb)', gp: 10 * weight });
@@ -154,8 +164,11 @@ export function priceWithMods(rec: EquipmentRecord, mods: ItemMods = NO_MODS): P
     case 'none':
       break;
   }
-  if (masterwork && !materialIsMasterwork) parts.push({ label: 'Masterwork', gp: kind === 'ammo' ? 6 : armorLike ? 150 : 300 });
-  if (enh > 0) parts.push({ label: `+${enh} enhancement`, gp: (armorLike ? 1000 : 2000) * enh * enh });
+  if (masterwork && !materialIncludesMasterwork) parts.push({ label: `Masterwork${kind === 'ammo' ? each : ''}`, gp: kind === 'ammo' ? 6 * pieces : armorLike ? 150 : 300 });
+  if (enh > 0) {
+    const perPlus = kind === 'ammo' ? 40 * pieces : armorLike ? 1000 : 2000;
+    parts.push({ label: `+${enh} enhancement${kind === 'ammo' ? each : ''}`, gp: perPlus * enh * enh });
+  }
 
   const lighter = mods.material === 'mithral' || mods.material === 'darkwood';
   const prefix = [enh > 0 ? `+${enh}` : null, mods.material !== 'none' ? MATERIAL_LABELS[mods.material] : masterwork && enh === 0 ? 'Masterwork' : null]
@@ -235,9 +248,14 @@ export function armorFromRecord(rec: EquipmentRecord, mods: ItemMods = NO_MODS):
 }
 
 /** A rules-pack record (with mods) as a new inventory item. */
-export function itemFromRecord(rec: EquipmentRecord, id: string, mods: ItemMods = NO_MODS, quantity = 1): InventoryItem | string {
-  const priced = priceWithMods(rec, mods);
-  if (typeof priced === 'string') return priced;
+export function itemFromRecord(rec: EquipmentRecord, id: string, mods: ItemMods = NO_MODS, quantity = 1, opts: { allowUnpriced?: boolean } = {}): InventoryItem | string {
+  let priced = priceWithMods(rec, mods);
+  if (typeof priced === 'string') {
+    // "Add free" may add an item whose price the rules data doesn't give (value 0); buying never may.
+    const plain = !mods.masterwork && mods.material === 'none' && mods.enhancement === 0;
+    if (!(opts.allowUnpriced && plain && baseCost(rec) === null)) return priced;
+    priced = { name: rec.name.slice(0, 120), cost: 0, weight: rec.weight ?? 0, parts: [] };
+  }
   const detected = detectGear(priced.name);
   const armor = armorFromRecord(rec, mods);
   const weapon = armor ? null : weaponFromRecord(rec, mods);

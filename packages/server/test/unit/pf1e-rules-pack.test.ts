@@ -110,7 +110,8 @@ describe('unit: [Epic 11] PCGen rules pack builder & helpers', () => {
 
     const store = createRulesPackStore(outDir);
     assert.equal(store.loaded, true);
-    assert.equal(store.get('equipment', 'Longsword')?.desc, 'Modified by house rules.');
+    // PCGen DESC is additive: a .MOD DESC adds a paragraph (DESC:.CLEAR would replace).
+    assert.equal(store.get('equipment', 'Longsword')?.desc, 'A classic straight blade.\n\nModified by house rules.');
     assert.equal(store.get('equipment', 'Obsolete Item'), undefined);
     assert.equal(store.get('equipment', 'Silvered Blade')?.cost, 105);
     assert.equal(store.get('equipment', 'Sunblade Prototype')?.cl, 7);

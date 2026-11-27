@@ -44,6 +44,8 @@ export interface EquipmentRecord extends RecordBase {
   cost: number | null;
   /** lb. */
   weight: number | null;
+  /** PCGen BASEQTY: pieces in a stack record ("Arrows (20)" = 20); absent = 1. */
+  baseQty?: number;
   /** KEY of the base item this one was made from (`Longsword (Base)`). */
   baseItem: string | null;
   /** Weapon fields (Medium). */

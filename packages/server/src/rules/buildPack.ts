@@ -37,6 +37,8 @@ interface ParsedPcc {
   pccPath: string;
   files: PccFileRef[];
   includes: string[];
+  /** From the sibling `homebrew/` folder: may .MOD/.FORGET any publisher's records. */
+  homebrew?: boolean;
 }
 
 const PCC_KIND_TAG: Record<string, RulesKind> = {
@@ -56,6 +58,7 @@ function cleanDesc(raw: string): string {
     .replace(/&nl;/gi, '\n')
     .replace(/&pipe;/gi, '|')
     .replace(/%\d+/g, 'X')
+    .replace(/%%/g, '%')
     .replace(/\s+\n/g, '\n')
     .replace(/[ \t]+/g, ' ')
     .trim()
@@ -162,8 +165,12 @@ function formatPrereqs(tokens: string[]): string {
     } else if (tag === 'PRESTAT') {
       const items = val.split(',').slice(1).map((x) => x.replace('=', ' '));
       if (items.length) parts.push(items.join(', '));
-    } else if (tag === 'PREATT') {
-      parts.push(`BAB +${val}`);
+    } else if (tag === 'PREATT' || tag === 'PRETOTALAB') {
+      parts.push(`BAB +${val.split(',')[0]}`);
+    } else if (tag === 'PREVARGTEQ') {
+      // PCGen 6 feats: PREVARGTEQ:PreStatScore_STR,13
+      const m = /^PreStatScore_([A-Z]{3}),(\d+)$/i.exec(val.trim());
+      if (m) parts.push(`${m[1]!.toUpperCase()} ${m[2]}`);
     } else if (tag === 'PRESKILL') {
       const items = val.split(',').slice(1).map((x) => x.replace('=', ' ') + ' ranks');
       if (items.length) parts.push(items.join(', '));
@@ -217,7 +224,18 @@ function parseAcBonus(tokens: string[]): number | null {
 function parseSpellEffectFromTokens(tokens: string[]): EquipmentRecord['spellEffect'] {
   for (const t of tokens) {
     if (!t.startsWith('EQMOD:')) continue;
-    const m = /(?:SPL_CHRG|POTION|SCROLL|WAND)\|([^|\]]+)\|(\d+)\|(\d+)/i.exec(t);
+    // PCGen 6: EQMOD:Special Ability ~ Spell Effect / Single Use|SPELLNAME[Cure Light Wounds]SPELLLEVEL[1]CASTERLEVEL[1]
+    for (const mod of t.slice(6).split(/\.(?=[A-Z][^|]*~)/)) {
+      if (!/spell effect/i.test(mod.split('|')[0] ?? '')) continue;
+      const name = /SPELLNAME\[([^\]]+)\]/i.exec(mod)?.[1]?.trim();
+      const level = /SPELLLEVEL\[(\d+)\]/i.exec(mod)?.[1];
+      const cl = /CASTERLEVEL\[(\d+)\]/i.exec(mod)?.[1];
+      if (name && level !== undefined && cl !== undefined) {
+        return { name: name.slice(0, 120), level: Math.max(0, Math.min(9, Number(level))), cl: Math.max(1, Math.min(30, Number(cl))) };
+      }
+    }
+    // Older data: SPL_CHRG|Spell|level|CL
+    const m = /(?:SPL_CHRG|SPL_1USE|POTION|SCROLL|WAND)\|([^|\]]+)\|(\d+)\|(\d+)/i.exec(t);
     if (m) return { name: m[1]!.trim(), level: Number(m[2]), cl: Number(m[3]) };
   }
   for (const t of tokens) {
@@ -235,8 +253,45 @@ function parseSpellEffectFromTokens(tokens: string[]): EquipmentRecord['spellEff
   return null;
 }
 
-function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defaultSource: RulesSource): RulesRecord {
+/**
+ * PCGen DESC is additive (each DESC tag adds a paragraph; DESC:.CLEAR resets).
+ * Conditional paragraphs: `|PRERULE:1,DisplayFullSpell` is the full text,
+ * `|!PRERULE:1,DisplayFullSpell` the short one; other PRExxx conditions (mythic
+ * versions, feat-dependent riders) don't describe the base record.
+ */
+interface DescParts {
+  normal: string[];
+  full: string[];
+  short: string[];
+}
+const descParts = new WeakMap<RulesRecord, DescParts>();
+
+function addDesc(parts: DescParts, raw: string) {
+  if (raw.trim().toUpperCase() === '.CLEAR') {
+    parts.normal = [];
+    parts.full = [];
+    parts.short = [];
+    return;
+  }
+  const segs = raw.split('|');
+  const conds = segs.slice(1).filter((x) => /^!?PRE[A-Z]+:/i.test(x.trim()));
+  const text = cleanDesc(raw);
+  if (!text) return;
+  if (!conds.length) parts.normal.push(text);
+  else if (conds.length === 1 && /^PRERULE:1,DisplayFullSpell$/i.test(conds[0]!.trim())) parts.full.push(text);
+  else if (conds.length === 1 && /^!PRERULE:1,DisplayFullSpell$/i.test(conds[0]!.trim())) parts.short.push(text);
+}
+
+function joinDesc(parts: DescParts): string {
+  const body = parts.normal.length || parts.full.length ? [...parts.normal, ...parts.full] : parts.short;
+  return body.join('\n\n').slice(0, 4000);
+}
+
+function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defaultSource: RulesSource, isMod = false): RulesRecord {
   const next = { ...rec, source: { ...rec.source }, types: [...rec.types] } as RulesRecord;
+  const prevDesc = descParts.get(rec);
+  const desc: DescParts = prevDesc ? { normal: [...prevDesc.normal], full: [...prevDesc.full], short: [...prevDesc.short] } : { normal: rec.desc ? [rec.desc] : [], full: [], short: [] };
+  descParts.set(next, desc);
   const prereqToks: string[] = [];
 
   for (const tok of tokens) {
@@ -250,10 +305,14 @@ function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defau
     else if (tag === 'OUTPUTNAME') {
       const cleaned = val.replace(/\[NAME\]/g, next.name).trim();
       if (cleaned) next.name = cleaned.slice(0, 160);
-    } else if (tag === 'SOURCELONG') next.source.long = val.trim().slice(0, 160);
-    else if (tag === 'SOURCESHORT') next.source.short = val.trim().slice(0, 40);
-    else if (tag === 'SOURCEPAGE') next.source.page = val.trim().slice(0, 40) || null;
-    else if (tag === 'DESC') next.desc = cleanDesc(val);
+    } else if (tag === 'SOURCELONG' || tag === 'SOURCESHORT' || tag === 'SOURCEPAGE') {
+      // A .MOD from another book ("also in Ultimate Equipment p.10") keeps the record's own citation.
+      if (!isMod) {
+        if (tag === 'SOURCELONG') next.source.long = val.trim().slice(0, 160);
+        else if (tag === 'SOURCESHORT') next.source.short = val.trim().slice(0, 40);
+        else next.source.page = val.trim().slice(0, 40) || null;
+      }
+    } else if (tag === 'DESC') addDesc(desc, val);
     else if (tag === 'TYPE') next.types = mergeTypes(next.types, val);
     else if (tag === 'VISIBLE') {
       const v = val.trim().toUpperCase();
@@ -265,6 +324,11 @@ function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defau
       const eq = next as EquipmentRecord;
       if (tag === 'COST') eq.cost = numOrNull(val);
       else if (tag === 'WT') eq.weight = numOrNull(val);
+      else if (tag === 'BASEQTY') {
+        const q = numOrNull(val);
+        if (q !== null && q > 1) eq.baseQty = Math.min(1000, Math.floor(q));
+        else delete eq.baseQty;
+      }
       else if (tag === 'BASEITEM') eq.baseItem = val.trim().slice(0, 160) || null;
       else if (tag === 'DAMAGE') eq.damage = val.trim().slice(0, 20) || null;
       else if (tag === 'CRITRANGE') eq.critRange = numOrNull(val);
@@ -297,7 +361,8 @@ function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defau
       else if (tag === 'ITYPE') em.itypes = mergeTypes(em.itypes, val);
     } else if (next.kind === 'spell') {
       const sp = next as SpellRecord;
-      if (tag === 'SCHOOL') sp.school = val.trim().slice(0, 60) || null;
+      // SCHOOL adds schools (APG elemental "FireSchool" tags): keep the first real one.
+      if (tag === 'SCHOOL') sp.school = sp.school ?? (val.trim().slice(0, 60) || null);
       else if (tag === 'SUBSCHOOL') sp.subschool = val.trim().slice(0, 60) || null;
       else if (tag === 'DESCRIPTOR') {
         sp.descriptors = [...new Set([...sp.descriptors, ...val.split('|').map((d) => d.trim()).filter(Boolean)])].slice(0, 12);
@@ -335,6 +400,7 @@ function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defau
     const pr = formatPrereqs(prereqToks);
     if (pr) (next as FeatRecord).prereqs = pr;
   }
+  next.desc = joinDesc(desc);
   if (!next.source.long) next.source.long = defaultSource.long;
   if (!next.source.short) next.source.short = defaultSource.short;
   if (!next.source.campaign) next.source.campaign = defaultSource.campaign;
@@ -395,9 +461,70 @@ function emptyRecord(kind: RulesKind, name: string, source: RulesSource): RulesR
   }
 }
 
+/** A `.COPY` / `.MOD` / `.FORGET` line, applied after every book's base records load (PCGen order). */
+export interface DeferredDirective {
+  kind: RulesKind;
+  op: 'copy' | 'mod' | 'forget';
+  target: string;
+  newName?: string;
+  rest: string[];
+  fileSource: RulesSource;
+  /** Whether this directive may change (MOD/FORGET) a record from `campaign`. */
+  canModify: (campaign: string) => boolean;
+}
+
+export interface ParseLstOptions {
+  /** Collect directives here instead of applying them inline. */
+  deferred?: DeferredDirective[];
+  /** Cross-publisher guard for .MOD/.FORGET (default: allow everything). */
+  canModify?: (campaign: string) => boolean;
+}
+
+function lookupKey(records: Map<string, RulesRecord>, byName: Map<string, string>, target: string): string | undefined {
+  return records.has(target) ? target : byName.get(target.toLowerCase());
+}
+
+/** Apply one directive to the record store. Returns a warning when it is refused. */
+export function applyDirective(d: DeferredDirective, records: Map<string, RulesRecord>, byName: Map<string, string>): string | null {
+  const k = lookupKey(records, byName, d.target);
+  if (d.op === 'copy') {
+    if (!d.newName) return null;
+    const base = k ? records.get(k) : undefined;
+    let cloned: RulesRecord;
+    if (base) {
+      const samePage = base.source.campaign === d.fileSource.campaign && !d.fileSource.page ? base.source.page : d.fileSource.page;
+      cloned = { ...(structuredClone(base) as RulesRecord), key: d.newName.slice(0, 160), name: d.newName.slice(0, 160), source: { ...d.fileSource, page: samePage } };
+      const parts = descParts.get(base);
+      if (parts) descParts.set(cloned, { normal: [...parts.normal], full: [...parts.full], short: [...parts.short] });
+    } else cloned = emptyRecord(d.kind, d.newName, d.fileSource);
+    const updated = applyFields(d.kind, cloned, d.rest, d.fileSource);
+    records.set(updated.key, updated);
+    byName.set(updated.name.toLowerCase(), updated.key);
+    return null;
+  }
+  if (!k) return null;
+  const existing = records.get(k);
+  if (!existing) return null;
+  if (!d.canModify(existing.source.campaign)) {
+    return `Ignored ${d.target}.${d.op.toUpperCase()} from ${d.fileSource.campaign} (another publisher's record)`;
+  }
+  if (d.op === 'forget') {
+    records.delete(k);
+    byName.delete(existing.name.toLowerCase());
+    return null;
+  }
+  const updated = applyFields(d.kind, existing, d.rest, d.fileSource, true);
+  records.delete(k);
+  records.set(updated.key, updated);
+  byName.set(updated.name.toLowerCase(), updated.key);
+  return null;
+}
+
 /**
- * Parse a single `.lst` file into `records` (keyed by KEY), applying `.COPY`,
- * `.MOD`, and `.FORGET` directives.
+ * Parse a single `.lst` file into `records` (keyed by KEY). `.COPY`, `.MOD`
+ * and `.FORGET` lines are applied inline, or collected into
+ * `opts.deferred` so the builder can apply them after every book loads.
+ * A second plain definition of an existing KEY is ignored (first book wins).
  */
 export function parseLstContent(
   kind: RulesKind,
@@ -405,8 +532,15 @@ export function parseLstContent(
   bookSource: RulesSource,
   records: Map<string, RulesRecord>,
   byName: Map<string, string>,
+  opts: ParseLstOptions = {},
 ) {
   let fileSource: RulesSource = { ...bookSource };
+  const canModify = opts.canModify ?? (() => true);
+  const directive = (d: Omit<DeferredDirective, 'kind' | 'fileSource' | 'canModify'>) => {
+    const full: DeferredDirective = { ...d, kind, fileSource: { ...fileSource }, canModify };
+    if (opts.deferred) opts.deferred.push(full);
+    else applyDirective(full, records, byName);
+  };
 
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -431,70 +565,32 @@ export function parseLstContent(
     const head = tokens[0]!;
     const rest = tokens.slice(1);
 
-    // .FORGET
     if (head.endsWith('.FORGET')) {
-      const target = head.slice(0, -'.FORGET'.length).trim();
-      const k = records.has(target) ? target : byName.get(target.toLowerCase());
-      if (k) {
-        const old = records.get(k);
-        records.delete(k);
-        if (old) byName.delete(old.name.toLowerCase());
-      }
+      directive({ op: 'forget', target: head.slice(0, -'.FORGET'.length).trim(), rest });
       continue;
     }
-
-    // .MOD
+    // CATEGORY=FEAT|Power Attack.MOD (ability files)
+    const catMod = /^CATEGORY=[^|]+\|(.+?)\.MOD$/i.exec(head);
+    if (catMod) {
+      directive({ op: 'mod', target: catMod[1]!.trim(), rest });
+      continue;
+    }
+    if (head.startsWith('CATEGORY=')) continue;
     if (head.endsWith('.MOD')) {
-      const target = head.slice(0, -'.MOD'.length).trim();
-      const k = records.has(target) ? target : byName.get(target.toLowerCase());
-      if (!k) continue;
-      const existing = records.get(k);
-      if (!existing) continue;
-      const updated = applyFields(kind, existing, rest, fileSource);
-      // Keep original key unless KEY explicitly changed.
-      records.delete(k);
-      records.set(updated.key, updated);
-      byName.set(updated.name.toLowerCase(), updated.key);
+      directive({ op: 'mod', target: head.slice(0, -'.MOD'.length).trim(), rest });
       continue;
     }
-
-    // .COPY=<NewName>
     const copyIdx = head.indexOf('.COPY=');
     if (copyIdx !== -1) {
-      const origTarget = head.slice(0, copyIdx).trim();
       const newName = head.slice(copyIdx + '.COPY='.length).trim();
-      if (!newName) continue;
-      const origKey = records.has(origTarget) ? origTarget : byName.get(origTarget.toLowerCase());
-      const base = origKey ? records.get(origKey) : undefined;
-      const cloned: RulesRecord = base
-        ? { ...(structuredClone(base) as RulesRecord), key: newName.slice(0, 160), name: newName.slice(0, 160), source: { ...fileSource } }
-        : emptyRecord(kind, newName, fileSource);
-      const updated = applyFields(kind, cloned, rest, fileSource);
-      records.set(updated.key, updated);
-      byName.set(updated.name.toLowerCase(), updated.key);
+      if (newName) directive({ op: 'copy', target: head.slice(0, copyIdx).trim(), newName, rest });
       continue;
     }
 
-    // Skip CATEGORY=foo|bar.MOD style internal ability mod headers that don't define a record name.
-    if (head.startsWith('CATEGORY=')) {
-      const modMatch = /^CATEGORY=[^|]+\|(.+?)\.MOD$/i.exec(head);
-      if (modMatch) {
-        const target = modMatch[1]!.trim();
-        const k = records.has(target) ? target : byName.get(target.toLowerCase());
-        if (k) {
-          const existing = records.get(k)!;
-          const updated = applyFields(kind, existing, rest, fileSource);
-          records.set(updated.key, updated);
-          byName.set(updated.name.toLowerCase(), updated.key);
-        }
-      }
-      continue;
-    }
-
-    const base = emptyRecord(kind, head, fileSource);
-    const rec = applyFields(kind, base, rest, fileSource);
+    const rec = applyFields(kind, emptyRecord(kind, head, fileSource), rest, fileSource);
+    if (records.has(rec.key)) continue;
     records.set(rec.key, rec);
-    byName.set(rec.name.toLowerCase(), rec.key);
+    if (!byName.has(rec.name.toLowerCase())) byName.set(rec.name.toLowerCase(), rec.key);
   }
 }
 
@@ -534,15 +630,19 @@ export function buildRulesPack(pcgenDir: string, outDir: string): BuildPackResul
   const pccPaths = findPccFiles(absIn);
   // Also include a sibling `homebrew/` folder if it exists next to `pathfinder/`.
   const homebrewDir = path.resolve(absIn, '..', 'homebrew');
+  const homebrewPccs = new Set<string>();
   if (homebrewDir !== absIn && fs.existsSync(homebrewDir)) {
-    pccPaths.push(...findPccFiles(homebrewDir));
+    for (const p of findPccFiles(homebrewDir)) {
+      pccPaths.push(p);
+      homebrewPccs.add(p);
+    }
   }
 
   const parsedPccs = new Map<string, ParsedPcc>();
   const warnings: string[] = [];
   for (const p of pccPaths) {
     try {
-      parsedPccs.set(p, parsePccFile(p, absIn));
+      parsedPccs.set(p, { ...parsePccFile(p, absIn), homebrew: homebrewPccs.has(p) });
     } catch (e) {
       warnings.push(`Skipped ${path.basename(p)}: ${(e as Error).message}`);
     }
@@ -553,6 +653,10 @@ export function buildRulesPack(pcgenDir: string, outDir: string): BuildPackResul
   const bookCounts = new Map<string, number>();
   const bookMeta = new Map<string, Omit<RulesBook, 'records'>>();
   const visitedLst = new Set<string>();
+  const deferred: DeferredDirective[] = [];
+  /** "Paizo Inc." / "Paizo Publishing LLC" -> "paizo". */
+  const publisherKey = (p: string) => (/^paizo\b/i.test(p.trim()) ? 'paizo' : p.trim().toLowerCase());
+  const publisherOf = (campaign: string) => publisherKey(bookMeta.get(campaign)?.publisher ?? '');
 
   // Sort Core Rulebook first so `.MOD` / `.COPY` / `.FORGET` from supplements apply on top of Core.
   const ordered = [...parsedPccs.values()].sort((a, b) => {
@@ -562,7 +666,11 @@ export function buildRulesPack(pcgenDir: string, outDir: string): BuildPackResul
     return a.key.localeCompare(b.key);
   });
 
-  const processPcc = (pcc: ParsedPcc, book: RulesSource, seenPcc: Set<string>) => {
+  const processPcc = (pcc: ParsedPcc, book: RulesSource, seenPcc: Set<string>, owner: ParsedPcc) => {
+    // Third-party books may not .MOD/.FORGET other publishers' records (their class lists,
+    // descriptions and deletions would leak into every campaign); homebrew may change anything.
+    const ownPublisher = publisherKey(owner.publisher);
+    const canModify = owner.homebrew ? () => true : (campaign: string) => publisherOf(campaign) === ownPublisher;
     if (seenPcc.has(pcc.pccPath)) return;
     seenPcc.add(pcc.pccPath);
     for (const ref of pcc.files) {
@@ -573,7 +681,7 @@ export function buildRulesPack(pcgenDir: string, outDir: string): BuildPackResul
       try {
         const before = stores[ref.kind].size;
         const content = fs.readFileSync(ref.filePath, 'utf8');
-        parseLstContent(ref.kind, content, book, stores[ref.kind], nameMaps[ref.kind]);
+        parseLstContent(ref.kind, content, book, stores[ref.kind], nameMaps[ref.kind], { deferred, canModify });
         const added = Math.max(0, stores[ref.kind].size - before);
         bookCounts.set(book.campaign, (bookCounts.get(book.campaign) ?? 0) + added);
       } catch (e) {
@@ -582,7 +690,7 @@ export function buildRulesPack(pcgenDir: string, outDir: string): BuildPackResul
     }
     for (const inc of pcc.includes) {
       const sub = parsedPccs.get(inc) ?? (fs.existsSync(inc) ? parsePccFile(inc, absIn) : undefined);
-      if (sub) processPcc(sub, book, seenPcc);
+      if (sub) processPcc(sub, book, seenPcc, owner);
     }
   };
 
@@ -592,8 +700,19 @@ export function buildRulesPack(pcgenDir: string, outDir: string): BuildPackResul
     if (!bookMeta.has(pcc.key)) {
       bookMeta.set(pcc.key, { key: pcc.key, name: pcc.name, short: pcc.short, publisher: pcc.publisher, bookType: pcc.bookType });
     }
-    processPcc(pcc, bookSource, new Set());
+    processPcc(pcc, bookSource, new Set(), pcc);
   }
+
+  // PCGen applies .COPY, then .MOD, then .FORGET once every book has loaded.
+  let refused = 0;
+  for (const op of ['copy', 'mod', 'forget'] as const) {
+    for (const d of deferred) {
+      if (d.op !== op) continue;
+      const w = applyDirective(d, stores[d.kind], nameMaps[d.kind]);
+      if (w) refused++;
+    }
+  }
+  if (refused) warnings.push(`Ignored ${refused} .MOD/.FORGET lines from third-party books that target another publisher's records`);
 
   // PCGen Pathfinder files list feats inside ABILITY .lst files with CATEGORY:FEAT; split them into `feat`.
   for (const [k, rec] of [...stores.ability.entries()]) {
