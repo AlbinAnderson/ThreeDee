@@ -70,7 +70,7 @@ export function effectiveTurn(state: GameState, combatantId: string): EffectiveT
   let combatReflexes = false;
   let aooMax = 1;
   if (character) {
-    combatReflexes = [...character.build.abilities.map((a) => a.key), ...character.build.legacyFeats].some((n) => featKey(n) === 'combatreflexes');
+    combatReflexes = [...character.build.abilities.map((a) => a.key), ...character.build.legacyFeats, ...character.build.virtualFeats].some((n) => featKey(n) === 'combatreflexes');
     if (combatReflexes) aooMax = Math.max(1, 1 + computeCharacterStats(character).abilities.DEX.mod);
   }
   const swiftLocked = inheritsLock;

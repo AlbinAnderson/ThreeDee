@@ -25,8 +25,8 @@ export interface CasterClass {
   clOffset: number;
   /** Minimum class level before spellcasting begins (Bloodrager casts at full CL starting at level 4). */
   minLevel?: number;
-  /** Extra prepared slot per spell level 1+: domain (cleric, druid with a domain), school (specialist wizard). */
-  bonusSlot?: 'domain' | 'school';
+  /** Extra prepared slot per spell level 1+: domain (cleric, druid with a domain), school (specialist wizard), spirit (shaman). */
+  bonusSlot?: 'domain' | 'school' | 'spirit';
   /** Spontaneously convert a prepared spell: Cure/Inflict (cleric, warpriest) or Summon Nature's Ally (druid). */
   convert?: 'cureInflict' | 'summonNaturesAlly';
   /** What the class calls its spells, for labels. */
@@ -101,7 +101,7 @@ const CASTERS: Record<string, CasterClass> = {
   // Prepared from the whole class list
   cleric: cls('prepared', 'WIS', 'divine', FULL_PREPARED, { bonusSlot: 'domain', convert: 'cureInflict' }),
   druid: cls('prepared', 'WIS', 'divine', FULL_PREPARED, { bonusSlot: 'domain', convert: 'summonNaturesAlly' }),
-  shaman: cls('prepared', 'WIS', 'divine', FULL_PREPARED),
+  shaman: cls('prepared', 'WIS', 'divine', FULL_PREPARED, { bonusSlot: 'spirit' }),
   warpriest: cls('prepared', 'WIS', 'divine', SIX_PREPARED, { convert: 'cureInflict' }),
   paladin: cls('prepared', 'CHA', 'divine', FOUR_LEVEL, { cantrips: false, clOffset: -3 }),
   antipaladin: cls('prepared', 'CHA', 'divine', FOUR_LEVEL, { cantrips: false, clOffset: -3 }),
@@ -247,7 +247,7 @@ const SPELL_ROWS: Row[] = [
   ['Resistance', 'Abjuration', HARMLESS, SR_HARMLESS, '', '+1 resistance bonus on saving throws for 1 minute.'],
   ['Spark', 'Evocation [fire]', 'Fortitude negates (object)', 'yes (object)', '', 'Ignite a small flammable object.'],
   ['Stabilize', 'Conjuration (healing)', HARMLESS, SR_HARMLESS, '', 'A dying creature becomes stable.'],
-  ['Virtue', 'Transmutation', 'Fortitude negates (harmless)', SR_HARMLESS, '', 'The subject gains 1 temporary hit point.'],
+  ['Virtue', 'Transmutation', 'none', SR_HARMLESS, '', 'The subject gains 1 temporary hit point.'],
   // 1st
   ['Bane', 'Enchantment (compulsion) [fear, mind-affecting]', 'Will negates', 'yes', 'burst:50', 'Enemies take −1 on attack rolls and on saves against fear.'],
   ['Bless', 'Enchantment (compulsion) [mind-affecting]', 'none', SR_HARMLESS, 'burst:50', 'Allies gain +1 morale on attack rolls and on saves against fear.'],

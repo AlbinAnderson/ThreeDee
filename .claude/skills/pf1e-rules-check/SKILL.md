@@ -30,9 +30,9 @@ Trace every modifier through the full stat pipeline before adding it:
 ## 4. Offline Verification Against Local PCGen Data
 - **Verify tables offline, never guess from memory:** Query the local PCGen PF1e `.lst` database (git-ignored at `./data/pcgen/data/pathfinder/`) using the bundled lookup script:
   ```bash
-  node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs <class|race|spell|feat|ability|equip|equipmod|skill|any> "<query>"
+  node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs <class|race|spell|feat|ability|equip|equipmod|skill|any> "<query>" [--filter=<class-or-book>] [--limit=N]
   ```
-  *(Prioritizes Paizo books; pass `--all` for 3rd-party publishers.)*
+  *(Prioritizes Paizo books and collapses tab padding; pass `--filter=` to disambiguate common names like `ability "Burn" --filter=kineticist`, or `--all` for 3rd-party publishers.)*
 - **Do not scrape or fetch `aonprd.com`:** Keep your workflow 100% offline using local PCGen `.lst` data. Any prose/exception rulings not clear from `.lst` files should be listed under **"Verify in audit"** for Antigravity to double-check against AoN during review.
 - **4-way interaction tests for every new mechanic:** Whenever adding a feat, spell, buff, or condition rule, write tests covering:
   1. **Stacking:** same bonus type (highest wins), different bonus types (stack), and penalties (always stack).

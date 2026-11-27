@@ -92,7 +92,7 @@ export interface CasterInfo {
   prepared: PreparedSpell[];
   /** `prepared` comes from the .pcg because nothing was prepared in the VTT yet. */
   preparedFromFile: boolean;
-  bonusSlot: 'domain' | 'school' | null;
+  bonusSlot: 'domain' | 'school' | 'spirit' | null;
   conversions: ConversionKind[];
   /** Metamagic feats the character has (display names). */
   metamagic: string[];
@@ -148,12 +148,13 @@ function metamagicFeats(c: Character): string[] {
   return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
 
-function hasBonusSlot(c: Character, def: CasterClass | null, className: string): 'domain' | 'school' | null {
+function hasBonusSlot(c: Character, def: CasterClass | null, className: string): 'domain' | 'school' | 'spirit' | null {
   if (!def?.bonusSlot) return null;
   if (def.bonusSlot === 'school') {
     const sub = c.build.classes.find((k) => sameClass(k.name, className))?.subClass;
     return sub && !/universal/i.test(sub) ? 'school' : null;
   }
+  if (def.bonusSlot === 'spirit') return 'spirit';
   // Clerics always get a domain slot; druids only if they chose a domain for nature bond.
   if (normalizeName(className) === 'cleric') return 'domain';
   return c.build.attributes.domains.some((d) => sameClass(d.source?.NAME ?? null, className)) ? 'domain' : null;
@@ -382,7 +383,7 @@ export function planCast(c: Character, req: CastRequest, infos = characterSpellc
     if (!levelInfo(p.level)?.castable) return `Your ${info.stat} is too low for ${ordinal(p.level)}-level spells`;
     if (req.convert) {
       if (!info.conversions.includes(req.convert)) return `${info.className}s can't convert spells that way`;
-      if (p.slot === 'bonus') return `${info.bonusSlot === 'school' ? 'School' : 'Domain'} slot spells can't be converted`;
+      if (p.slot === 'bonus') return `${info.bonusSlot === 'school' ? 'School' : info.bonusSlot === 'spirit' ? 'Spirit' : 'Domain'} slot spells can't be converted`;
       const conv = conversionSpell(req.convert, p.level);
       if (!conv) return 'Cantrips and orisons can’t be converted';
       return { info, spellName: conv[0], slotLevel: p.level, dcLevel: conv[1], metamagic: [], preparedId: p.id, markCast: true, slotKey: null, convertedFrom: p.name };

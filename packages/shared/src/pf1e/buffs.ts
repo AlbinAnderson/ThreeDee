@@ -140,10 +140,11 @@ export const BUFF_PRESETS: BuffPreset[] = [
     name: 'Rage',
     group: 'Class abilities',
     condition: 'Raging',
-    classes: ['barbarian'],
-    note: 'Greater rage (11th) and mighty rage (20th) included. No skills that need patience or concentration; fatigued afterwards.',
+    classes: ['barbarian', 'bloodrager'],
+    note: 'Barbarian rage / Bloodrager bloodrage: greater (11th) and mighty (20th) included. No skills that need patience or concentration; fatigued afterwards.',
     effects: (c) => {
-      const r = rank([11, 20], classLevelOf(c, 'barbarian'));
+      const lvl = Math.max(classLevelOf(c, 'barbarian'), classLevelOf(c, 'bloodrager'));
+      const r = rank([11, 20], lvl);
       return [e('STR', 4 + 2 * r, 'morale'), e('CON', 4 + 2 * r, 'morale'), e('will', 2 + r, 'morale'), e('ac', -2)];
     },
   },
@@ -163,17 +164,28 @@ export const BUFF_PRESETS: BuffPreset[] = [
     id: 'inspiredRage',
     name: 'Inspired Rage',
     group: 'Class abilities',
-    note: 'From a skald: +2/+2/+1 morale (+4/+4/+2 at 8th, +6/+6/+3 at 16th). Can’t use concentration skills.',
+    note: 'From a skald: +2 Str/Con (+4 at 8th, +6 at 16th) and +1 Will (+1 per 4 levels) morale, −1 AC. Can’t use concentration skills.',
     option: {
       label: 'Skald level',
       choices: [
-        { value: '1', label: '1st–7th' },
-        { value: '2', label: '8th–15th' },
-        { value: '3', label: '16th+' },
+        { value: '1', label: '1st–3rd' },
+        { value: '4', label: '4th–7th' },
+        { value: '8', label: '8th–11th' },
+        { value: '12', label: '12th–15th' },
+        { value: '16', label: '16th–19th' },
+        { value: '20', label: '20th' },
       ],
-      initial: (c) => String(1 + rank([8, 16], classLevelOf(c, 'skald'))),
+      initial: (c) => {
+        const lvl = classLevelOf(c, 'skald');
+        return String([20, 16, 12, 8, 4, 1].find((t) => lvl >= t) ?? 1);
+      },
     },
-    effects: (_c, o) => [e('STR', 2 * Number(o), 'morale'), e('CON', 2 * Number(o), 'morale'), e('will', Number(o), 'morale'), e('ac', -2)],
+    effects: (_c, o) => {
+      const lvl = Math.max(1, Number(o) || 1);
+      const sc = 2 + 2 * Math.floor(lvl / 8);
+      const will = 1 + Math.floor(lvl / 4);
+      return [e('STR', sc, 'morale'), e('CON', sc, 'morale'), e('will', will, 'morale'), e('ac', -1)];
+    },
   },
   {
     id: 'inspireCourage',
@@ -329,7 +341,7 @@ interface ConditionRule {
   zero?: StatKey[];
   note?: string;
   /** Conditions of a group don't stack: only the worst (highest rank) applies. */
-  group?: { id: 'fear' | 'fatigue'; rank: number };
+  group?: { id: 'fear' | 'fatigue' | 'grapple'; rank: number };
   /** Implies another condition (unconscious -> helpless). */
   implies?: string[];
 }
@@ -349,8 +361,8 @@ const CONDITIONS: Record<string, ConditionRule> = {
   shaken: { effects: FEAR, group: { id: 'fear', rank: 1 } },
   frightened: { effects: FEAR, group: { id: 'fear', rank: 2 }, note: 'Frightened: flees from the source of fear.' },
   panicked: { effects: FEAR, group: { id: 'fear', rank: 3 }, note: 'Panicked: drops held items and flees.' },
-  grappled: { effects: [e('attack', -2), e('DEX', -4)], note: 'Grappled: −2 on attack rolls and CMB (not to grapple or escape); can’t move; concentration check to cast.' },
-  pinned: { effects: [e('ac', -4)], loseDexToAc: true, note: 'Pinned: can only try to escape.' },
+  grappled: { effects: [e('attack', -2), e('DEX', -4)], group: { id: 'grapple', rank: 1 }, note: 'Grappled: −2 on attack rolls and CMB (not to grapple or escape); can’t move; concentration check to cast.' },
+  pinned: { effects: [e('ac', -4)], loseDexToAc: true, group: { id: 'grapple', rank: 2 }, note: 'Pinned: supersedes grappled (does not stack); can only try to escape.' },
   helpless: { effects: [], loseDexToAc: true, zero: ['DEX'], note: 'Helpless: melee attacks against you get +4; coup de grace possible.' },
   paralyzed: { effects: [], zero: ['STR', 'DEX'], implies: ['helpless'] },
   unconscious: { effects: [], implies: ['helpless'] },

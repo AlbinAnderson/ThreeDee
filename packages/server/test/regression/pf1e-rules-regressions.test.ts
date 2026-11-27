@@ -1,20 +1,29 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  characterSpellcasting,
   computeCharacterStats,
   computeSkills,
   containerContentsWeight,
+  createInitialState,
   detectGear,
+  effectiveConditions,
+  effectiveTurn,
+  lookupArmor,
   lookupPf1Action,
+  lookupPreset,
+  lookupSpell,
   makeItem,
   parseGpValue,
   parsePcg,
+  presetBuff,
+  presetsFor,
   seedInventory,
   situationalFor,
   sizedDamage,
   skillRollExpression,
 } from '@vtt/shared';
-import { makePcgCharacter, SAMPLE_PCG, withPcgLines } from '../helpers/harness';
+import { casterPcg, makePcgCharacter, SAMPLE_PCG, withPcgLines } from '../helpers/harness';
 
 describe('regression: PF1e rules fixes across Epics 1-5', () => {
   test('[Epic 2] ability damage applies -1 per 2 points on even scores without altering score', () => {
@@ -132,5 +141,117 @@ describe('regression: PF1e rules fixes across Epics 1-5', () => {
     }
     const grippli = makePcgCharacter(SAMPLE_PCG.replace('RACE:Human', 'RACE:Grippli'));
     assert.equal(computeSkills(grippli, computeCharacterStats(grippli)).rows.find((x) => x.name === 'Stealth')!.total.parts.find((p) => p.source === 'Grippli'), undefined);
+  });
+
+  test('[Rules audit] Inspired Rage (-1 AC, Will +1/4 lvls), Pinned supersedes Grappled, Bloodrager rage preset', () => {
+    const skald = (level: number) => makePcgCharacter(casterPcg({ classes: [`CLASS:Skald|LEVEL:${level}|SKILLPOOL:0`] }));
+    const ir = lookupPreset('inspiredRage')!;
+    const fxAt = (level: number) => presetBuff(skald(level), ir, undefined, { mod: () => 0 }, `ir-${level}`).effects;
+    assert.deepEqual(
+      fxAt(1).map((x) => [x.target, x.value, x.type]),
+      [
+        ['STR', 2, 'morale'],
+        ['CON', 2, 'morale'],
+        ['will', 1, 'morale'],
+        ['ac', -1, 'untyped'],
+      ],
+    );
+    assert.deepEqual(
+      fxAt(4).map((x) => [x.target, x.value]),
+      [
+        ['STR', 2],
+        ['CON', 2],
+        ['will', 2],
+        ['ac', -1],
+      ],
+    );
+    assert.deepEqual(
+      fxAt(12).map((x) => [x.target, x.value]),
+      [
+        ['STR', 4],
+        ['CON', 4],
+        ['will', 4],
+        ['ac', -1],
+      ],
+    );
+    assert.deepEqual(
+      fxAt(20).map((x) => [x.target, x.value]),
+      [
+        ['STR', 6],
+        ['CON', 6],
+        ['will', 6],
+        ['ac', -1],
+      ],
+    );
+
+    // Pinned supersedes Grappled (do not stack).
+    assert.deepEqual(effectiveConditions(['Grappled', 'Pinned']), ['pinned']);
+    const c = makePcgCharacter();
+    const base = computeCharacterStats(c);
+    c.runtime.conditions = ['Grappled', 'Pinned'];
+    const pinned = computeCharacterStats(c);
+    assert.equal(pinned.abilities.DEX.score, base.abilities.DEX.score, 'Pinned does not also apply Grappled -4 Dex');
+    assert.equal(pinned.attacks[0]!.attack.total, base.attacks[0]!.attack.total, 'Pinned does not stack Grappled -2 attack');
+    assert.equal(pinned.ac.normal.total, base.ac.flatFooted.total - 4);
+
+    // Bloodrager gets Rage preset and scales Greater/Mighty Bloodrage at 11/20.
+    const br11 = makePcgCharacter(casterPcg({ classes: ['CLASS:Bloodrager|LEVEL:11|SKILLPOOL:0'] }));
+    assert.ok(presetsFor(br11).some((p) => p.id === 'rage'));
+    const brFx = presetBuff(br11, lookupPreset('rage')!, undefined, { mod: () => 0 }, 'br').effects;
+    assert.deepEqual(
+      brFx.filter((x) => x.target === 'STR' || x.target === 'will').map((x) => x.value),
+      [6, 3],
+    );
+  });
+
+  test('[Rules audit] Shaman spirit bonus slot, Virtue save=none, armor/weapon/race tables, virtualFeats & multi-target Skill Focus', () => {
+    const shaman = makePcgCharacter(casterPcg({ classes: ['CLASS:Shaman|LEVEL:3|SKILLPOOL:0'], stats: { WIS: 16 } }));
+    const shInfo = characterSpellcasting(shaman)[0]!;
+    assert.equal(shInfo.bonusSlot, 'spirit');
+    assert.equal(shInfo.levels.find((l) => l.level === 1)?.extra, 1);
+    assert.equal(shInfo.levels.find((l) => l.level === 2)?.extra, 1);
+    assert.equal(shInfo.levels.find((l) => l.level === 0)?.extra, 0);
+
+    assert.equal(lookupSpell('Virtue')?.save, 'none');
+
+    // Armor corrections
+    assert.equal(lookupArmor('Leather lamellar')?.armor.asf, 20);
+    assert.equal(lookupArmor('Stoneplate')?.armor.maxDex, 1);
+    assert.equal(lookupArmor('Stoneplate')?.armor.asf, 35);
+    assert.equal(lookupArmor('O-yoroi')?.armor.acp, -6);
+    assert.equal(lookupArmor('O-yoroi')?.armor.asf, 35);
+
+    // Weapon corrections & PCGen alias
+    assert.equal(detectGear('Sai').weapon?.range, 0);
+    assert.equal(detectGear('Gnome hooked hammer').weapon?.damage, '1d8');
+    assert.equal(detectGear('Crossbow (Repeating Light)').weapon?.damage, '1d8');
+    assert.equal(detectGear('Crossbow (Repeating Light)').weapon?.range, 80);
+
+    // Nagaji racial Perception +2
+    const nagaji = makePcgCharacter(SAMPLE_PCG.replace('RACE:Human', 'RACE:Nagaji'));
+    const nPerc = computeSkills(nagaji, computeCharacterStats(nagaji)).rows.find((x) => x.name === 'Perception')!;
+    assert.equal(nPerc.total.parts.find((p) => p.source === 'Nagaji')?.value, 2);
+
+    // Comma-separated legacy/virtual Skill Focus targets
+    const sf = makePcgCharacter(withPcgLines(SAMPLE_PCG, 'VFEAT:Skill Focus (Perception, Stealth)'));
+    const sfSkills = computeSkills(sf, computeCharacterStats(sf)).rows;
+    assert.equal(sfSkills.find((r) => r.name === 'Perception')!.total.parts.find((p) => p.source === 'Skill Focus')?.value, 3);
+    assert.equal(sfSkills.find((r) => r.name === 'Stealth')!.total.parts.find((p) => p.source === 'Skill Focus')?.value, 3);
+
+    // Virtual Combat Reflexes in action economy
+    const crChar = makePcgCharacter(withPcgLines(SAMPLE_PCG, 'VFEAT:Combat Reflexes'));
+    crChar.tokenId = 'tok-cr';
+    const state = createInitialState('s1');
+    state.characters[crChar.id] = crChar;
+    state.combat = {
+      ...state.combat,
+      active: true,
+      round: 1,
+      currentId: 'cb-1',
+      combatants: [{ id: 'cb-1', tokenId: 'tok-cr', name: crChar.name, initiative: 15, modifier: 0, hidden: false }],
+    };
+    const turn = effectiveTurn(state, 'cb-1');
+    assert.equal(turn.combatReflexes, true);
+    assert.equal(turn.aooMax, 1 + computeCharacterStats(crChar).abilities.DEX.mod);
   });
 });

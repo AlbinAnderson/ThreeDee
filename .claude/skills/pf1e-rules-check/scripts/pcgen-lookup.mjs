@@ -3,7 +3,7 @@
  * Fast offline lookup over PCGen's PF1e .lst data in ./data/pcgen/data/pathfinder.
  *
  * Usage:
- *   node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs <kind> <query> [--all] [--limit=N]
+ *   node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs <kind> <query> [--filter=<text>] [--all] [--limit=N]
  *
  * Kinds:
  *   class | race | spell | feat | ability | equip | equipmod | skill | any
@@ -11,6 +11,7 @@
  * Examples:
  *   node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs class "Bloodrager"
  *   node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs spell "Invisibility (Greater)"
+ *   node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs ability "Burn" --filter=kineticist
  *   node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs race "Tengu"
  *   node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs feat "Piranha Strike"
  */
@@ -44,9 +45,12 @@ const query = queryParts.join(' ').trim();
 const includeThirdParty = flags.includes('--all');
 const limitFlag = flags.find((f) => f.startsWith('--limit='));
 const limit = limitFlag ? Math.max(1, Math.min(200, Number(limitFlag.split('=')[1]) || 25)) : 25;
+const filterFlag = flags.find((f) => f.startsWith('--filter='));
+const filterLower = filterFlag ? filterFlag.slice('--filter='.length).trim().toLowerCase() : '';
+const compact = (s) => s.replace(/\t+/g, ' | ');
 
 if (!kind || !KIND_PATTERNS[kind] || !query) {
-  console.error('Usage: node pcgen-lookup.mjs <class|race|spell|feat|ability|equip|equipmod|skill|any> <query> [--all] [--limit=N]');
+  console.error('Usage: node pcgen-lookup.mjs <class|race|spell|feat|ability|equip|equipmod|skill|any> <query> [--filter=<text>] [--all] [--limit=N]');
   process.exit(1);
 }
 
@@ -106,8 +110,10 @@ for (const file of files) {
           block.push(next);
         }
       }
+      const text = block.map(compact).join('\n');
+      if (filterLower && !rel.toLowerCase().includes(filterLower) && !text.toLowerCase().includes(filterLower)) continue;
       const bucket = isExact ? (isMod ? exactMods : exact) : partial;
-      bucket.push({ rel, lineNo: i + 1, text: block.join('\n') });
+      bucket.push({ rel, lineNo: i + 1, text });
       continue;
     }
 
@@ -126,8 +132,11 @@ for (const file of files) {
         norm(firstCol).includes(qNorm) ||
         (keyVal && (keyVal.toLowerCase().includes(qLower) || norm(keyVal).includes(qNorm))));
 
-    if (isExact) (isMod ? exactMods : exact).push({ rel, lineNo: i + 1, text: line });
-    else if (isPartial && partial.length < limit * 2) partial.push({ rel, lineNo: i + 1, text: line });
+    if (!isExact && !isPartial) continue;
+    const text = compact(line);
+    if (filterLower && !rel.toLowerCase().includes(filterLower) && !text.toLowerCase().includes(filterLower)) continue;
+    if (isExact) (isMod ? exactMods : exact).push({ rel, lineNo: i + 1, text });
+    else if (partial.length < limit * 2) partial.push({ rel, lineNo: i + 1, text });
   }
 }
 

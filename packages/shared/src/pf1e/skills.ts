@@ -117,7 +117,7 @@ function featsWithTargets(c: Character): { key: string; targets: string[]; name:
   const out = c.build.abilities.map((a) => ({ key: featKey(a.key), targets: a.appliedTo.map((t) => t.trim()).filter(Boolean), name: a.key }));
   for (const f of [...c.build.legacyFeats, ...c.build.virtualFeats]) {
     const m = /\((.+)\)\s*$/.exec(f);
-    out.push({ key: featKey(f), targets: m ? [m[1]!.trim()] : [], name: f });
+    out.push({ key: featKey(f), targets: m ? m[1]!.split(',').map((t) => t.trim()).filter(Boolean) : [], name: f });
   }
   return out;
 }
