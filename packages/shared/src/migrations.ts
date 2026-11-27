@@ -154,6 +154,34 @@ const migrations: Record<number, Migration> = {
       ),
     };
   },
+  // Epic 11: allowed books, custom rules catalog, treasure true properties, item trade-good/rule keys, stat-block attacks.
+  13: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    const loot = (raw.loot ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 14,
+      rules: { allowedSources: null },
+      customRules: {},
+      loot: Object.fromEntries(
+        Object.entries(loot).map(([id, l]) => [id, { trueName: '', secretValue: '', cl: null, magicDetected: false, ...l }]),
+      ),
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => {
+          const inv = (c.inventory ?? {}) as Record<string, unknown>;
+          const items = Array.isArray(inv.items) ? (inv.items as Record<string, unknown>[]) : [];
+          return [
+            id,
+            {
+              ...c,
+              sheet: { statAttacks: [], ...(c.sheet as object) },
+              inventory: { ...inv, items: items.map((i) => ({ tradeGood: false, ruleKey: null, ...i })) },
+            },
+          ];
+        }),
+      ),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {

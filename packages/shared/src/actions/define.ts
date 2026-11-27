@@ -16,6 +16,7 @@
 import type { Draft } from 'immer';
 import type { z } from 'zod';
 import type { GameState, User, UserId } from '../state';
+import type { RulesProvider } from '../rules/types';
 
 export interface Action<T extends string = string, P = unknown> {
   type: T;
@@ -37,7 +38,15 @@ export interface AuthContext {
 export interface PrepareContext extends AuthContext {
   /** Uniform random integer in [0, maxExclusive). Cryptographically secure on the server. */
   random: (maxExclusive: number) => number;
+  /** Server-side: the loaded rules pack (Epic 11). Absent or empty when no pack is built. */
+  rules?: RulesProvider;
 }
+
+/**
+ * Thrown from `prepare()` to reject an action with a message for the user
+ * (checks only the server can make, e.g. a price from the rules pack).
+ */
+export class ActionRejection extends Error {}
 
 /** `true` when allowed, otherwise a human readable reason. */
 export type AuthResult = true | string;

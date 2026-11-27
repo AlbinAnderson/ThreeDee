@@ -18,6 +18,8 @@ import type { Character, PreparedSpell, SpellcastingOverride } from '../entities
 import { computeCharacterStats, type CharacterStats } from './engine';
 import { sumModifiers } from './modifiers';
 import { featKey, normalizeName, STAT_KEYS, type StatKey } from './rules';
+import { resolveSpellRef } from '../rules/spellRef';
+import type { RulesProvider } from '../rules/types';
 import {
   bonusSpells,
   conversionSpell,
@@ -445,9 +447,9 @@ export interface SpellCard {
 }
 
 /** The chat card for a planned cast. */
-export function spellCard(c: Character, plan: CastPlan, who = c.name): SpellCard {
+export function spellCard(c: Character, plan: CastPlan, who = c.name, rules?: RulesProvider): SpellCard {
   const { info } = plan;
-  const ref = lookupSpell(plan.spellName);
+  const ref = resolveSpellRef(plan.spellName, rules);
   const dc = spellDc(c, info, plan.spellName, plan.dcLevel);
   const raised = plan.slotLevel !== plan.dcLevel && !plan.convertedFrom;
   const subtitle = [
@@ -462,8 +464,15 @@ export function spellCard(c: Character, plan: CastPlan, who = c.name): SpellCard
   if (plan.metamagic.length) lines.push(`Metamagic: ${plan.metamagic.join(', ')}.`);
   if (ref) {
     lines.push(ref.school);
+    const details = [ref.castTime && `Casting ${ref.castTime}`, ref.components && `Components ${ref.components}`, ref.range && `Range ${ref.range}`]
+      .filter(Boolean)
+      .join(' · ');
+    if (details) lines.push(details);
+    const reach = [ref.targetArea, ref.duration && `Duration ${ref.duration}`].filter(Boolean).join(' · ');
+    if (reach) lines.push(reach);
     lines.push(`Save: ${ref.save}${/^none/i.test(ref.save) ? '' : ` (DC ${dc})`} · SR: ${ref.sr}`);
     lines.push(ref.text);
+    if (ref.citation) lines.push(ref.citation);
   } else {
     lines.push(`Save DC ${dc} if the spell allows a save.`);
   }

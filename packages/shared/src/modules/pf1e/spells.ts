@@ -99,7 +99,7 @@ export const spellActions = {
         if (typeof plan === 'string') return p;
         return {
           ...p,
-          card: spellCard(c, plan),
+          card: spellCard(c, plan, c.name, ctx.rules),
           spend: { className: plan.info.className, preparedId: plan.preparedId, markCast: plan.markCast, slotKey: plan.slotKey },
         };
       },

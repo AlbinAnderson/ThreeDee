@@ -73,6 +73,8 @@ export function makeItem(fields: Partial<InventoryItem> & Pick<InventoryItem, 'i
     container: null,
     lootId: null,
     imageUrl: null,
+    tradeGood: false,
+    ruleKey: null,
     ...fields,
   };
 }

@@ -213,6 +213,28 @@ export const SpellcastingOverrideSchema = z.object({
 });
 export type SpellcastingOverride = z.infer<typeof SpellcastingOverrideSchema>;
 
+/**
+ * An attack typed in from a stat block (monsters imported from Archives of
+ * Nethys, natural attacks): fixed bonuses instead of BAB + ability + weapon.
+ */
+export const StatAttackSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(60),
+  mode: z.enum(['melee', 'ranged']),
+  /** Attack bonuses in order ("+6/+1" -> [6, 1]). */
+  bonuses: z.array(z.number().int().min(-50).max(100)).min(1).max(8),
+  /** Damage dice, e.g. "1d6" (sized already). */
+  dice: z.string().regex(/^[1-9]\d?d[1-9]\d{0,2}$/, 'Dice like 1d8'),
+  damageBonus: z.number().int().min(-50).max(200),
+  /** Lowest natural roll that threatens. */
+  critRange: z.number().int().min(2).max(20),
+  critMult: z.number().int().min(2).max(6),
+  /** Extra effects ("plus grab", "plus 1d6 fire"). */
+  note: z.string().max(120),
+});
+export type StatAttack = z.infer<typeof StatAttackSchema>;
+export const MAX_STAT_ATTACKS = 20;
+
 /** Sheet-side changes to one skill (kept on re-import). */
 export const SkillOverrideSchema = z.object({
   /** null = ranks from the .pcg file. */
@@ -261,6 +283,11 @@ export const CharacterSheetSchema = z.object({
   spellcasting: z
     .record(z.string().trim().min(1).max(80), SpellcastingOverrideSchema)
     .refine((r) => Object.keys(r).length <= MAX_CASTING_CLASSES, 'Too many casting classes'),
+  /** Stat-block attacks (Epic 11 monster imports), shown and rolled with the weapon attacks. */
+  statAttacks: z
+    .array(StatAttackSchema)
+    .max(MAX_STAT_ATTACKS)
+    .refine((arr) => new Set(arr.map((a) => a.id)).size === arr.length, 'Duplicate attack id'),
 });
 export type CharacterSheet = z.infer<typeof CharacterSheetSchema>;
 
@@ -277,6 +304,7 @@ export const EMPTY_SHEET: CharacterSheet = {
   skills: {},
   customPools: [],
   spellcasting: {},
+  statAttacks: [],
 };
 
 // ------------------------------------------------------------------ inventory
@@ -377,6 +405,10 @@ export const InventoryItemSchema = z.object({
   /** Party-loot record this came from; it keeps the GM's true properties (see modules/loot). */
   lootId: IdSchema.nullable(),
   imageUrl: AssetUrlSchema.nullable(),
+  /** Gems, art objects and trade goods: sold at full value instead of half (Epic 11). */
+  tradeGood: z.boolean(),
+  /** Rules-pack equipment KEY this item came from (exact stats, rules card), or null. */
+  ruleKey: z.string().max(120).nullable(),
 });
 export type InventoryItem = z.infer<typeof InventoryItemSchema>;
 

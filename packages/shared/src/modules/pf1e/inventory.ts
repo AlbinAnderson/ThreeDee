@@ -437,6 +437,10 @@ export const inventoryActions = {
             identified: true,
             secretNotes: '',
             stowed: false,
+            trueName: '',
+            secretValue: '',
+            cl: null,
+            magicDetected: false,
             createdBy: meta.userId,
             createdAt: meta.ts,
           };
