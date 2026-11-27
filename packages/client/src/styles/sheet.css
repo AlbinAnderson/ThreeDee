@@ -111,17 +111,21 @@
   color: var(--gold);
 }
 
-/* 6 clean play tabs */
+/* Play tabs: one row in the narrow sidebar (text tabs shrink a little, icon tabs stay compact). */
 .sheet-tabs {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin-bottom: 10px;
 }
 
 .sheet-tabs button {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 27px;
-  font-size: 12px;
-  padding: 0 4px;
+  font-size: 11.5px;
+  padding: 0 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Icon-only tabs (Companions) stay compact so the row doesn't wrap. */
@@ -1265,4 +1269,209 @@ input.timer-input {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+/* ---------------------------------------------------------------- Bio tab (Epic 10) */
+.character-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border-strong);
+  margin-right: 6px;
+  vertical-align: -5px;
+}
+
+.character-avatar.small {
+  width: 18px;
+  height: 18px;
+  vertical-align: -4px;
+}
+
+.bio-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bio-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 6px;
+}
+
+.bio-section.gm-only {
+  border: 1px dashed var(--gold-2);
+  background: var(--gold-soft);
+  border-radius: var(--radius);
+  padding: 8px;
+}
+
+.bio-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 8px;
+}
+
+.bio-prose,
+.note-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.bio-portrait {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.portrait-frame {
+  width: 96px;
+  height: 96px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-strong);
+  background: var(--panel-2);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.portrait-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.portrait-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.portrait-note code {
+  overflow-wrap: anywhere;
+}
+
+.note-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.note-tree.nested {
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+  margin-left: 8px;
+}
+
+.note-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 26px;
+}
+
+.note-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.note-body {
+  padding: 0 4px 6px 24px;
+}
+
+.note-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 8px 20px;
+}
+
+.chronicle-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chronicle-list > li {
+  border-bottom: 1px solid var(--border);
+}
+
+.chronicle-list > li.open {
+  background: var(--panel-2);
+}
+
+.chronicle-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 5px 2px;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.chronicle-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.chronicle-body {
+  padding: 4px 6px 8px;
+}
+
+.chronicle-totals {
+  margin-top: 4px;
+}
+
+.xml-compare {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  background: var(--panel-2);
+}
+
+.xml-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.xml-compare-table th,
+.xml-compare-table td {
+  padding: 2px 4px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.xml-compare-table th:first-child,
+.xml-compare-table td:first-child {
+  text-align: left;
+}
+
+.xml-compare-table tr.diff td {
+  color: var(--warn);
 }

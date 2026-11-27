@@ -460,6 +460,129 @@ export const CompanionLinkSchema = z.object({
 });
 export type CompanionLink = z.infer<typeof CompanionLinkSchema>;
 
+// ------------------------------------------------------------------ bio, notes & chronicle (Epic 10)
+
+export const MAX_CHARACTER_NOTES = 200;
+export const MAX_CHRONICLES = 200;
+export const BIO_FIELD_MAX = 200;
+export const BIO_TEXT_MAX = 10000;
+export const NOTE_TITLE_MAX = 120;
+export const NOTE_BODY_MAX = 8000;
+
+/** Short free-text bio fields, in display order. */
+export const BIO_FIELD_KEYS = [
+  'gender',
+  'age',
+  'height',
+  'weight',
+  'eyes',
+  'hair',
+  'skin',
+  'handedness',
+  'deity',
+  'homeland',
+  'birthplace',
+  'birthday',
+  'location',
+  'traits',
+  'speechPattern',
+  'phobias',
+  'interests',
+  'catchPhrase',
+] as const;
+export type BioFieldKey = (typeof BIO_FIELD_KEYS)[number];
+
+/** One entry of the character's notes tree. `parentId` null = a root note. */
+export const CharacterNoteSchema = z.object({
+  id: IdSchema,
+  parentId: IdSchema.nullable(),
+  title: z.string().trim().min(1).max(NOTE_TITLE_MAX),
+  body: z.string().max(NOTE_BODY_MAX),
+});
+export type CharacterNote = z.infer<typeof CharacterNoteSchema>;
+
+/** True if every parent exists and following parents always reaches a root (no cycles). */
+export function isNoteForest(notes: readonly { id: string; parentId: string | null }[]): boolean {
+  const parent = new Map(notes.map((n) => [n.id, n.parentId]));
+  for (const n of notes) {
+    let cur: string | null = n.parentId;
+    for (let steps = 0; cur !== null; steps++) {
+      if (steps > notes.length || !parent.has(cur)) return false;
+      cur = parent.get(cur)!;
+    }
+  }
+  return true;
+}
+
+export const CharacterNotesSchema = z
+  .array(CharacterNoteSchema)
+  .max(MAX_CHARACTER_NOTES)
+  .refine((arr) => new Set(arr.map((n) => n.id)).size === arr.length, 'Duplicate note id')
+  .refine(isNoteForest, 'Notes must form a tree (missing parent or cycle)');
+
+/** A campaign / Pathfinder Society chronicle sheet entry. */
+export const ChronicleEntrySchema = z.object({
+  id: IdSchema,
+  /** Campaign or organized-play season. */
+  campaign: z.string().max(120),
+  /** Adventure / scenario name. */
+  scenario: z.string().max(120),
+  date: z.string().max(40),
+  gm: z.string().max(80),
+  party: z.string().max(200),
+  xp: z.number().int().min(0).max(10_000_000),
+  /** Gold gained (negative = spent), gp. */
+  gold: z.number().min(-1e9).max(1e9),
+  fame: z.number().int().min(-100000).max(100000),
+  notes: z.string().max(4000),
+});
+export type ChronicleEntry = z.infer<typeof ChronicleEntrySchema>;
+
+export const ChronicleListSchema = z
+  .array(ChronicleEntrySchema)
+  .max(MAX_CHRONICLES)
+  .refine((arr) => new Set(arr.map((n) => n.id)).size === arr.length, 'Duplicate chronicle id');
+
+export const BioFieldsSchema = z.object(
+  Object.fromEntries(BIO_FIELD_KEYS.map((k) => [k, z.string().max(BIO_FIELD_MAX)])) as Record<BioFieldKey, z.ZodString>,
+);
+export type BioFields = z.infer<typeof BioFieldsSchema>;
+
+/**
+ * VTT-owned biography: seeded from the .pcg on first import and kept on
+ * re-import (unless the user asks to replace it), like the inventory.
+ * `dmNotes` is GM-only: it is blanked for everyone else in snapshots and
+ * never travels in a payload to a non-GM.
+ */
+export const CharacterBioSchema = z.object({
+  /** Uploaded portrait (VTT asset or http(s) URL). */
+  portraitUrl: AssetUrlSchema.nullable(),
+  /** PORTRAIT path from the .pcg (usually a local file the browser can't read); informational only. */
+  pcgPortrait: z.string().max(1000).nullable(),
+  fields: BioFieldsSchema,
+  /** Appearance / physical description. */
+  description: z.string().max(BIO_TEXT_MAX),
+  /** Background story. */
+  biography: z.string().max(BIO_TEXT_MAX),
+  /** GM-only notes. */
+  dmNotes: z.string().max(BIO_TEXT_MAX),
+  notes: CharacterNotesSchema,
+  chronicles: ChronicleListSchema,
+});
+export type CharacterBio = z.infer<typeof CharacterBioSchema>;
+
+export const EMPTY_BIO_FIELDS: BioFields = Object.fromEntries(BIO_FIELD_KEYS.map((k) => [k, ''])) as BioFields;
+export const EMPTY_BIO: CharacterBio = {
+  portraitUrl: null,
+  pcgPortrait: null,
+  fields: EMPTY_BIO_FIELDS,
+  description: '',
+  biography: '',
+  dmNotes: '',
+  notes: [],
+  chronicles: [],
+};
+
 export const CharacterSchema = z.object({
   id: IdSchema,
   name: z.string().trim().min(1).max(80),
@@ -476,6 +599,8 @@ export const CharacterSchema = z.object({
   inventory: InventorySchema,
   /** Companion link to a master character (Epic 9); null = not a companion. */
   companion: CompanionLinkSchema.nullable(),
+  /** Biography, portrait, notes tree, chronicle and GM notes (Epic 10). */
+  bio: CharacterBioSchema,
   createdAt: z.number(),
   updatedAt: z.number(),
 });
