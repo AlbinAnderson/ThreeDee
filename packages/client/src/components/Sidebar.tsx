@@ -10,7 +10,11 @@ const PLAY_PANEL_IDS = new Set(['chat', 'combat', 'actions', 'status', 'characte
 export function Sidebar() {
   const gm = useIsGm();
   const self = useSelf();
-  const state = useGame((s) => s);
+  const chat = useGame((s) => s.chat);
+  const myTurn = useGame((s) => {
+    const cb = s.combat.active ? s.combat.combatants.find((c) => c.id === s.combat.currentId) : undefined;
+    return !!cb && canControlCombatant(s, self, cb);
+  });
   const activeId = useUi((s) => s.sidebarPanel);
   const width = useUi((s) => s.sidebarWidth);
   const collapsed = useUi((s) => s.sidebarCollapsed);
@@ -25,17 +29,11 @@ export function Sidebar() {
 
   const unreadChat = useMemo(() => {
     if (!collapsed && active?.id === 'chat') return 0;
-    const chat = state.chat;
     if (!chat.length) return 0;
     if (!lastSeenChatId) return chat.length;
     const idx = chat.findIndex((m) => m.id === lastSeenChatId);
     return idx === -1 ? chat.length : Math.max(0, chat.length - 1 - idx);
-  }, [collapsed, active?.id, state.chat, lastSeenChatId]);
-
-  const myTurn = useMemo(() => {
-    const cb = state.combat.active ? state.combat.combatants.find((c) => c.id === state.combat.currentId) : undefined;
-    return !!cb && canControlCombatant(state, self, cb);
-  }, [state, self]);
+  }, [collapsed, active?.id, chat, lastSeenChatId]);
 
   function onResizeStart(e: PointerEvent<HTMLDivElement>) {
     e.preventDefault();

@@ -55,15 +55,16 @@ export function addSelectedToCombat() {
 
 export function CombatPanel() {
   const combat = useGame((s) => s.combat);
-  const state = useGame((s) => s);
+  const tokens = useGame((s) => s.tokens);
+  const characters = useGame((s) => s.characters);
   const self = useSelf();
   const gm = useIsGm();
 
-  const visible = useMemo(() => combat.combatants.filter((c) => gm || !isCombatantHidden(state, c)), [combat.combatants, gm, state]);
+  const visible = useMemo(() => combat.combatants.filter((c) => gm || !isCombatantHidden({ tokens }, c)), [combat.combatants, gm, tokens]);
   const current = combat.combatants.find((c) => c.id === combat.currentId);
-  const myTurn = !!current && combat.active && canControlCombatant(state, self, current);
+  const myTurn = !!current && combat.active && canControlCombatant({ tokens }, self, current);
   const currentSceneId = useCurrentSceneId();
-  const unrolled = combat.combatants.filter((c) => c.initiative === null && canControlCombatant(state, self, c));
+  const unrolled = combat.combatants.filter((c) => c.initiative === null && canControlCombatant({ tokens }, self, c));
 
   async function addCustom() {
     const name = (await promptDialog({ title: 'Add custom entry', label: 'Name', placeholder: 'e.g. Lair action or Goblin 3', confirmLabel: 'Add', maxLength: 60 }))?.trim();
@@ -109,20 +110,20 @@ export function CombatPanel() {
         {visible.length === 0 && <p className="muted">Nobody in the turn order. Select tokens on the map and add them.</p>}
         <ol className="combat-list">
           {visible.map((c, i) => {
-            const token = c.tokenId ? state.tokens[c.tokenId] : undefined;
+            const token = c.tokenId ? tokens[c.tokenId] : undefined;
             return (
             <CombatRow
               key={c.id}
               combatant={c}
               token={token}
-              character={characterForToken(state, token?.id)}
+              character={characterForToken({ characters }, token?.id)}
               hpShown={!!token && canSeeTokenHp(self, token)}
               canFocus={!!token && canFocusToken(self, token, currentSceneId)}
-              name={combatantName(state, c)}
-              hidden={isCombatantHidden(state, c)}
-              tokenHidden={isCombatantHidden(state, c) && !c.hidden}
+              name={combatantName({ tokens }, c)}
+              hidden={isCombatantHidden({ tokens }, c)}
+              tokenHidden={isCombatantHidden({ tokens }, c) && !c.hidden}
               isCurrent={combat.active && c.id === combat.currentId}
-              canEdit={canControlCombatant(state, self, c)}
+              canEdit={canControlCombatant({ tokens }, self, c)}
               gm={gm}
               prevId={visible[i - 1]?.id ?? null}
               nextNextId={visible[i + 2]?.id ?? null}

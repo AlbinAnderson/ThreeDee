@@ -29,18 +29,6 @@ export function isPathBlocked(a: Point, b: Point, segments: Segment[]): boolean 
   return segments.some((s) => segmentsIntersect(a, b, s));
 }
 
-/** Distance along a ray (origin + t*dir) to segment s, or Infinity. */
-function rayHit(ox: number, oy: number, dx: number, dy: number, s: Segment): number {
-  const [x1, y1, x2, y2] = s;
-  const sx = x2 - x1;
-  const sy = y2 - y1;
-  const denom = dx * sy - dy * sx;
-  if (Math.abs(denom) < 1e-12) return Infinity;
-  const t = ((x1 - ox) * sy - (y1 - oy) * sx) / denom;
-  const u = ((x1 - ox) * dy - (y1 - oy) * dx) / denom;
-  return t >= 0 && u >= -1e-9 && u <= 1 + 1e-9 ? t : Infinity;
-}
-
 export interface Bounds {
   minX: number;
   minY: number;
@@ -52,42 +40,88 @@ export interface Bounds {
  * Polygon of everything visible from `origin`, bounded by `bounds`.
  * Casts rays at every wall endpoint (and slightly to either side) and keeps
  * the nearest hit, which yields the exact visibility polygon.
+ *
+ * Optimizations:
+ *  - Culls segments whose AABB does not intersect `bounds` (huge win for bounded light radii).
+ *  - Packs segments into flat Float64Arrays and precomputes `cross = (x1-ox)*sy - (y1-oy)*sx`
+ *    once per segment so the inner O(W^2) ray test rejects `t < 0 || t >= best` before computing `u`.
  */
 export function visibilityPolygon(origin: Point, segments: Segment[], bounds: Bounds): Point[] {
   const { minX, minY, maxX, maxY } = bounds;
-  const all: Segment[] = [
-    ...segments,
-    [minX, minY, maxX, minY],
-    [maxX, minY, maxX, maxY],
-    [maxX, maxY, minX, maxY],
-    [minX, maxY, minX, minY],
-  ];
-  const angles: number[] = [];
-  const seen = new Set<string>();
-  for (const [x1, y1, x2, y2] of all) {
-    for (const [x, y] of [
-      [x1, y1],
-      [x2, y2],
-    ] as const) {
-      const key = `${x},${y}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const a = Math.atan2(y - origin.y, x - origin.x);
-      angles.push(a - 1e-5, a, a + 1e-5);
+  const ox = origin.x;
+  const oy = origin.y;
+
+  // Cull segments completely outside `bounds`, then append the 4 bounding box edges.
+  const all: Segment[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i]!;
+    const x1 = s[0];
+    const y1 = s[1];
+    const x2 = s[2];
+    const y2 = s[3];
+    if ((x1 < minX && x2 < minX) || (x1 > maxX && x2 > maxX) || (y1 < minY && y2 < minY) || (y1 > maxY && y2 > maxY)) {
+      continue;
     }
+    all.push(s);
+  }
+  all.push([minX, minY, maxX, minY], [maxX, minY, maxX, maxY], [maxX, maxY, minX, maxY], [minX, maxY, minX, minY]);
+
+  const n = all.length;
+  const segRx = new Float64Array(n);
+  const segRy = new Float64Array(n);
+  const segSx = new Float64Array(n);
+  const segSy = new Float64Array(n);
+  const segCross = new Float64Array(n);
+
+  const angles: number[] = [];
+  const seen = new Map<number, number[]>();
+  const addEndpoint = (x: number, y: number) => {
+    let ys = seen.get(x);
+    if (ys) {
+      for (let i = 0; i < ys.length; i++) if (ys[i] === y) return;
+      ys.push(y);
+    } else {
+      seen.set(x, [y]);
+    }
+    const a = Math.atan2(y - oy, x - ox);
+    angles.push(a - 1e-5, a, a + 1e-5);
+  };
+
+  for (let i = 0; i < n; i++) {
+    const s = all[i]!;
+    const x1 = s[0];
+    const y1 = s[1];
+    const x2 = s[2];
+    const y2 = s[3];
+    const rx = x1 - ox;
+    const ry = y1 - oy;
+    const sx = x2 - x1;
+    const sy = y2 - y1;
+    segRx[i] = rx;
+    segRy[i] = ry;
+    segSx[i] = sx;
+    segSy[i] = sy;
+    segCross[i] = rx * sy - ry * sx;
+    addEndpoint(x1, y1);
+    addEndpoint(x2, y2);
   }
   angles.sort((a, b) => a - b);
 
   const polygon: Point[] = [];
-  for (const a of angles) {
+  for (let i = 0; i < angles.length; i++) {
+    const a = angles[i]!;
     const dx = Math.cos(a);
     const dy = Math.sin(a);
     let best = Infinity;
-    for (const s of all) {
-      const t = rayHit(origin.x, origin.y, dx, dy, s);
-      if (t < best) best = t;
+    for (let j = 0; j < n; j++) {
+      const denom = dx * segSy[j]! - dy * segSx[j]!;
+      if (denom > -1e-12 && denom < 1e-12) continue;
+      const t = segCross[j]! / denom;
+      if (t < 0 || t >= best) continue;
+      const u = (segRx[j]! * dy - segRy[j]! * dx) / denom;
+      if (u >= -1e-9 && u <= 1 + 1e-9) best = t;
     }
-    if (best !== Infinity) polygon.push({ x: origin.x + dx * best, y: origin.y + dy * best });
+    if (best !== Infinity) polygon.push({ x: ox + dx * best, y: oy + dy * best });
   }
   return polygon;
 }

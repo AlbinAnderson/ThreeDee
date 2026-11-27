@@ -96,11 +96,23 @@ const FALLBACK_TREASURE: EquipmentRecord[] = [
   { kind: 'equipment', key: 'Boots of Speed', name: 'Boots of Speed', source: { campaign: 'Core Rulebook', long: 'Core Rulebook', short: 'CR', page: 'p.503' }, desc: 'Click heels as a free action to act as though hasted for up to 10 rounds/day.', types: ['Magic', 'Wondrous'], cost: 12000, weight: 1, baseItem: null, damage: null, critRange: null, critMult: null, range: null, wield: null, acBonus: null, maxDex: null, acp: null, asf: null, slot: 'feet', cl: 10, aura: 'moderate transmutation', eqmods: [], spellEffect: null },
 ];
 
+interface SearchEntry {
+  rec: RulesRecord;
+  lowerName: string;
+  hay: string;
+  canonicalBonus: number;
+  campaign: string;
+}
+
 export class RulesPackStore implements RulesProvider {
   private manifest: RulesManifest | null = null;
   private byKey = Object.fromEntries(RULES_KINDS.map((k) => [k, new Map<string, RulesRecord>()])) as Record<RulesKind, Map<string, RulesRecord>>;
   private byNorm = Object.fromEntries(RULES_KINDS.map((k) => [k, new Map<string, RulesRecord>()])) as Record<RulesKind, Map<string, RulesRecord>>;
   private lists = Object.fromEntries(RULES_KINDS.map((k) => [k, [] as RulesRecord[]])) as Record<RulesKind, RulesRecord[]>;
+  /** Pre-filtered, pre-lowercased, pre-sorted search index per kind (omits hidden and PCGen Internal abilities). */
+  private searchable = Object.fromEntries(RULES_KINDS.map((k) => [k, [] as SearchEntry[]])) as Record<RulesKind, SearchEntry[]>;
+  /** All searchable entries across default kinds, pre-sorted by (canonicalBonus desc, lowerName asc) for O(limit) empty queries. */
+  private searchableAll: SearchEntry[] = [];
 
   constructor(private readonly dir: string) {
     this.reload();
@@ -119,22 +131,50 @@ export class RulesPackStore implements RulesProvider {
       const nextByKey = Object.fromEntries(RULES_KINDS.map((k) => [k, new Map<string, RulesRecord>()])) as Record<RulesKind, Map<string, RulesRecord>>;
       const nextByNorm = Object.fromEntries(RULES_KINDS.map((k) => [k, new Map<string, RulesRecord>()])) as Record<RulesKind, Map<string, RulesRecord>>;
       const nextLists = Object.fromEntries(RULES_KINDS.map((k) => [k, [] as RulesRecord[]])) as Record<RulesKind, RulesRecord[]>;
+      const nextSearchable = Object.fromEntries(RULES_KINDS.map((k) => [k, [] as SearchEntry[]])) as Record<RulesKind, SearchEntry[]>;
+
+      const cmpEntry = (a: SearchEntry, b: SearchEntry) =>
+        b.canonicalBonus - a.canonicalBonus || (a.lowerName < b.lowerName ? -1 : a.lowerName > b.lowerName ? 1 : 0);
 
       for (const k of RULES_KINDS) {
         const p = path.join(this.dir, `${k}.json`);
         if (!fs.existsSync(p)) continue;
         const arr = JSON.parse(fs.readFileSync(p, 'utf8')) as RulesRecord[];
         nextLists[k] = arr;
+        const searchArr: SearchEntry[] = [];
         for (const rec of arr) {
           nextByKey[k].set(rec.key, rec);
-          for (const v of nameVariants(rec.name)) if (!nextByNorm[k].has(v)) nextByNorm[k].set(v, rec);
-          for (const v of nameVariants(rec.key)) if (!nextByNorm[k].has(v)) nextByNorm[k].set(v, rec);
+          const isInternal = rec.kind === 'ability' && (rec as FeatRecord).category.toLowerCase() === 'internal';
+          if (!isInternal) {
+            for (const v of nameVariants(rec.name)) if (!nextByNorm[k].has(v)) nextByNorm[k].set(v, rec);
+            for (const v of nameVariants(rec.key)) if (!nextByNorm[k].has(v)) nextByNorm[k].set(v, rec);
+          }
+          if (!rec.hidden && !isInternal) {
+            const lowerName = rec.name.toLowerCase();
+            const lowerKey = rec.key.toLowerCase();
+            const lowerTypes = rec.types.length ? rec.types.join(' ').toLowerCase() : '';
+            searchArr.push({
+              rec,
+              lowerName,
+              hay: lowerKey === lowerName ? (lowerTypes ? `${lowerName} ${lowerTypes}` : lowerName) : `${lowerName} ${lowerKey}${lowerTypes ? ` ${lowerTypes}` : ''}`,
+              canonicalBonus: rec.key === rec.name ? 0.5 : 0,
+              campaign: rec.source.campaign,
+            });
+          }
         }
+        searchArr.sort(cmpEntry);
+        nextSearchable[k] = searchArr;
       }
+      const defaultKinds: RulesKind[] = ['equipment', 'spell', 'feat', 'ability', 'class', 'race', 'deity', 'domain'];
+      const nextAll = defaultKinds.flatMap((k) => nextSearchable[k]);
+      nextAll.sort(cmpEntry);
+
       this.manifest = parsed;
       this.byKey = nextByKey;
       this.byNorm = nextByNorm;
       this.lists = nextLists;
+      this.searchable = nextSearchable;
+      this.searchableAll = nextAll;
       return true;
     } catch (e) {
       console.error('[rules] failed to load rules pack:', e);
@@ -208,35 +248,57 @@ export class RulesPackStore implements RulesProvider {
       });
     }
 
-    // 2. Rules pack records.
-    const kinds: RulesKind[] = opts.kind ? [opts.kind] : ['equipment', 'spell', 'feat', 'ability', 'class', 'race', 'deity', 'domain'];
-    for (const k of kinds) {
-      for (const rec of this.lists[k]) {
-        if (rec.hidden) continue;
-        // PCGen bookkeeping abilities ("Sorcerer Bonus Spell L3 ~ Fireball") aren't rules text.
-        if (rec.kind === 'ability' && (rec as FeatRecord).category.toLowerCase() === 'internal') continue;
-        if (!isSourceAllowed(opts.allowedSources, rec.source.campaign)) continue;
-        const lowerName = rec.name.toLowerCase();
-        if (tokens.length) {
-          const hay = `${lowerName} ${rec.key.toLowerCase()} ${rec.types.join(' ').toLowerCase()}`;
-          if (!tokens.every((t) => hay.includes(t))) continue;
-        }
-        const base = !q ? 1 : lowerName === q ? 100 : lowerName.startsWith(q) ? 50 : lowerName.includes(q) ? 20 : 5;
-        // The canonical record (KEY = name, e.g. Core "Fireball") ranks above copies ("Occultist Spell ~ Fireball").
-        const score = base + (rec.key === rec.name ? 0.5 : 0);
-        hits.push({
-          score,
-          hit: {
-            kind: rec.kind,
-            key: rec.key,
-            name: rec.name,
-            source: rec.source,
-            summary: hitSummary(rec),
-            ...(rec.kind === 'equipment' ? { cost: baseCost(rec as EquipmentRecord) } : {}),
-          },
-        });
+    // 2. Rules pack records (using pre-filtered, pre-lowercased, pre-sorted index + deferred hitSummary).
+    const allowedSet = opts.allowedSources !== null ? new Set(opts.allowedSources) : null;
+    const pool = opts.kind ? this.searchable[opts.kind] : this.searchableAll;
+
+    const toHit = (rec: RulesRecord): RulesHit => ({
+      kind: rec.kind,
+      key: rec.key,
+      name: rec.name,
+      source: rec.source,
+      summary: hitSummary(rec),
+      ...(rec.kind === 'equipment' ? { cost: baseCost(rec as EquipmentRecord) } : {}),
+    });
+
+    if (tokens.length === 0) {
+      // Fast O(limit) path: `pool` is already sorted by (canonicalBonus desc, lowerName asc).
+      const need = Math.max(0, limit - hits.length);
+      let taken = 0;
+      for (let i = 0; i < pool.length && taken < need; i++) {
+        const e = pool[i]!;
+        if (allowedSet && !allowedSet.has(e.campaign)) continue;
+        hits.push({ score: 1 + e.canonicalBonus, hit: toHit(e.rec) });
+        taken++;
       }
+      hits.sort((a, b) => b.score - a.score || a.hit.name.localeCompare(b.hit.name));
+      return hits.slice(0, limit).map((x) => x.hit);
     }
+
+    const packMatches: { score: number; lowerName: string; rec: RulesRecord }[] = [];
+    const t0 = tokens[0]!;
+    const multi = tokens.length > 1;
+    for (let i = 0; i < pool.length; i++) {
+      const e = pool[i]!;
+      if (allowedSet && !allowedSet.has(e.campaign)) continue;
+      if (!e.hay.includes(t0)) continue;
+      if (multi) {
+        let all = true;
+        for (let j = 1; j < tokens.length; j++) {
+          if (!e.hay.includes(tokens[j]!)) {
+            all = false;
+            break;
+          }
+        }
+        if (!all) continue;
+      }
+      const base = e.lowerName === q ? 100 : e.lowerName.startsWith(q) ? 50 : e.lowerName.includes(q) ? 20 : 5;
+      packMatches.push({ score: base + e.canonicalBonus, lowerName: e.lowerName, rec: e.rec });
+    }
+    packMatches.sort((a, b) => b.score - a.score || (a.lowerName < b.lowerName ? -1 : a.lowerName > b.lowerName ? 1 : 0));
+    // Materialize hitSummary() & baseCost() ONLY for the top `limit` candidates.
+    const topPack = packMatches.slice(0, limit);
+    for (const m of topPack) hits.push({ score: m.score, hit: toHit(m.rec) });
 
     hits.sort((a, b) => b.score - a.score || a.hit.name.localeCompare(b.hit.name));
     return hits.slice(0, limit).map((x) => x.hit);
