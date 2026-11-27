@@ -14,6 +14,8 @@ export interface Pf1Action {
   id: string;
   name: string;
   cost: ActionCost;
+  /** Optional level-based cost override (e.g. Bardic Performance: Move at 7th, Swift at 13th). */
+  costForLevel?: (level: number) => ActionCost;
   /** Shown instead of the cost name when the action is more nuanced ("Standard, or Move for one target"). */
   costLabel?: string;
   provokes: Provokes;
@@ -27,6 +29,11 @@ export interface Pf1Action {
   resourceCost?: number;
   /** Offer a matching roll button. */
   roll?: 'melee' | 'ranged' | 'cmb';
+}
+
+/** Effective action cost for a character with `classLevel` in the action's class. */
+export function actionCostFor(action: Pf1Action, classLevel = 1): ActionCost {
+  return action.costForLevel ? action.costForLevel(classLevel) : action.cost;
 }
 
 export const COST_LABEL: Record<ActionCost, string> = {
@@ -125,6 +132,10 @@ export interface ResourceCtx {
   /** Level in this class. */
   level: number;
   mod: (k: StatKey) => number;
+  /** Ability modifier without temporary buffs/conditions (e.g. Rage rounds per CRB p.32). */
+  permanentMod?: (k: StatKey) => number;
+  /** Number of times the character has taken a feat (by featKey, e.g. 'extrarage', 'extrachannel'). */
+  featCount?: (key: string) => number;
 }
 
 export interface ResourceDef {
@@ -163,35 +174,49 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Barbarian',
     keys: ['barbarian'],
-    resources: [res('rage', 'Rage', 'rounds', ({ level, mod }) => 4 + mod('CON') + 2 * (level - 1))],
-    actions: [ca('barbarian', 'rage', 'Rage (1 round)', 'free', 'no', 'Enter or continue rage: +4 Str, +4 Con, +2 Will, −2 AC. Spend 1 round per round raging.', { resource: 'rage' })],
+    resources: [
+      res('rage', 'Rage', 'rounds', ({ level, mod, permanentMod, featCount }) => 4 + (permanentMod ?? mod)('CON') + 2 * (level - 1) + 6 * (featCount?.('extrarage') ?? 0)),
+    ],
+    actions: [
+      ca('barbarian', 'rage', 'Rage (1 round)', 'free', 'no', 'Enter or continue rage: +4 Str, +4 Con, +2 Will, −2 AC (+6/+6/+3 at 11th, +8/+8/+4 at 20th). Spend 1 round per round raging; fatigued afterwards (until 17th).', { resource: 'rage' }),
+    ],
   },
   {
     className: 'Unchained Barbarian',
     keys: ['barbarianunchained', 'unchainedbarbarian'],
-    resources: [res('rage', 'Rage', 'rounds', ({ level, mod }) => 4 + mod('CON') + 2 * (level - 1))],
+    resources: [
+      res('rage', 'Rage', 'rounds', ({ level, mod, permanentMod, featCount }) => 4 + (permanentMod ?? mod)('CON') + 2 * (level - 1) + 6 * (featCount?.('extrarage') ?? 0)),
+    ],
     actions: [
-      ca('ubarbarian', 'rage', 'Rage (1 round)', 'free', 'no', '+2 melee attack and damage, +2 thrown damage, +2 Will, −2 AC, 2 temp HP per HD (not again within 1 minute).', { resource: 'rage' }),
+      ca('ubarbarian', 'rage', 'Rage (1 round)', 'free', 'no', '+2 melee attack & damage, +2 thrown damage, +2 Will, −2 AC (+3 at 11th, +4 at 20th), 2 temp HP per HD (+3/+4; not again within 1 minute).', { resource: 'rage' }),
     ],
   },
   {
     className: 'Bard',
     keys: ['bard'],
-    resources: [res('performance', 'Bardic Performance', 'rounds', ({ level, mod }) => 4 + mod('CHA') + 2 * (level - 1))],
+    resources: [
+      res('performance', 'Bardic Performance', 'rounds', ({ level, mod, featCount }) => 4 + mod('CHA') + 2 * (level - 1) + 6 * (featCount?.('extraperformance') ?? 0)),
+    ],
     actions: [
-      ca('bard', 'perform', 'Start Bardic Performance', 'standard', 'no', 'Countersong, Distraction, Fascinate or Inspire Courage (+1). Spends 1 round.', { resource: 'performance' }),
+      ca('bard', 'perform', 'Start Bardic Performance', 'standard', 'no', 'Countersong, Distraction, Fascinate, Inspire Courage (+1; +2 at 5th, +3 at 11th, +4 at 17th), Competence (3rd+), Greatness (9th+), Heroics (15th+). Move action at 7th, swift at 13th. Spends 1 round.', {
+        resource: 'performance',
+        costForLevel: (l) => (l >= 13 ? 'swift' : l >= 7 ? 'move' : 'standard'),
+      }),
       ca('bard', 'maintain', 'Maintain Performance (1 round)', 'free', 'no', 'Keep a performance going for another round.', { resource: 'performance' }),
-      castSpell('bard', 'Spontaneous arcane (cantrips, 1st level).'),
+      castSpell('bard', 'Spontaneous arcane (cantrips through 6th level; no ASF in light armor or with non-tower shields).'),
     ],
   },
   {
     className: 'Cleric',
     keys: ['cleric'],
-    resources: [res('channel', 'Channel Energy', 'uses', ({ mod }) => 3 + mod('CHA')), res('domain', 'Domain powers', 'uses', ({ mod }) => 3 + mod('WIS'))],
+    resources: [
+      res('channel', 'Channel Energy', 'uses', ({ mod, featCount }) => 3 + mod('CHA') + 2 * (featCount?.('extrachannel') ?? 0)),
+      res('domain', 'Domain powers', 'uses', ({ mod }) => 3 + mod('WIS')),
+    ],
     actions: [
-      ca('cleric', 'channel', 'Channel Energy', 'standard', 'no', '30-ft burst: heal or harm 1d6 (+1d6 per two levels after 1st).', { resource: 'channel' }),
+      ca('cleric', 'channel', 'Channel Energy', 'standard', 'no', '30-ft burst: heal or harm 1d6 (+1d6 per two cleric levels after 1st); Will half DC 10 + ½ cleric level + Cha.', { resource: 'channel' }),
       ca('cleric', 'domain', 'Domain Power', 'other', 'varies', 'One of your two 1st-level domain powers (usually standard or swift).', { costLabel: 'Varies', resource: 'domain' }),
-      castSpell('cleric', 'Prepared divine (orisons, 1st level); can spontaneously cast cure or inflict.'),
+      castSpell('cleric', 'Prepared divine (orisons through 9th level); can spontaneously convert non-domain spells into cure or inflict.'),
     ],
   },
   {
@@ -373,9 +398,11 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Bloodrager',
     keys: ['bloodrager'],
-    resources: [res('bloodrage', 'Bloodrage', 'rounds', ({ level, mod }) => 4 + mod('CON') + 2 * (level - 1))],
+    resources: [
+      res('bloodrage', 'Bloodrage', 'rounds', ({ level, mod, permanentMod, featCount }) => 4 + (permanentMod ?? mod)('CON') + 2 * (level - 1) + 6 * (featCount?.('extrarage') ?? 0)),
+    ],
     actions: [
-      ca('bloodrager', 'rage', 'Bloodrage (1 round)', 'free', 'no', '+4 Str, +4 Con, +2 Will, −2 AC. Spend 1 round per round.', { resource: 'bloodrage' }),
+      ca('bloodrager', 'rage', 'Bloodrage (1 round)', 'free', 'no', '+4 Str, +4 Con, +2 Will, −2 AC (+6/+6/+3 at 11th, +8/+8/+4 at 20th). Spend 1 round per round.', { resource: 'bloodrage' }),
       ca('bloodrager', 'bloodline', 'Bloodline Power', 'other', 'varies', 'Your 1st-level bloodline power (usually while bloodraging).', { costLabel: 'Varies' }),
     ],
   },
@@ -419,11 +446,16 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Skald',
     keys: ['skald'],
-    resources: [res('song', 'Raging Song', 'rounds', ({ level, mod }) => 3 + mod('CHA') + 2 * (level - 1))],
+    resources: [
+      res('song', 'Raging Song', 'rounds', ({ level, mod, featCount }) => 3 + mod('CHA') + 2 * (level - 1) + 6 * (featCount?.('extraperformance') ?? 0)),
+    ],
     actions: [
-      ca('skald', 'song', 'Start Raging Song', 'standard', 'no', 'Inspired Rage: willing allies get +2 Str, +2 Con, +1 Will, −1 AC.', { resource: 'song' }),
+      ca('skald', 'song', 'Start Raging Song', 'standard', 'no', 'Inspired Rage: willing allies get +2 Str, +2 Con, +1 Will, −1 AC (move action at 7th, swift at 13th).', {
+        resource: 'song',
+        costForLevel: (l) => (l >= 13 ? 'swift' : l >= 7 ? 'move' : 'standard'),
+      }),
       ca('skald', 'maintain', 'Maintain Song (1 round)', 'free', 'no', 'Keep the song going another round.', { resource: 'song' }),
-      castSpell('skald', 'Spontaneous arcane (cantrips, 1st level).'),
+      castSpell('skald', 'Spontaneous arcane (cantrips through 6th level; no ASF in light/medium armor or with non-tower shields).'),
     ],
   },
   {

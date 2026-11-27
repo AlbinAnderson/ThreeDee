@@ -43,6 +43,7 @@ export const BuffTargetSchema = z.enum([
   'attackRanged',
   'damage',
   'damageMelee',
+  'damageThrown',
   'damageRanged',
   'ac',
   'cmb',
