@@ -166,27 +166,325 @@ kbd {
 
 
 /* ---- Epic 11: Rules Compendium, Rules Cards, Catalog & Treasure ---- */
-.rules-modal { width: min(760px, 94vw); max-height: 84vh; display: flex; flex-direction: column; gap: 10px; }
-.rules-card-modal { width: min(520px, 92vw); max-height: 82vh; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
-.rules-modal-body { overflow-y: auto; flex: 1; min-height: 220px; }
-.rules-pane { display: flex; flex-direction: column; gap: 8px; }
-.rules-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); padding-bottom: 6px; flex-wrap: wrap; }
-.rules-tabs button { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 10px; }
-.rules-tabs button.active { background: var(--accent-soft); border-color: var(--gold); color: var(--gold); }
-.rules-hit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; }
-.rules-hit-btn { width: 100%; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.rules-hit-btn:hover, .rules-hit-btn.active { border-color: var(--gold); background: var(--surface-3); }
-.rules-hit-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.rules-books-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; }
-.rules-catalog-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
-@media (max-width: 680px) { .rules-catalog-split { grid-template-columns: 1fr; } }
-.rules-draft-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.rules-mods { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-.rules-saved-row { display: flex; align-items: center; gap: 6px; }
-.rules-body { display: flex; flex-direction: column; gap: 5px; line-height: 1.45; }
-.rules-kv { display: flex; flex-wrap: wrap; gap: 10px; }
-.rules-desc { white-space: pre-wrap; margin: 6px 0 0; color: var(--text); }
-.rules-citation { font-style: italic; }
-.button-link { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; padding: 5px 10px; border-radius: var(--radius-sm); border: 1px solid var(--gold); color: var(--gold); background: var(--accent-soft); }
-.button-link:hover { filter: brightness(1.1); }
-.treasure-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; margin-bottom: 8px; }
+.modal-backdrop-top {
+  z-index: 95;
+}
+
+.modal-card {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-top: 2px solid var(--gold);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+}
+
+.rules-modal {
+  width: min(780px, 94vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rules-card-modal {
+  width: min(540px, 92vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.rules-modal-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 240px;
+}
+
+.rules-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rules-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.rules-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.rules-tabs button.active {
+  background: var(--gold-soft);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.rules-category-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rules-category-pills button {
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+}
+
+.rules-category-pills button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.rules-category-pills button.active {
+  background: var(--gold-soft);
+  border-color: var(--gold);
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-input-wrap .search-icon {
+  position: absolute;
+  left: 9px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.search-input-wrap input {
+  padding-left: 28px;
+  padding-right: 28px;
+  width: 100%;
+}
+
+.search-input-wrap .search-clear {
+  position: absolute;
+  right: 4px;
+  padding: 2px;
+  min-width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+}
+
+.search-input-wrap .search-clear:hover {
+  color: var(--text);
+  background: var(--panel-3);
+}
+
+.rules-hit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.rules-hit-btn {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--ease), background var(--ease);
+}
+
+.rules-hit-btn:hover,
+.rules-hit-btn.active {
+  border-color: var(--gold);
+  background: var(--panel-3);
+}
+
+.rules-hit-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rules-hit-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.rules-books-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.rules-books-list li {
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.rules-books-list li:hover {
+  background: var(--panel-2);
+}
+
+.rules-catalog-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 680px) {
+  .rules-catalog-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rules-draft-box {
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rules-draft-empty {
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.rules-mods {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.rules-saved-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rules-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.rules-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.rules-kv > span {
+  padding: 3px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.rules-desc {
+  white-space: pre-wrap;
+  margin: 4px 0 0;
+  color: var(--text);
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.rules-citation {
+  font-style: italic;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-decoration: none;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  background: var(--gold-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.button-link:hover {
+  filter: brightness(1.12);
+}
+
+.treasure-box {
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius);
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.warn-text {
+  color: var(--warn);
+  margin: 0;
+}
+
+.ok-text {
+  color: var(--ok);
+}
+
+.danger-text {
+  color: var(--danger);
+}

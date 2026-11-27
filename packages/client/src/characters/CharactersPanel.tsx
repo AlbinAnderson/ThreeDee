@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ArrowLeft, BookOpen, Link2, Maximize2, Minimize2, MoreVertical, PawPrint, Upload, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Crosshair, Link2, Maximize2, Minimize2, MoreVertical, PawPrint, Upload, X } from 'lucide-react';
 import {
   canControlToken,
   canManageCharacter,
   characterActions,
   classSummary,
   COMPANION_TYPE_LABEL,
+  companionsOf,
   HARBOR_LABEL,
   isGm,
   tokenActions,
@@ -274,6 +275,16 @@ function AdminMenu({
   );
 }
 
+function useCharacterTabBadges(c: Character) {
+  const characters = useGame((s) => s.characters);
+  const tokens = useGame((s) => s.tokens);
+  const token = c.tokenId ? tokens[c.tokenId] : undefined;
+  const activeBuffs = c.runtime.buffs.filter((b) => b.active).length;
+  const activeConditions = (token?.conditions ?? c.runtime.conditions).length;
+  const companionCount = useMemo(() => companionsOf({ characters }, c.id).length, [characters, c.id]);
+  return { effects: activeBuffs + activeConditions, companions: companionCount };
+}
+
 function CharacterView({ character: c, onBack }: { character: Character; onBack: () => void }) {
   const self = useSelf();
   const manage = canManageCharacter(self, c);
@@ -281,6 +292,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
   const poppedOut = useCharactersUi((s) => s.poppedOut);
   const setTab = (next: CharacterTab) => useCharactersUi.setState({ tab: next });
   const activeTab: CharacterTab = !manage && (tab === 'settings' || tab === 'manage') ? 'sheet' : tab;
+  const badges = useCharacterTabBadges(c);
 
   return (
     <section>
@@ -314,9 +326,11 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
       <div className="segmented sheet-tabs" role="tablist">
         {PLAY_TABS.map(([id, label]) => {
           const Icon = ICON_TABS[id];
+          const count = id === 'effects' ? badges.effects : id === 'companions' ? badges.companions : 0;
           return (
             <button key={id} type="button" role="tab" aria-selected={activeTab === id} aria-label={label} title={Icon ? label : undefined} className={activeTab === id ? 'active' : ''} onClick={() => setTab(id)}>
               {Icon ? <Icon size={13} /> : label}
+              {count > 0 && <span className="sheet-tab-count">{count}</span>}
             </button>
           );
         })}
@@ -343,27 +357,69 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
 export function CharacterPopout() {
   const list = useVisibleCharacters();
   const self = useSelf();
+  const gm = isGm(self);
+  const tokens = useGame((s) => s.tokens);
+  const activeSceneId = useGame((s) => s.activeSceneId);
+  const viewedSceneId = useUi((s) => s.viewedSceneId);
   const selectedId = useCharactersUi((s) => s.selectedId);
   const poppedOut = useCharactersUi((s) => s.poppedOut);
   const tab = useCharactersUi((s) => s.tab);
   const c = poppedOut ? list.find((x) => x.id === selectedId) : undefined;
 
   if (!c) return null;
+  return <CharacterPopoutBody character={c} tab={tab} gm={gm} self={self} tokens={tokens} currentSceneId={gm ? (viewedSceneId ?? activeSceneId) : activeSceneId} />;
+}
+
+function CharacterPopoutBody({
+  character: c,
+  tab,
+  gm,
+  self,
+  tokens,
+  currentSceneId,
+}: {
+  character: Character;
+  tab: CharacterTab;
+  gm: boolean;
+  self: ReturnType<typeof useSelf>;
+  tokens: Record<string, import('@vtt/shared').Token>;
+  currentSceneId: string | null;
+}) {
   const manage = canManageCharacter(self, c);
   const setTab = (next: CharacterTab) => useCharactersUi.setState({ tab: next });
   const close = () => useCharactersUi.setState({ poppedOut: false });
   const rawRight: CharacterTab = tab === 'sheet' ? 'skills' : tab;
   const rightTab: CharacterTab = !manage && (rawRight === 'settings' || rawRight === 'manage') ? 'skills' : rawRight;
+  const badges = useCharacterTabBadges(c);
+  const linked = c.tokenId ? tokens[c.tokenId] : undefined;
+  const canJumpToken = !!linked && (gm || linked.sceneId === currentSceneId);
+
+  function selectLinkedToken() {
+    if (!linked) return;
+    if (linked.sceneId !== currentSceneId) {
+      if (!gm) return;
+      useUi.getState().setViewedScene(linked.sceneId);
+    }
+    useUi.getState().setSelection([linked.id]);
+    close();
+  }
 
   return (
     <div className="sheet-popout-backdrop" onClick={close}>
       <div className="sheet-popout" role="dialog" aria-modal="true" aria-label={`${c.name} character sheet`} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-popout-header">
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
-            <strong style={{ fontSize: 16 }}>{c.name}</strong>
-            <span className="muted small-text">{classSummary(c.build)}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            {c.bio.portraitUrl && <img className="character-avatar" src={c.bio.portraitUrl} alt="" style={{ marginRight: 0 }} />}
+            <strong style={{ fontSize: 16, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</strong>
+            <span className="muted small-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{classSummary(c.build)}</span>
           </div>
           <div className="character-header-actions">
+            <CharacterSwitcher current={c} />
+            {canJumpToken && (
+              <button type="button" className="icon-button" title="Select linked token on map" aria-label="Select token on map" onClick={selectLinkedToken}>
+                <Crosshair size={15} />
+              </button>
+            )}
             <AdminMenu activeTab={rightTab} manage={manage} onSelect={setTab} />
             <button type="button" className="icon-button" title="Close expanded sheet (Esc)" aria-label="Close" onClick={close}>
               <X size={16} />
@@ -378,11 +434,15 @@ export function CharacterPopout() {
           <div className="sheet-popout-right">
             <div className="sheet-popout-tabs">
               <div className="segmented sheet-tabs" role="tablist">
-                {POPOUT_RIGHT_TABS.map(([id, label]) => (
-                  <button key={id} type="button" role="tab" aria-selected={rightTab === id} className={rightTab === id ? 'active' : ''} onClick={() => setTab(id)}>
-                    {label}
-                  </button>
-                ))}
+                {POPOUT_RIGHT_TABS.map(([id, label]) => {
+                  const count = id === 'effects' ? badges.effects : id === 'companions' ? badges.companions : 0;
+                  return (
+                    <button key={id} type="button" role="tab" aria-selected={rightTab === id} className={rightTab === id ? 'active' : ''} onClick={() => setTab(id)}>
+                      {label}
+                      {count > 0 && <span className="sheet-tab-count">{count}</span>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div className="sheet-popout-pane">

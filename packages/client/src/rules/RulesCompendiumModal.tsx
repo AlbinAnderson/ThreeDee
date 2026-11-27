@@ -47,7 +47,10 @@ export function RulesCompendiumModal() {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       // A rules card opened from the compendium closes first.
-      if (e.key === 'Escape' && !useRulesUi.getState().card) close();
+      if (e.key === 'Escape' && !useRulesUi.getState().card) {
+        e.stopPropagation();
+        close();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -60,7 +63,7 @@ export function RulesCompendiumModal() {
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal-card rules-modal" role="dialog" aria-label="PF1e Rules & Compendium">
+      <div className="modal-card rules-modal" role="dialog" aria-modal="true" aria-label="PF1e Rules & Compendium">
         <div className="section-header">
           <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <BookOpen size={16} /> PF1e Rules &amp; Compendium
@@ -103,6 +106,26 @@ export function RulesCompendiumModal() {
   );
 }
 
+const SEARCH_CATEGORIES: [RulesKind | 'all', string][] = [
+  ['all', 'All'],
+  ['equipment', 'Equipment'],
+  ['spell', 'Spells'],
+  ['feat', 'Feats'],
+  ['ability', 'Abilities'],
+  ['deity', 'Deities'],
+  ['domain', 'Domains'],
+];
+
+const KIND_BADGE: Record<RulesKind, string> = {
+  equipment: 'Item',
+  equipmod: 'Mod',
+  spell: 'Spell',
+  feat: 'Feat',
+  ability: 'Ability',
+  deity: 'Deity',
+  domain: 'Domain',
+};
+
 function SearchTab({ gm, loaded }: { gm: boolean; loaded: boolean }) {
   const [kind, setKind] = useState<RulesKind | 'all'>('all');
   const [q, setQ] = useState('');
@@ -137,17 +160,27 @@ function SearchTab({ gm, loaded }: { gm: boolean; loaded: boolean }) {
           Build the local PCGen rules pack on the server with <code>npm run vtt -- rules build data/pcgen/data/pathfinder</code> to enable full offline search. Custom room rules still appear below.
         </p>
       )}
-      <div className="field-row">
-        <select value={kind} onChange={(e) => setKind(e.target.value as RulesKind | 'all')} aria-label="Category">
-          <option value="all">All categories</option>
-          <option value="equipment">Equipment &amp; Magic Items</option>
-          <option value="spell">Spells</option>
-          <option value="feat">Feats</option>
-          <option value="ability">Abilities &amp; Features</option>
-          <option value="deity">Deities</option>
-          <option value="domain">Domains</option>
-        </select>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or type…" aria-label="Search rules" />
+      <div className="search-input-wrap">
+        <Search size={14} className="search-icon" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search spells, feats, weapons, magic items, deities…"
+          aria-label="Search rules"
+          autoFocus
+        />
+        {q && (
+          <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setQ('')}>
+            <X size={13} />
+          </button>
+        )}
+      </div>
+      <div className="rules-category-pills" role="group" aria-label="Rule category">
+        {SEARCH_CATEGORIES.map(([id, label]) => (
+          <button key={id} type="button" className={kind === id ? 'active' : ''} aria-pressed={kind === id} onClick={() => setKind(id)}>
+            {label}
+          </button>
+        ))}
       </div>
       {gm && (
         <label className="checkbox-row small-text">
@@ -167,11 +200,14 @@ function SearchTab({ gm, loaded }: { gm: boolean; loaded: boolean }) {
                 <strong>{h.name}</strong>
                 {h.summary && <span className="muted small-text">{h.summary}</span>}
               </span>
-              <span className="badge subtle">{h.source.short}</span>
+              <span className="rules-hit-badges">
+                {kind === 'all' && <span className="badge">{KIND_BADGE[h.kind]}</span>}
+                <span className="badge subtle">{h.source.short}</span>
+              </span>
             </button>
           </li>
         ))}
-        {!busy && hits.length === 0 && <li className="muted small-text">No matches.</li>}
+        {!busy && hits.length === 0 && <li className="muted small-text" style={{ padding: '12px 4px' }}>No matches{q ? ` for “${q}”` : ''}.</li>}
       </ul>
     </div>
   );

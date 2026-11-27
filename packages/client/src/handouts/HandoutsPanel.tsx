@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ScrollText } from 'lucide-react';
 import { create } from 'zustand';
 import { handoutActions, newId, type Handout, type User } from '@vtt/shared';
 import { CheckboxField, ImageUploadButton, SelectField, TextAreaField, TextField } from '../components/fields';
@@ -47,7 +48,7 @@ export function HandoutsPanel() {
           <li key={h.id}>
             <div className="handout-row">
               <button type="button" className="handout-open" onClick={() => openHandout(h.id)}>
-                {h.imageUrl ? <img src={h.imageUrl} alt="" className="loot-thumb" /> : <span className="loot-thumb empty">✉</span>}
+                {h.imageUrl ? <img src={h.imageUrl} alt="" className="loot-thumb" /> : <span className="loot-thumb empty"><ScrollText size={15} /></span>}
                 <span className="handout-title">{h.title}</span>
               </button>
               {gm && <ShareBadge h={h} />}

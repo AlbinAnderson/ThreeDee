@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Dices, Sparkles } from 'lucide-react';
+import { Dices, Package, Sparkles } from 'lucide-react';
 import {
   canManageCharacter,
   canSeeCl,
@@ -142,7 +142,7 @@ export function LootPanel() {
 function LootRow({ item, holder, onToggle }: { item: LootItem; holder: User | undefined; onToggle: () => void }) {
   return (
     <button type="button" className="loot-row" onClick={onToggle}>
-      {item.imageUrl ? <img className="loot-thumb" src={item.imageUrl} alt="" /> : <span className="loot-thumb empty">?</span>}
+      {item.imageUrl ? <img className="loot-thumb" src={item.imageUrl} alt="" /> : <span className="loot-thumb empty"><Package size={16} /></span>}
       <span className="loot-main">
         <span className="loot-name">
           {item.name}

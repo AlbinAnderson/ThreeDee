@@ -9,10 +9,11 @@ import { tools } from '../tools';
 import { AudioEngine } from '../audio/AudioEngine';
 import { CharacterPopout } from '../characters/CharactersPanel';
 import { ImportDialog } from '../characters/ImportDialog';
-import { useCharactersUi } from '../characters/store';
-import { HandoutViewer } from '../handouts/HandoutsPanel';
+import { useCharactersUi, useImportDialog } from '../characters/store';
+import { HandoutViewer, useHandoutViewer } from '../handouts/HandoutsPanel';
 import { Hotbar } from '../player/MacrosSection';
 import { TurnBar } from '../pf1e/ActionsPanel';
+import { useRulesUi } from '../rules/store';
 import { RollToasts } from './RollToasts';
 import { ShortcutsModal } from './ShortcutsModal';
 import { Sidebar } from './Sidebar';
@@ -24,6 +25,13 @@ function useHotkeys() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (useDialogStore.getState().current) return;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        const rules = useRulesUi.getState();
+        if (rules.compendiumOpen) rules.closeCompendium();
+        else rules.openCompendium('search');
+        return;
+      }
       if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable]')) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const ui = useUi.getState();
@@ -39,6 +47,11 @@ function useHotkeys() {
         return;
       }
       if (e.key === 'Escape') {
+        // Higher-priority modals handle their own Escape; never double-close or clear selection behind them.
+        const rules = useRulesUi.getState();
+        if (rules.card || rules.compendiumOpen) return;
+        if (useImportDialog.getState().current) return useImportDialog.setState({ current: null });
+        if (useHandoutViewer.getState().openId) return useHandoutViewer.setState({ openId: null });
         if (ui.shortcutsOpen) return ui.setShortcutsOpen(false);
         if (useCharactersUi.getState().poppedOut) return useCharactersUi.setState({ poppedOut: false });
         return ui.clearSelection();

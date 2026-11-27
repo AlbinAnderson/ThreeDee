@@ -128,10 +128,30 @@
   white-space: nowrap;
 }
 
-/* Icon-only tabs (Companions) stay compact so the row doesn't wrap. */
+/* Icon-only tabs (Companions, Bio) stay compact so the row doesn't wrap. */
 .sheet-tabs button[title] {
   flex: 0 0 auto;
   padding: 0 5px;
+}
+
+.sheet-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  margin-left: 3px;
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-tabs button.active .sheet-tab-count {
+  background: rgba(228, 172, 68, 0.28);
 }
 
 /* Wide pop-out 2-column Character Sheet */

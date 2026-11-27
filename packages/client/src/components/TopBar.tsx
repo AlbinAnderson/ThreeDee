@@ -81,12 +81,14 @@ export function TopBar() {
 
         <button
           type="button"
-          className="icon-button"
-          title="PF1e Rules & Compendium"
+          className="rules-pill"
+          title="PF1e Rules & Compendium (Ctrl+K)"
           aria-label="PF1e Rules & Compendium"
           onClick={() => useRulesUi.getState().openCompendium()}
         >
-          <BookOpen size={15} />
+          <BookOpen size={13} />
+          <span>Rules</span>
+          <kbd className="topbar-kbd">Ctrl+K</kbd>
         </button>
 
         <button

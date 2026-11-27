@@ -82,7 +82,10 @@ export function RulesCardModal() {
   useEffect(() => {
     if (!card) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        close();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -96,8 +99,8 @@ export function RulesCardModal() {
   const linkUrl = custom?.aonUrl || aonUrl(defaultAonKind(card, record), title);
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal-card rules-card-modal" role="dialog" aria-label={title}>
+    <div className="modal-backdrop modal-backdrop-top" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div className="modal-card rules-card-modal" role="dialog" aria-modal="true" aria-label={title}>
         <div className="section-header">
           <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <BookOpen size={15} /> {title}
