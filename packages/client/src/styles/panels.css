@@ -736,6 +736,15 @@
   border: 1px solid rgba(70, 195, 104, 0.45);
 }
 
+.pip.pip-btn {
+  cursor: help;
+}
+
+.pip.pip-btn:hover {
+  border-color: var(--gold);
+  background: rgba(70, 195, 104, 0.24);
+}
+
 .pip.used {
   background: transparent;
   color: var(--muted);
@@ -790,12 +799,37 @@
   margin-bottom: 4px;
 }
 
+.action-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--ease), background var(--ease);
+}
+
+.action-card:hover {
+  border-color: var(--border-strong);
+  background: var(--panel-3);
+}
+
 .action-main {
   flex: 1;
   min-width: 0;
-  justify-content: space-between;
-  padding: 5px 8px;
+  justify-content: flex-start;
+  padding: 4px 6px;
   text-align: left;
+  background: transparent;
+  border: none;
+}
+
+.action-main:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
 }
 
 .action-list li.blocked .action-main {
@@ -819,11 +853,21 @@
 .aoo-badge {
   font-size: 10px;
   font-weight: 600;
-  padding: 1px 6px;
+  padding: 2px 6px;
   border-radius: 999px;
   background: var(--bg);
+  border: 1px solid transparent;
   color: var(--muted);
   white-space: nowrap;
+}
+
+.badge-btn {
+  cursor: help;
+}
+
+.badge-btn:hover {
+  background: var(--panel);
+  border-color: var(--gold);
 }
 
 .cost-standard {

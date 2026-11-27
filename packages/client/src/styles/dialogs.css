@@ -94,7 +94,9 @@ kbd {
 .infotip-portal {
   position: fixed;
   z-index: 120;
-  max-width: 300px;
+  width: max-content;
+  min-width: 170px;
+  max-width: 280px;
   padding: 8px 10px;
   background: rgba(17, 19, 25, 0.98);
   border: 1px solid var(--border-strong);
@@ -103,9 +105,14 @@ kbd {
   box-shadow: var(--shadow-lg);
   color: var(--text);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.45;
   pointer-events: none;
-  animation: tip-in 90ms ease-out;
+  animation: tip-in 80ms ease-out;
+}
+
+.infotip-portal.pinned {
+  pointer-events: auto;
+  border-color: var(--gold);
 }
 
 .infotip-title {
@@ -151,10 +158,8 @@ kbd {
 @keyframes tip-in {
   from {
     opacity: 0;
-    transform: translateY(2px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }

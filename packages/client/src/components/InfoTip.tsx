@@ -1,8 +1,9 @@
 /**
- * Instant, richly styled breakdown popover rendered in a fixed portal so it
- * never clips inside scrolling panels and appears immediately on hover/focus.
+ * Instant, richly styled breakdown/glossary popover rendered in a fixed portal.
+ * Uses top/bottom coordinates (never CSS transform) so animations never shift position.
+ * Pass `clickToPin` to allow clicking a badge/pill to toggle-pin the popup open.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { signed, type StatLine } from '@vtt/shared';
 
@@ -11,35 +12,88 @@ export interface InfoTipProps {
   line?: StatLine;
   body?: string;
   hint?: string;
+  /** Clicking the trigger pins/unpins the popup (useful for glossary badges). */
+  clickToPin?: boolean;
   children: ReactNode;
   className?: string;
 }
 
-export function InfoTip({ title, line, body, hint, children, className }: InfoTipProps) {
-  const wrapRef = useRef<HTMLSpanElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number; below: boolean } | null>(null);
+interface TipPos {
+  left: number;
+  top?: number;
+  bottom?: number;
+  anchorTop: number;
+}
 
-  const show = useCallback(() => {
-    const wrap = wrapRef.current;
-    const target = (wrap?.firstElementChild as HTMLElement | null) ?? wrap;
-    if (!target) return;
-    const r = target.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) return;
-    const tipWidth = 260;
-    const left = Math.max(10, Math.min(window.innerWidth - tipWidth - 10, r.left + r.width / 2 - tipWidth / 2));
-    const below = r.top < 170;
-    const top = below ? Math.min(window.innerHeight - 120, r.bottom + 8) : Math.max(10, r.top - 8);
-    setPos({ left, top, below });
+function computePos(wrap: HTMLSpanElement | null): TipPos | null {
+  const target = (wrap?.firstElementChild as HTMLElement | null) ?? wrap;
+  if (!target) return null;
+  const r = target.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return null;
+  const tipWidth = 280;
+  const left = Math.max(10, Math.min(window.innerWidth - tipWidth - 10, r.left + r.width / 2 - tipWidth / 2));
+  const below = r.top < 170;
+  if (below) return { left, top: Math.min(window.innerHeight - 100, Math.round(r.bottom + 8)), anchorTop: r.top };
+  return { left, bottom: Math.max(10, Math.round(window.innerHeight - r.top + 8)), anchorTop: r.top };
+}
+
+export function InfoTip({ title, line, body, hint, clickToPin, children, className }: InfoTipProps) {
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const [hoverPos, setHoverPos] = useState<TipPos | null>(null);
+  const [pinnedPos, setPinnedPos] = useState<TipPos | null>(null);
+
+  const pos = pinnedPos ?? hoverPos;
+
+  const showHover = useCallback(() => {
+    const next = computePos(wrapRef.current);
+    if (next) setHoverPos(next);
   }, []);
 
-  const hide = useCallback(() => setPos(null), []);
+  const hideHover = useCallback(() => setHoverPos(null), []);
+
+  const onClick = useCallback(
+    (e: MouseEvent) => {
+      if (!clickToPin) return;
+      e.stopPropagation();
+      setPinnedPos((cur) => (cur ? null : computePos(wrapRef.current)));
+    },
+    [clickToPin],
+  );
 
   useEffect(() => {
     if (!pos) return;
-    const onScroll = () => setPos(null);
+    const onScroll = () => {
+      setHoverPos(null);
+      setPinnedPos((cur) => {
+        if (!cur) return null;
+        const target = (wrapRef.current?.firstElementChild as HTMLElement | null) ?? wrapRef.current;
+        if (!target) return null;
+        return Math.abs(target.getBoundingClientRect().top - cur.anchorTop) > 2 ? null : cur;
+      });
+    };
     window.addEventListener('scroll', onScroll, true);
     return () => window.removeEventListener('scroll', onScroll, true);
   }, [pos]);
+
+  useEffect(() => {
+    if (!pinnedPos) return;
+    const onDown = (e: globalThis.MouseEvent) => {
+      const target = e.target as Node;
+      if (tipRef.current?.contains(target)) return;
+      if (wrapRef.current?.contains(target)) return;
+      setPinnedPos(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPinnedPos(null);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pinnedPos]);
 
   const hasContent = !!(title || body || hint || (line && line.parts.length > 0));
   if (!hasContent) return <>{children}</>;
@@ -49,21 +103,22 @@ export function InfoTip({ title, line, body, hint, children, className }: InfoTi
       ref={wrapRef}
       className={className}
       style={{ display: 'contents' }}
-      onMouseEnter={show}
-      onMouseLeave={hide}
-      onFocus={show}
-      onBlur={hide}
+      onMouseEnter={showHover}
+      onMouseLeave={hideHover}
+      onFocus={showHover}
+      onBlur={hideHover}
+      onClick={clickToPin ? onClick : undefined}
     >
       {children}
       {pos &&
         createPortal(
           <div
-            className="infotip-portal"
+            ref={tipRef}
+            className={`infotip-portal${pinnedPos ? ' pinned' : ''}`}
             role="tooltip"
             style={{
               left: pos.left,
-              top: pos.top,
-              transform: pos.below ? undefined : 'translateY(-100%)',
+              ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }),
             }}
           >
             {title && <div className="infotip-title">{title}</div>}
@@ -81,7 +136,7 @@ export function InfoTip({ title, line, body, hint, children, className }: InfoTi
                 ))}
               </ul>
             )}
-            {hint && <div className="infotip-hint">{hint}</div>}
+            {(hint || pinnedPos) && <div className="infotip-hint">{pinnedPos ? 'Click outside or press Esc to close' : hint}</div>}
           </div>,
           document.body,
         )}
