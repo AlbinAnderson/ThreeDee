@@ -4,7 +4,7 @@
  * JSON export and the PCGen XML compare.
  */
 import { useMemo, useRef, useState } from 'react';
-import { Download, FileCode2, ImageUp, Lock, UserRound, X } from 'lucide-react';
+import { Download, FileCode2, ImageUp, Info, Lock, UserRound, X } from 'lucide-react';
 import {
   BIO_FIELD_KEYS,
   BIO_FIELD_MAX,
@@ -99,8 +99,8 @@ export function BioTab({ character: c }: { character: Character }) {
           <h3>
             <Lock size={12} /> GM notes
             <InfoTip title="GM notes" body="Only GMs can see these. They are never sent to players, not even the character’s owner.">
-              <span className="muted small-text" tabIndex={0}>
-                ⓘ
+              <span className="muted small-text" tabIndex={0} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                <Info size={12} />
               </span>
             </InfoTip>
           </h3>

@@ -26,9 +26,10 @@ export function ShortcutsModal() {
   const general: [string, string][] = [
     ['Space + Drag', 'Pan the map'],
     ['Mouse wheel', 'Zoom in / out'],
+    ['Ctrl + K', 'PF1e Rules & Compendium'],
     ['[', 'Collapse / expand sidebar'],
     ['?', 'Toggle keyboard shortcuts'],
-    ['Esc', 'Close dialog / clear selection'],
+    ['Esc', 'Close top modal / clear selection'],
     ['Delete', 'Remove selected token(s)'],
   ];
 

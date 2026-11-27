@@ -12,6 +12,7 @@ import { resetRulesUi } from '../rules/store';
 import { gameStore } from './gameStore';
 import { notify } from './notifications';
 import { useUi } from './uiStore';
+import { resetChatHistory } from './chatHistory';
 
 interface SessionState {
   connection: GameConnection | null;
@@ -58,6 +59,7 @@ export function leaveRoom() {
   resetCharactersUi();
   resetActionsUi();
   resetRulesUi();
+  resetChatHistory();
   useSession.setState({ connection: null, status: 'idle' });
 }
 

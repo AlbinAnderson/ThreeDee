@@ -31,7 +31,9 @@ export const CombatSchema = z.object({
    * Turns already started in the latest round reached, so round-based
    * durations tick once per turn even if the GM steps back and forward.
    */
-  ticks: z.object({ round: z.number().int().min(0).max(100000), ids: z.array(IdSchema).max(200) }),
+  ticks: z
+    .object({ round: z.number().int().min(0).max(100000), ids: z.array(IdSchema).max(200) })
+    .default(() => ({ round: 0, ids: [] })),
 });
 export type Combat = z.infer<typeof CombatSchema>;
 

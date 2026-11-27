@@ -3,7 +3,7 @@
  * and shopping (Buy from purse with automatic change, or Add free) (Epic 11, #54 & #57).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Coins, Plus, ShoppingBag, X } from 'lucide-react';
+import { BookOpen, Coins, Plus, Search, ShoppingBag, X } from 'lucide-react';
 import {
   allowedMods,
   baseCost,
@@ -23,6 +23,7 @@ import {
   type RulesHit,
 } from '@vtt/shared';
 import { request } from '../net/rpc';
+import { useDialogStore } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { notify } from '../state/notifications';
 import { openRulesCard, useRulesUi } from './store';
@@ -36,11 +37,15 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // A rules card opened from the catalog closes first.
-      if (e.key === 'Escape' && !useRulesUi.getState().card) onClose();
+      // A rules card, a confirm dialog, or the compendium (Ctrl+K, rendered above) closes first.
+      const rules = useRulesUi.getState();
+      if (e.key === 'Escape' && !rules.card && !rules.compendiumOpen && !useDialogStore.getState().current) {
+        e.stopImmediatePropagation();
+        onClose();
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
   useEffect(() => {
@@ -82,7 +87,9 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
   const unitCost = selected?.custom ? selected.custom.cost : priced && typeof priced !== 'string' ? priced.cost : null;
   const totalCp = unitCost !== null ? priceCp(unitCost, qty) : null;
   const purseGp = coinsValue(c.inventory.coins);
-  const canAfford = totalCp !== null && Math.round(purseGp * 100) >= totalCp;
+  const purseCp = Math.round(purseGp * 100);
+  const canAfford = totalCp !== null && purseCp >= totalCp;
+  const deltaCp = totalCp !== null ? purseCp - totalCp : null;
 
   function buy() {
     if (!selected) return;
@@ -112,12 +119,12 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-card rules-modal" role="dialog" aria-label="Equipment Catalog & Shop">
+      <div className="modal-card rules-modal" role="dialog" aria-modal="true" aria-label="Equipment Catalog & Shop">
         <div className="section-header">
           <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <ShoppingBag size={15} /> Catalog &amp; Shop — {c.name}
           </h3>
-          <span className="muted small-text tnum">
+          <span className="muted small-text tnum" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <Coins size={12} /> Purse: {purseGp.toLocaleString('en-US', { maximumFractionDigits: 2 })} gp
           </span>
           <button type="button" className="icon-button" aria-label="Close catalog" onClick={onClose}>
@@ -125,7 +132,15 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
           </button>
         </div>
 
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search weapons, armor, gear, magic items…" autoFocus />
+        <div className="search-input-wrap">
+          <Search size={14} className="search-icon" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search weapons, armor, gear, magic items…" aria-label="Search equipment catalog" autoFocus />
+          {q && (
+            <button type="button" className="search-clear" aria-label="Clear search" onClick={() => setQ('')}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
 
         <div className="rules-catalog-split">
           <ul className="rules-hit-list">
@@ -133,7 +148,7 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
               <li key={h.key}>
                 <button
                   type="button"
-                  className={`rules-hit-btn${(selected?.rec?.key === h.key || selected?.custom?.id === h.customId) ? ' active' : ''}`}
+                  className={`rules-hit-btn${(selected?.rec && selected.rec.key === h.key) || (!!h.customId && selected?.custom?.id === h.customId) ? ' active' : ''}`}
                   onClick={() => void pick(h)}
                 >
                   <span className="rules-hit-main">
@@ -222,7 +237,15 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
                 </ul>
               )}
 
-              <div className="button-row" style={{ marginTop: 8 }}>
+              {deltaCp !== null && (
+                <div className={`small-text tnum ${deltaCp >= 0 ? 'ok-text' : 'danger-text'}`}>
+                  {deltaCp >= 0
+                    ? `After purchase: ${(deltaCp / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })} gp remaining`
+                    : `Short by ${(Math.abs(deltaCp) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })} gp`}
+                </div>
+              )}
+
+              <div className="button-row" style={{ marginTop: 4 }}>
                 <button type="button" className="small gold" disabled={!canAfford} onClick={buy} title={canAfford ? 'Deducts from purse with change' : 'Not enough coin in purse'}>
                   <Coins size={12} /> Buy
                 </button>
@@ -238,6 +261,13 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
                   </button>
                 )}
               </div>
+            </div>
+          )}
+          {!selected && (
+            <div className="rules-draft-empty small-text">
+              <ShoppingBag size={22} />
+              <strong>Select an item to configure</strong>
+              <span>Apply Masterwork, special materials, or +1 to +5 enhancement bonuses and buy directly from your purse.</span>
             </div>
           )}
         </div>

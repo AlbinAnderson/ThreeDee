@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import type { Token } from '@vtt/shared';
 import { conditionStyle, hpColor } from '../config/conditions';
-import { useCurrentSceneId, useGame, useIsGm, useSelf } from '../state/hooks';
+import { useCurrentSceneId, useGame, useSelf } from '../state/hooks';
 import { useUi } from '../state/uiStore';
+import { focusToken } from '../lib/tokens';
+import { canSeeTokenHp } from '../lib/tokenVisibility';
 
 function useSceneTokens(filter: (t: Token) => boolean) {
   const sceneId = useCurrentSceneId();
@@ -27,7 +29,6 @@ export function OthersSection() {
 }
 
 function TokenStatusList({ tokens, empty }: { tokens: Token[]; empty: string }) {
-  const gm = useIsGm();
   const self = useSelf();
   const users = useGame((s) => s.users);
   const selected = useUi((s) => s.selectedTokenIds);
@@ -35,11 +36,11 @@ function TokenStatusList({ tokens, empty }: { tokens: Token[]; empty: string }) 
   return (
     <ul className="status-list">
       {tokens.map((t) => {
-        const hpShown = t.hp && (gm || t.hpVisible || t.ownerIds.includes(self.id));
+        const hpShown = canSeeTokenHp(self, t);
         const owners = t.ownerIds.map((id) => users[id]?.name).filter(Boolean).join(', ');
         return (
           <li key={t.id} className={selected.includes(t.id) ? 'selected' : ''}>
-            <button type="button" onClick={() => useUi.getState().setSelection([t.id])}>
+            <button type="button" onClick={() => focusToken(t.id)}>
               <span className="status-row">
                 <span className="swatch" style={{ background: t.color }} />
                 <span className="status-name">{t.name || '(unnamed)'}</span>

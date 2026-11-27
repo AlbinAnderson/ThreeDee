@@ -4,6 +4,7 @@ import { conditionStyle, hpColor } from '../../config/conditions';
 import { useGame, useIsGm, useSelf } from '../../state/hooks';
 import { useUi } from '../../state/uiStore';
 import { useInteraction } from '../interactionStore';
+import { canSeeTokenHp } from '../../lib/tokenVisibility';
 import type { LayerProps } from './types';
 
 export function TokenLayer({ scene }: LayerProps) {
@@ -35,7 +36,7 @@ export function TokenLayer({ scene }: LayerProps) {
           selected={selected.includes(t.id)}
           preview={preview[t.id]}
           isTurn={t.id === currentTokenId}
-          showHp={!!t.hp && (gm || t.hpVisible || t.ownerIds.includes(self.id))}
+          showHp={canSeeTokenHp(self, t)}
         />
       ))}
     </g>

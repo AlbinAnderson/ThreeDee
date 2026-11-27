@@ -85,6 +85,20 @@ const CLASSES: Record<string, ClassChassis> = {
   commoner: c(6, 'half', []),
   expert: c(8, 'threeQuarter', ['will']),
   warrior: c(10, 'full', ['fort']),
+  // Creature types (for companions, familiars & Bestiary .pcg files; Bestiary p.306-310)
+  aberration: c(8, 'threeQuarter', ['will']),
+  animal: c(8, 'threeQuarter', ['fort', 'ref']),
+  construct: c(10, 'full', []),
+  dragon: c(12, 'full', ['fort', 'ref', 'will']),
+  fey: c(6, 'half', ['ref', 'will']),
+  magicalbeast: c(10, 'full', ['fort', 'ref']),
+  ooze: c(8, 'threeQuarter', []),
+  outsiderfortref: c(10, 'full', ['fort', 'ref']),
+  outsiderfortwill: c(10, 'full', ['fort', 'will']),
+  outsiderrefwill: c(10, 'full', ['ref', 'will']),
+  plant: c(8, 'threeQuarter', ['fort']),
+  undead: c(8, 'threeQuarter', ['will']),
+  vermin: c(8, 'threeQuarter', ['fort']),
 };
 
 export function lookupClass(name: string): ClassChassis | undefined {

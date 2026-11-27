@@ -45,13 +45,16 @@ function setup(opts: { shared?: boolean; tokens?: boolean; type?: 'eidolon' | 'a
 }
 
 describe('[Epic 9] regressions', () => {
-  test('v11 -> v12 migration adds companion: null to every character', () => {
+  test('v11 -> v12 migration adds companion: null to every character and backfills missing combat.ticks', () => {
     const state = createInitialState('scene1');
     const c = makePcgCharacter(undefined, { id: 'x' }) as unknown as Record<string, unknown>;
     delete c.companion;
-    const migrated = migrateState({ ...state, schemaVersion: 11, characters: { x: c } });
+    const combat = { ...state.combat } as Record<string, unknown>;
+    delete combat.ticks;
+    const migrated = migrateState({ ...state, schemaVersion: 11, combat, characters: { x: c } });
     assert.equal(migrated.schemaVersion, CURRENT_SCHEMA_VERSION);
     assert.equal(migrated.characters.x!.companion, null);
+    assert.deepEqual(migrated.combat.ticks, { round: 0, ids: [] });
   });
 
   test('schema bounds: trick lists are capped and unique (case-insensitive)', () => {

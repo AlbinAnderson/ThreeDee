@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { BookOpen, ExternalLink, X } from 'lucide-react';
+import { useDialogStore } from '../state/dialogs';
 import {
   aonEquipmentKind,
   aonUrl,
@@ -81,11 +82,15 @@ export function RulesCardModal() {
 
   useEffect(() => {
     if (!card) return;
+    // Capture phase + stopImmediatePropagation: the card is the top-most layer (z 95), so it alone
+    // consumes Escape even when the compendium/catalog/handout listeners were registered earlier.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key !== 'Escape' || useDialogStore.getState().current) return;
+      e.stopImmediatePropagation();
+      close();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [card, close]);
 
   if (!card) return null;
@@ -96,8 +101,8 @@ export function RulesCardModal() {
   const linkUrl = custom?.aonUrl || aonUrl(defaultAonKind(card, record), title);
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal-card rules-card-modal" role="dialog" aria-label={title}>
+    <div className="modal-backdrop modal-backdrop-top" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div className="modal-card rules-card-modal" role="dialog" aria-modal="true" aria-label={title}>
         <div className="section-header">
           <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <BookOpen size={15} /> {title}

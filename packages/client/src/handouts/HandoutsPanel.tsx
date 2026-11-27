@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ScrollText, X } from 'lucide-react';
 import { create } from 'zustand';
 import { handoutActions, newId, type Handout, type User } from '@vtt/shared';
 import { CheckboxField, ImageUploadButton, SelectField, TextAreaField, TextField } from '../components/fields';
@@ -47,7 +48,7 @@ export function HandoutsPanel() {
           <li key={h.id}>
             <div className="handout-row">
               <button type="button" className="handout-open" onClick={() => openHandout(h.id)}>
-                {h.imageUrl ? <img src={h.imageUrl} alt="" className="loot-thumb" /> : <span className="loot-thumb empty">✉</span>}
+                {h.imageUrl ? <img src={h.imageUrl} alt="" className="loot-thumb" /> : <span className="loot-thumb empty"><ScrollText size={15} /></span>}
                 <span className="handout-title">{h.title}</span>
               </button>
               {gm && <ShareBadge h={h} />}
@@ -179,8 +180,8 @@ export function HandoutViewer() {
       <div className="modal handout-modal">
         <div className="inspector-header">
           <strong>{handout.title}</strong>
-          <button type="button" className="icon-button" onClick={() => openHandout(null)} title="Close (Esc)">
-            ×
+          <button type="button" className="icon-button" onClick={() => openHandout(null)} title="Close (Esc)" aria-label="Close handout">
+            <X size={15} />
           </button>
         </div>
         {handout.imageUrl && <img src={handout.imageUrl} alt={handout.title} className="handout-image" />}
