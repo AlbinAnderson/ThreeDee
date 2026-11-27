@@ -148,7 +148,7 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
               <li key={h.key}>
                 <button
                   type="button"
-                  className={`rules-hit-btn${(selected?.rec?.key === h.key || selected?.custom?.id === h.customId) ? ' active' : ''}`}
+                  className={`rules-hit-btn${(selected?.rec && selected.rec.key === h.key) || (!!h.customId && selected?.custom?.id === h.customId) ? ' active' : ''}`}
                   onClick={() => void pick(h)}
                 >
                   <span className="rules-hit-main">

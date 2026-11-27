@@ -147,9 +147,9 @@ function ChatModeMenu({ users, selfId }: { users: Record<string, User>; selfId: 
     // Capture phase so the popover consumes Escape before TableView clears the selection.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || useDialogStore.getState().current) return;
-      // A rules modal opened on top (Ctrl+K) closes first.
+      // A rules modal or shortcuts modal opened on top closes first.
       const rules = useRulesUi.getState();
-      if (rules.card || rules.compendiumOpen) return;
+      if (rules.card || rules.compendiumOpen || useUi.getState().shortcutsOpen) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       close(true);
