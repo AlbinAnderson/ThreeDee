@@ -12,6 +12,7 @@ import {
   computeCharacterStats,
   itemFromRecord,
   makeItem,
+  matchCampaign,
   monsterToCharacter,
   monsterToken,
   normalizeAonUrl,
@@ -304,6 +305,17 @@ describe('unit: [Epic 11] PCGen rules pack builder & helpers', () => {
       const { manifest } = buildRulesPack(pf, out);
       assert.ok(manifest.books.some((b) => b.key === 'Ultimate Combat' && b.records === 1));
       assert.ok(!manifest.books.some((b) => b.key === 'Pathfinder RPG Core Supplements'));
+
+      // Variant campaign lines ("~ Player Options Only", "PFS ~") and MultiSets match their base books.
+      const books = [
+        { key: 'Core Rulebook', name: 'Core Rulebook' },
+        { key: 'Bestiary 2', name: 'Bestiary 2' },
+        { key: 'Bestiary 3', name: 'Bestiary 3' },
+      ];
+      assert.equal(matchCampaign('Bestiary 2 ~ Player Options Only', books)?.key, 'Bestiary 2');
+      assert.equal(matchCampaign('Bestiary 3 ~ Player Options Only', books)?.key, 'Bestiary 3');
+      assert.equal(matchCampaign('PFS ~ Core Rulebook', books)?.key, 'Core Rulebook');
+      assert.equal(matchCampaign('Pathfinder RPG Core Supplements', books)?.key, 'Core Rulebook');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

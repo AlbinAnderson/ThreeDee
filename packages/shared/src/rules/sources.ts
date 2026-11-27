@@ -19,11 +19,21 @@ const MULTISET_ALIASES = new Set([
   'pathfindercore',
 ]);
 
+/** Strip PCGen variant markers ("Bestiary 2 ~ Player Options Only", "PFS ~ Core Rulebook", "Foo (PFS)"). */
+function stripVariant(campaign: string): string {
+  return campaign
+    .replace(/^\s*pfs\s*~\s*/i, '')
+    .replace(/\s*~\s*player options only\s*$/i, '')
+    .replace(/\s*\(pfs\)\s*$/i, '')
+    .trim();
+}
+
 /**
  * The pack book a .pcg CAMPAIGN line refers to. PCGen 6 writes the .pcc KEY
  * ("Core Rulebook"); older files write "Paizo - Pathfinder Roleplaying Game
  * Core Rulebook". Exact key/name matches win, then the
- * same name after the publisher prefix (so "... Bestiary 2" never matches "Bestiary").
+ * same name after the publisher prefix (so "... Bestiary 2" never matches "Bestiary"),
+ * then variant markers ("~ Player Options Only", "PFS ~") and MultiSet bundles.
  */
 export function matchCampaign(campaign: string, books: readonly Pick<RulesBook, 'key' | 'name'>[]): Pick<RulesBook, 'key' | 'name'> | undefined {
   const n = norm(campaign);
@@ -33,6 +43,11 @@ export function matchCampaign(campaign: string, books: readonly Pick<RulesBook, 
   const stripped = PREFIXES.reduce((acc, p) => (acc.startsWith(p) && acc.length > p.length ? acc.slice(p.length) : acc), n);
   const byStripped = books.find((b) => norm(b.key) === stripped || norm(b.name) === stripped);
   if (byStripped) return byStripped;
+  const base = norm(stripVariant(campaign));
+  if (base && base !== n) {
+    const byVariant = books.find((b) => norm(b.key) === base || norm(b.name) === base);
+    if (byVariant) return byVariant;
+  }
   if (MULTISET_ALIASES.has(n) || MULTISET_ALIASES.has(stripped)) {
     return books.find((b) => norm(b.key) === 'corerulebook' || norm(b.name) === 'corerulebook');
   }
