@@ -364,7 +364,8 @@ export function spellDcLevel(info: CasterInfo, name: string, slotLevel: number, 
 }
 
 export function spellDc(c: Character, info: CasterInfo, name: string, dcLevel: number, schoolOverride?: string | null): number {
-  const school = schoolOverride ? schoolOverride.split(/[\s(]/)[0]! : spellSchool(name);
+  const rawSchool = schoolOverride ?? spellSchool(name) ?? c.rulesData.spellSchools[normalizeName(name)] ?? null;
+  const school = rawSchool ? rawSchool.split(/[\s(]/)[0]! : null;
   return info.dcBase + dcLevel + spellFocusBonus(c, school);
 }
 

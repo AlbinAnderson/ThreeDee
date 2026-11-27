@@ -16,7 +16,7 @@
  *  - Stacks ("Arrows (20)", PCGen BASEQTY) pay per-piece ammunition mods for every piece.
  *  - Potion 50 × spell level × CL, scroll 25 × SL × CL, wand 750 × SL × CL (0-level counts as ½).
  */
-import type { InventoryItem, ItemArmor, ItemWeapon } from '../entities/pf1e';
+import type { InventoryItem, ItemArmor, ItemWeapon, RulesBonus } from '../entities/pf1e';
 import { detectGear } from '../pf1e/gear';
 import { makeItem } from '../pf1e/inventory';
 import type { EquipmentRecord } from './types';
@@ -247,6 +247,30 @@ export function armorFromRecord(rec: EquipmentRecord, mods: ItemMods = NO_MODS):
   };
 }
 
+/** Filter passive static bonuses from an EquipmentRecord so armor/shield/weapon enhancement is never double-counted. */
+export function itemBonusesFromRecord(rec: EquipmentRecord, armor: ItemArmor | null, weapon: ItemWeapon | null): RulesBonus[] {
+  if (!rec.bonuses?.length) return [];
+  return rec.bonuses
+    .filter((b) => {
+      if (armor && b.target === 'ac' && (b.type === 'armor' || b.type === 'shield' || b.type === 'enhancement')) return false;
+      if (
+        weapon &&
+        b.type === 'enhancement' &&
+        (b.target === 'ac' ||
+          b.target === 'attack' ||
+          b.target === 'attackMelee' ||
+          b.target === 'attackRanged' ||
+          b.target === 'damage' ||
+          b.target === 'damageMelee' ||
+          b.target === 'damageRanged')
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .slice(0, 20);
+}
+
 /** A rules-pack record (with mods) as a new inventory item. */
 export function itemFromRecord(rec: EquipmentRecord, id: string, mods: ItemMods = NO_MODS, quantity = 1, opts: { allowUnpriced?: boolean } = {}): InventoryItem | string {
   let priced = priceWithMods(rec, mods);
@@ -273,6 +297,7 @@ export function itemFromRecord(rec: EquipmentRecord, id: string, mods: ItemMods 
     charges: has(rec, 'Wand') ? { current: 50, max: 50 } : detected.charges,
     tradeGood: isTradeGood(rec),
     ruleKey: rec.key.slice(0, 120),
+    bonuses: itemBonusesFromRecord(rec, armor, weapon),
   });
 }
 
@@ -298,6 +323,7 @@ export function applyRecordToItem(item: InventoryItem, rec: EquipmentRecord): In
     value: item.value || (baseCost(rec) ?? 0),
     tradeGood: item.tradeGood || isTradeGood(rec),
     ruleKey: rec.key.slice(0, 120),
+    bonuses: itemBonusesFromRecord(rec, armor ?? item.armor, weapon ?? (armor ? null : item.weapon)),
   };
 }
 

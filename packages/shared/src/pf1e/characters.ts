@@ -1,5 +1,5 @@
 /** Pure helpers for PF1e characters (shared by client UI and server tests). */
-import { EMPTY_RUNTIME, EMPTY_SHEET, type Character } from '../entities/pf1e';
+import { EMPTY_RULES_DATA, EMPTY_RUNTIME, EMPTY_SHEET, type Character } from '../entities/pf1e';
 import type { PcgenCharacter } from '../pcgen/schema';
 import { seedBio, splitDmNotes } from './bio';
 import { seedInventory } from './inventory';
@@ -46,6 +46,7 @@ export function createCharacterFromPcg(
     inventory: seedInventory(build),
     companion: null,
     bio: seedBio(build, dmNotes),
+    rulesData: structuredClone(EMPTY_RULES_DATA),
     createdAt: opts.now,
     updatedAt: opts.now,
   };

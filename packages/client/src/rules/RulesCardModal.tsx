@@ -38,6 +38,10 @@ function defaultAonKind(target: RulesCardTarget, rec: RulesRecord | null): AonKi
       return 'deity';
     case 'domain':
       return 'domain';
+    case 'class':
+      return 'class';
+    case 'race':
+      return 'race';
     case 'equipment':
       return 'equipment';
     default:
@@ -294,6 +298,75 @@ function RecordDetails({ record }: { record: RulesRecord }) {
         {record.symbol && (
           <div>
             <strong>Symbol:</strong> {record.symbol}
+          </div>
+        )}
+        {record.desc && <p className="rules-desc">{record.desc}</p>}
+      </div>
+    );
+  }
+  if (record.kind === 'class') {
+    const babLabel = record.bab === 'full' ? 'Full' : record.bab === 'threeQuarter' ? '¾' : record.bab === 'half' ? '½' : '—';
+    return (
+      <div className="rules-body small-text">
+        <div className="rules-kv">
+          {record.hd && (
+            <span>
+              <strong>HD:</strong> d{record.hd}
+            </span>
+          )}
+          <span>
+            <strong>BAB:</strong> {babLabel}
+          </span>
+          <span>
+            <strong>Good saves:</strong> {record.goodSaves.length ? record.goodSaves.map((s) => s[0]!.toUpperCase() + s.slice(1)).join(', ') : 'None'}
+          </span>
+          {record.skillRanks !== null && (
+            <span>
+              <strong>Skill ranks:</strong> {record.skillRanks} + Int
+            </span>
+          )}
+        </div>
+        {record.classSkills.length > 0 && (
+          <div>
+            <strong>Class skills:</strong> {record.classSkills.join(', ')}
+          </div>
+        )}
+        {record.desc && <p className="rules-desc">{record.desc}</p>}
+      </div>
+    );
+  }
+  if (record.kind === 'race') {
+    const mods = Object.entries(record.abilityMods)
+      .map(([k, v]) => `${v! >= 0 ? '+' : ''}${v} ${k}`)
+      .join(', ');
+    const skills = Object.entries(record.skillBonuses)
+      .map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${v}`)
+      .join(', ');
+    return (
+      <div className="rules-body small-text">
+        <div className="rules-kv">
+          {record.size && (
+            <span>
+              <strong>Size:</strong> {record.size}
+            </span>
+          )}
+          {record.speed !== null && (
+            <span>
+              <strong>Speed:</strong> {record.speed} ft{record.steady ? ' (steady)' : ''}
+            </span>
+          )}
+          <span>
+            <strong>Abilities:</strong> {record.anyPlusTwo ? '+2 to one ability' : mods || '—'}
+          </span>
+        </div>
+        {(record.darkvision > 0 || record.lowLight) && (
+          <div>
+            <strong>Senses:</strong> {[record.darkvision > 0 ? `Darkvision ${record.darkvision} ft` : null, record.lowLight ? 'Low-light vision' : null].filter(Boolean).join(', ')}
+          </div>
+        )}
+        {skills && (
+          <div>
+            <strong>Racial skill bonuses:</strong> {skills}
           </div>
         )}
         {record.desc && <p className="rules-desc">{record.desc}</p>}

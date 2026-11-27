@@ -84,6 +84,92 @@ export const BonusTypeSchema = z.enum([
   'trait',
 ]);
 
+// ------------------------------------------------------------------ rules-pack data snapshots (Epic 13)
+
+export const RulesBonusTargetSchema = z.enum([
+  'STR',
+  'DEX',
+  'CON',
+  'INT',
+  'WIS',
+  'CHA',
+  'ac',
+  'initiative',
+  'attack',
+  'attackMelee',
+  'attackRanged',
+  'damage',
+  'damageMelee',
+  'damageRanged',
+  'fort',
+  'ref',
+  'will',
+  'saves',
+  'speed',
+  'hp',
+  'skill',
+]);
+export type RulesBonusTarget = z.infer<typeof RulesBonusTargetSchema>;
+
+/** Unconditional static bonus parsed from a PCGen `.lst` BONUS: tag (Epic 13.2). */
+export const RulesBonusSchema = z.object({
+  target: RulesBonusTargetSchema,
+  /** Canonical PF1e skill name when `target === 'skill'`. */
+  skill: z.string().trim().min(1).max(60).optional(),
+  value: z.number().int().min(-50).max(50),
+  type: BonusTypeSchema,
+});
+export type RulesBonus = z.infer<typeof RulesBonusSchema>;
+
+/** One resolved passive bonus on a character from a feat/trait/ability record in the rules pack. */
+export const CharacterRulesBonusSchema = RulesBonusSchema.extend({
+  /** Unique id (`<normalizedRecordKey>:<index>`) so bonuses stay bounded and deduplicated. */
+  id: z.string().trim().min(1).max(100),
+  source: z.string().trim().min(1).max(80),
+});
+export type CharacterRulesBonus = z.infer<typeof CharacterRulesBonusSchema>;
+
+export const ClassSnapshotSchema = z.object({
+  hd: z.number().int().min(4).max(12),
+  bab: z.enum(['full', 'threeQuarter', 'half']),
+  goodSaves: z.array(SaveKeySchema).max(3),
+  prestige: z.boolean(),
+  classSkills: z.array(z.string().trim().min(1).max(60)).max(40),
+});
+export type ClassSnapshot = z.infer<typeof ClassSnapshotSchema>;
+
+export const RaceSnapshotSchema = z.object({
+  size: SizeNameSchema,
+  speed: z.number().int().min(0).max(200),
+  abilityMods: StatAdjustSchema,
+  anyPlusTwo: z.boolean(),
+  steady: z.boolean(),
+  darkvision: z.number().int().min(0).max(600),
+  lowLight: z.boolean(),
+  skillBonuses: z
+    .record(z.string().trim().min(1).max(60), z.number().int().min(-50).max(50))
+    .refine((r) => Object.keys(r).length <= 30, 'Too many racial skill bonuses'),
+});
+export type RaceSnapshot = z.infer<typeof RaceSnapshotSchema>;
+
+/** Compact server-resolved snapshot of PCGen rules-pack data relevant to one character (Epic 13.3). */
+export const CharacterRulesDataSchema = z.object({
+  classes: z
+    .record(z.string().trim().min(1).max(60), ClassSnapshotSchema)
+    .refine((r) => Object.keys(r).length <= 20, 'Too many snapshotted classes'),
+  race: RaceSnapshotSchema.nullable(),
+  bonuses: z
+    .array(CharacterRulesBonusSchema)
+    .max(100)
+    .refine((arr) => new Set(arr.map((b) => b.id)).size === arr.length, 'Duplicate rules bonus id'),
+  spellSchools: z
+    .record(z.string().trim().min(1).max(80), z.string().trim().min(1).max(40))
+    .refine((r) => Object.keys(r).length <= 400, 'Too many snapshotted spell schools'),
+});
+export type CharacterRulesData = z.infer<typeof CharacterRulesDataSchema>;
+
+export const EMPTY_RULES_DATA: CharacterRulesData = { classes: {}, race: null, bonuses: [], spellSchools: {} };
+
 export const BuffEffectSchema = z.object({
   target: BuffTargetSchema,
   value: z.number().int().min(-50).max(50),
@@ -410,6 +496,8 @@ export const InventoryItemSchema = z.object({
   tradeGood: z.boolean(),
   /** Rules-pack equipment KEY this item came from (exact stats, rules card), or null. */
   ruleKey: z.string().max(120).nullable(),
+  /** Passive static bonuses parsed from PCGen rules-pack equipment record (Epic 13). */
+  bonuses: z.array(RulesBonusSchema).max(20),
 });
 export type InventoryItem = z.infer<typeof InventoryItemSchema>;
 
@@ -634,6 +722,8 @@ export const CharacterSchema = z.object({
   companion: CompanionLinkSchema.nullable(),
   /** Biography, portrait, notes tree, chronicle and GM notes (Epic 10). */
   bio: CharacterBioSchema,
+  /** Server-resolved PCGen rules-pack snapshot for this character's classes, race, bonuses & spell schools (Epic 13). */
+  rulesData: CharacterRulesDataSchema,
   createdAt: z.number(),
   updatedAt: z.number(),
 });

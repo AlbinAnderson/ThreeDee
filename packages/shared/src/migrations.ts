@@ -184,6 +184,27 @@ const migrations: Record<number, Migration> = {
       ),
     };
   },
+  14: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 15,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => {
+          const inv = (c.inventory ?? {}) as Record<string, unknown>;
+          const items = Array.isArray(inv.items) ? (inv.items as Record<string, unknown>[]) : [];
+          return [
+            id,
+            {
+              ...c,
+              rulesData: { classes: {}, race: null, bonuses: [], spellSchools: {}, ...((c.rulesData as object | undefined) ?? {}) },
+              inventory: { ...inv, items: items.map((i) => ({ bonuses: [], ...i })) },
+            },
+          ];
+        }),
+      ),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {

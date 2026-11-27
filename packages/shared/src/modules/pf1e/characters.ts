@@ -15,10 +15,12 @@ import { buildHasDmNotes } from '../../pf1e/bio';
 import { mergeReimport } from '../../pf1e/characters';
 import { computeCharacterStats } from '../../pf1e/engine';
 import { seedInventory } from '../../pf1e/inventory';
+import { buildCharacterRulesData, isRulesDataEmpty } from '../../pf1e/rulesSnapshot';
 import { tokenSyncFor } from '../../pf1e/tokenSync';
 import { applyRecordToItem } from '../../rules/pricing';
 import type { RulesProvider } from '../../rules/types';
 import {
+  CharacterRulesDataSchema,
   CharacterRuntimeSchema,
   CharacterSchema,
   CharacterSheetSchema,
@@ -155,6 +157,7 @@ function copyHpBack(draft: Draft<GameState>, c: Draft<Character>) {
 export const characterActions = {
   /** Save a parsed character into the room. Players import characters for themselves. */
   import: defineAction('character/import', z.object({ character: CharacterSchema }), {
+    optimistic: false,
     authorize(ctx, { character: c }) {
       if (ctx.state.characters[c.id]) return 'Character already exists';
       if (Object.keys(ctx.state.characters).length >= MAX_CHARACTERS_PER_ROOM) return 'Too many characters in this room';
@@ -162,6 +165,8 @@ export const characterActions = {
       if (c.ownerId && !ctx.state.users[c.ownerId]) return 'Unknown owner';
       if (!isGm(ctx.user) && c.ownerId !== ctx.user.id) return 'Players can only import their own characters';
       if (c.inventory.items.some((i) => i.lootId !== null)) return 'Imported items cannot reference party loot';
+      if (c.inventory.items.some((i) => i.bonuses.length > 0)) return 'Item bonuses are computed by the server';
+      if (!isRulesDataEmpty(c.rulesData)) return 'Rules data is computed by the server';
       if (!c.inventory.loadouts.some((l) => l.id === c.inventory.activeLoadoutId)) return 'Invalid active loadout';
       if (Object.keys(c.runtime.prepared).length > 0) return 'Prepare spells after importing';
       if (c.companion !== null) return 'Link companions after importing';
@@ -175,6 +180,7 @@ export const characterActions = {
         character: {
           ...character,
           inventory: enrichInventoryFromRules(character.inventory, character.build, ctx.rules),
+          rulesData: buildCharacterRulesData(character.build, ctx.rules),
           source: { ...character.source, importedBy: ctx.user.id, importedAt: now },
           createdAt: now,
           updatedAt: now,
@@ -328,40 +334,93 @@ export const characterActions = {
     'character/reimport',
     z.object({
       id: IdSchema,
-      build: PcgenCharacterSchema,
-      fileName: z.string().max(255),
+      /** Required on client submission (checked in authorize); stripped by redactPayload for non-viewers receiving only a linked-token sync. */
+      build: PcgenCharacterSchema.optional(),
+      fileName: z.string().max(255).optional(),
       replaceInventory: z.boolean().optional(),
       /** Reseed the bio text, notes and chronicle from the file (portrait and GM notes are kept). */
       replaceBio: z.boolean().optional(),
       /** Filled in by the server when replaceInventory uses the rules pack. */
       enrichedInventory: InventorySchema.optional(),
+      /** Filled in by the server from the loaded rules pack (preserved when no pack is loaded). */
+      rulesData: CharacterRulesDataSchema.optional(),
+      /** Filled in by the server only when a linked token's visible stats actually change. */
+      tokenId: IdSchema.optional(),
+      sync: TokenSyncSchema.optional(),
+      initiative: z.number().int().optional(),
     }),
     {
-      authorize(ctx, { id, build }) {
+      optimistic: false,
+      authorize(ctx, { id, build, fileName }) {
         const ok = requireManage(ctx, id);
         if (ok !== true) return ok;
+        if (!build || fileName === undefined) return 'Build and file name are required';
         return !buildHasDmNotes(build) || 'GM notes must be moved out of the imported build';
       },
       prepare(ctx, p) {
-        if (!p.replaceInventory || !ctx.rules) return { id: p.id, build: p.build, fileName: p.fileName, replaceInventory: p.replaceInventory, replaceBio: p.replaceBio };
-        const seeded = seedInventory(p.build);
-        const enriched = enrichInventoryFromRules(seeded, p.build, ctx.rules);
-        return {
-          id: p.id,
-          build: p.build,
-          fileName: p.fileName,
+        const existing = ctx.state.characters[p.id]!;
+        const build = p.build!;
+        const fileName = p.fileName!;
+        const hasRules = !!ctx.rules && ctx.rules.loaded !== false;
+        let enrichedInventory: Inventory | undefined;
+        if (p.replaceInventory && hasRules) {
+          const seeded = seedInventory(build);
+          const enriched = enrichInventoryFromRules(seeded, build, ctx.rules);
+          if (enriched !== seeded) enrichedInventory = enriched;
+        }
+        // Only recompute rulesData when a rules pack is loaded; otherwise preserve existing rulesData.
+        const rulesData = hasRules ? buildCharacterRulesData(build, ctx.rules) : undefined;
+        const preview = mergeReimport(existing, build, {
+          fileName,
+          importedBy: ctx.user.id,
+          now: Date.now(),
           replaceInventory: p.replaceInventory,
           replaceBio: p.replaceBio,
-          ...(enriched !== seeded ? { enrichedInventory: enriched } : {}),
+        });
+        if (p.replaceInventory && enrichedInventory) preview.inventory = enrichedInventory;
+        if (rulesData) preview.rulesData = rulesData;
+        const token = existing.tokenId ? ctx.state.tokens[existing.tokenId] : undefined;
+        let syncFields: { tokenId?: string; sync?: z.infer<typeof TokenSyncSchema>; initiative?: number } = {};
+        if (token) {
+          const beforeSync = tokenSyncFor(ctx.state, existing, token);
+          const afterSync = tokenSyncFor(ctx.state, preview, token);
+          const beforeInit = clampInit(computeCharacterStats(existing).initiative.total);
+          const afterInit = clampInit(computeCharacterStats(preview).initiative.total);
+          if (JSON.stringify(beforeSync) !== JSON.stringify(afterSync) || beforeInit !== afterInit) {
+            syncFields = { tokenId: token.id, sync: afterSync, initiative: afterInit };
+          }
+        }
+        return {
+          id: p.id,
+          build,
+          fileName,
+          replaceInventory: p.replaceInventory,
+          replaceBio: p.replaceBio,
+          ...(enrichedInventory ? { enrichedInventory } : {}),
+          ...(rulesData ? { rulesData } : {}),
+          ...syncFields,
         };
       },
-      audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
-      apply(draft, { id, build, fileName, replaceInventory, replaceBio, enrichedInventory }, meta) {
+      audience: (viewer, { id, tokenId }, { state }) => {
+        if (beforeOrAfter(viewer, id, undefined, state)) return true;
+        if (!tokenId) return false;
+        const tok = state.tokens[tokenId];
+        return !!tok && !tok.hidden;
+      },
+      redactPayload: (viewer, p, { state }) => {
+        if (!p.tokenId || beforeOrAfter(viewer, p.id, undefined, state)) return p;
+        // Viewers who can't see the character only receive the public token sync update (zero character data).
+        return { id: p.id, tokenId: p.tokenId, sync: p.sync, initiative: p.initiative };
+      },
+      apply(draft, { id, build, fileName, replaceInventory, replaceBio, enrichedInventory, rulesData, tokenId, sync, initiative }, meta) {
         const c = draft.characters[id];
-        if (!c) return;
-        const merged = mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts, replaceInventory, replaceBio });
-        if (replaceInventory && enrichedInventory) merged.inventory = enrichedInventory;
-        Object.assign(c, merged);
+        if (c && build && fileName !== undefined) {
+          const merged = mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts, replaceInventory, replaceBio });
+          if (replaceInventory && enrichedInventory) merged.inventory = enrichedInventory;
+          if (rulesData) merged.rulesData = rulesData;
+          Object.assign(c, merged);
+        }
+        if (tokenId) applySync(draft, tokenId, sync, initiative);
       },
     },
   ),

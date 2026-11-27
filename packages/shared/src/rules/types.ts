@@ -9,7 +9,10 @@
  * here from documented PF1e rules (see pricing.ts) or left for the user.
  */
 
-export const RULES_KINDS = ['equipment', 'equipmod', 'spell', 'feat', 'ability', 'deity', 'domain'] as const;
+import type { RulesBonus } from '../entities/pf1e';
+import type { BabProgression, SaveKey, SizeName, StatKey } from '../pf1e/rules';
+
+export const RULES_KINDS = ['equipment', 'equipmod', 'spell', 'feat', 'ability', 'deity', 'domain', 'class', 'race'] as const;
 export type RulesKind = (typeof RULES_KINDS)[number];
 
 /** Where a record comes from: the book (`.pcc` campaign) and page. */
@@ -36,6 +39,8 @@ interface RecordBase {
   types: string[];
   /** VISIBLE:NO records (base items, internal abilities): only for lookups, never listed in searches. */
   hidden?: boolean;
+  /** Unconditional static BONUS: modifiers parsed from PCGen `.lst` (omitted when empty). */
+  bonuses?: RulesBonus[];
 }
 
 export interface EquipmentRecord extends RecordBase {
@@ -118,7 +123,40 @@ export interface DomainRecord extends RecordBase {
   kind: 'domain';
 }
 
-export type RulesRecord = EquipmentRecord | EquipmodRecord | SpellRecord | FeatRecord | DeityRecord | DomainRecord;
+export interface ClassRecord extends RecordBase {
+  kind: 'class';
+  hd: number | null;
+  bab: BabProgression | null;
+  goodSaves: SaveKey[];
+  prestige: boolean;
+  skillRanks: number | null;
+  classSkills: string[];
+  spellStat: StatKey | null;
+  spellType: 'arcane' | 'divine' | 'psychic' | null;
+  memorize: boolean | null;
+}
+
+export interface RaceRecord extends RecordBase {
+  kind: 'race';
+  size: SizeName | null;
+  speed: number | null;
+  abilityMods: Partial<Record<StatKey, number>>;
+  anyPlusTwo: boolean;
+  steady: boolean;
+  darkvision: number;
+  lowLight: boolean;
+  skillBonuses: Record<string, number>;
+}
+
+export type RulesRecord =
+  | EquipmentRecord
+  | EquipmodRecord
+  | SpellRecord
+  | FeatRecord
+  | DeityRecord
+  | DomainRecord
+  | ClassRecord
+  | RaceRecord;
 export type RecordOf<K extends RulesKind> = Extract<RulesRecord, { kind: K }> | (K extends 'feat' | 'ability' ? FeatRecord : never);
 
 /** A book (.pcc) in the pack, for the GM's allowed-sources picker. */
@@ -172,9 +210,11 @@ export interface RulesHit {
  * callers fall back to the built-in tables.
  */
 export interface RulesProvider {
+  /** False when no rules pack is loaded on the server (e.g. NO_RULES or unloaded store). */
+  readonly loaded?: boolean;
   get<K extends RulesKind>(kind: K, key: string): RecordOf<K> | undefined;
   /** Look up by display name (case/punctuation-insensitive, PCGen variant forms). */
   byName<K extends RulesKind>(kind: K, name: string): RecordOf<K> | undefined;
 }
 
-export const NO_RULES: RulesProvider = { get: () => undefined, byName: () => undefined };
+export const NO_RULES: RulesProvider = { loaded: false, get: () => undefined, byName: () => undefined };

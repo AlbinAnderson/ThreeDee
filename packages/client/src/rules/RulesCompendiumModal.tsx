@@ -113,6 +113,8 @@ const SEARCH_CATEGORIES: [RulesKind | 'all', string][] = [
   ['spell', 'Spells'],
   ['feat', 'Feats'],
   ['ability', 'Abilities'],
+  ['class', 'Classes'],
+  ['race', 'Races'],
   ['deity', 'Deities'],
   ['domain', 'Domains'],
 ];
@@ -125,6 +127,8 @@ const KIND_BADGE: Record<RulesKind, string> = {
   ability: 'Ability',
   deity: 'Deity',
   domain: 'Domain',
+  class: 'Class',
+  race: 'Race',
 };
 
 function SearchTab({ gm, loaded }: { gm: boolean; loaded: boolean }) {

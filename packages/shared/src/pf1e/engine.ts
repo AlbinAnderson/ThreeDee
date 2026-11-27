@@ -3,9 +3,9 @@
  * imported PCGen build, the rules tables, sheet overrides and runtime state.
  * Pure and deterministic, shared by client (sheet) and server (token sync).
  */
-import type { Character, ItemArmor } from '../entities/pf1e';
+import type { Character, ItemArmor, RulesBonusTarget } from '../entities/pf1e';
 import { carryingCapacity, sizedDamage, weaponKey, type CarryingCapacity } from './gear';
-import { activeLoadout, carriedWeight, itemsInSlot, type LoadWeight } from './inventory';
+import { activeLoadout, carriedWeight, equippedItemBonuses, itemsInSlot, type LoadWeight } from './inventory';
 import { sumModifiers, type Modifier, type StatLine } from './modifiers';
 import { acrobaticsRanks, activeToggles, toggleStep, type ToggleId } from './toggles';
 import { characterEffects, CMD_FROM_AC, NOT_TOUCH, type EffectSource } from './buffs';
@@ -17,6 +17,8 @@ import {
   lookupClass,
   lookupFeatEffects,
   lookupRace,
+  normalizeName,
+  raceDataFromSnapshot,
   SIZE_MOD,
   SIZES,
   SPECIAL_SIZE_MOD,
@@ -156,12 +158,42 @@ function iteratives(bab: number, total: number): number[] {
 export function computeCharacterStats(c: Character): CharacterStats {
   const { build, sheet, runtime } = c;
   const warnings: string[] = [];
-  const race = lookupRace(build.attributes.race);
+  const race = lookupRace(build.attributes.race) ?? raceDataFromSnapshot(c.rulesData.race);
   if (build.attributes.race && !race) warnings.push(`Unknown race "${build.attributes.race}": set size, speed and senses in Sheet settings.`);
   const names = abilityNames(c);
   const has = (key: string) => names.some((n) => featKey(n) === key);
   // Buffs and conditions: typed modifiers per target (Epic 8).
   const fx = characterEffects(c);
+
+  // Passive static bonuses from snapshotted PCGen feats/traits/abilities and currently equipped magic items (Epic 13).
+  const passive: Record<Exclude<RulesBonusTarget, 'skill'>, Modifier[]> = {
+    STR: [],
+    DEX: [],
+    CON: [],
+    INT: [],
+    WIS: [],
+    CHA: [],
+    ac: [],
+    initiative: [],
+    attack: [],
+    attackMelee: [],
+    attackRanged: [],
+    damage: [],
+    damageMelee: [],
+    damageRanged: [],
+    fort: [],
+    ref: [],
+    will: [],
+    saves: [],
+    speed: [],
+    hp: [],
+  };
+  for (const b of c.rulesData.bonuses) {
+    if (b.target !== 'skill') passive[b.target].push({ value: b.value, type: b.type, source: b.source });
+  }
+  for (const { item, bonus } of equippedItemBonuses(c)) {
+    if (bonus.target !== 'skill') passive[bonus.target].push({ value: bonus.value, type: bonus.type, source: item.name });
+  }
 
   // ---------------------------------------------------------------- abilities
   const levelUps: Partial<Record<StatKey, number>> = {};
@@ -180,6 +212,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
     if (racial) permMods.push({ value: racial, type: 'racial', source: build.attributes.race ?? 'Race' });
     if (levelUps[key]) permMods.push({ value: levelUps[key]!, type: 'untyped', source: 'Level-up increases' });
     if (runtime.abilityDrain[key]) permMods.push({ value: -runtime.abilityDrain[key]!, type: 'untyped', source: 'Drain' });
+    permMods.push(...passive[key]);
     const mods: Modifier[] = [...permMods];
     if (runtime.abilityTemp[key]) mods.push({ value: runtime.abilityTemp[key]!, type: 'untyped', source: 'Temporary' });
     mods.push(...fx.mods[key]);
@@ -199,7 +232,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
   // ---------------------------------------------------------------- classes, BAB, saves
   const classes: ClassInfo[] = build.classes.map((k) => {
     const fromSheet = sheet.classChassis[k.name];
-    const fromRules = lookupClass(k.name);
+    const fromRules = lookupClass(k.name) ?? c.rulesData.classes[normalizeName(k.name)];
     const chassis = fromSheet ?? fromRules ?? null;
     if (!chassis) warnings.push(`Unknown class "${k.name}": set its hit die, BAB and good saves in Sheet settings.`);
     return { name: k.name, level: k.level, chassis, chassisSource: fromSheet ? 'sheet' : fromRules ? 'rules' : 'missing' };
@@ -300,6 +333,8 @@ export function computeCharacterStats(c: Character): CharacterStats {
       })),
       { value: mod(ABILITY_FOR_SAVE[s]), type: 'ability', source: ABILITY_FOR_SAVE[s].charAt(0) + ABILITY_FOR_SAVE[s].slice(1).toLowerCase() },
       ...extra[s],
+      ...passive.saves,
+      ...passive[s],
       ...fx.mods.saves,
       ...fx.mods[s],
       ...misc(s),
@@ -328,6 +363,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
     { value: rolled, type: 'base', source: 'Rolled hit dice' },
     { value: conHpTotal, type: 'ability', source: `Con × ${hitDice} HD` },
     ...extra.hp,
+    ...passive.hp,
     ...misc('hp', 'Misc (favored class etc.)'),
   ]);
 
@@ -358,11 +394,12 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const acSize: Modifier = { value: SIZE_MOD[size], type: 'size', source: size };
   const acNatural: Modifier[] = sheet.misc.natural ? [{ value: sheet.misc.natural, type: 'natural', source: 'Natural armor' }] : [];
   const acDeflection: Modifier[] = sheet.misc.deflection ? [{ value: sheet.misc.deflection, type: 'deflection', source: 'Deflection' }] : [];
-  // Buff AC: dodge joins the other dodge bonuses; armor/shield/natural types don't apply to touch AC.
+  // Buff & passive AC: dodge joins the other dodge bonuses; armor/shield/natural/enhancement types stay off touch AC and CMD.
   const loseDex = fx.loseDexToAc;
-  const dodge = [...extra.ac, ...fx.mods.ac].filter((m) => m.type === 'dodge');
-  const otherAc = [...extra.ac.filter((m) => m.type !== 'dodge'), ...misc('ac'), ...fx.mods.ac.filter((m) => m.type !== 'dodge' && !NOT_TOUCH.has(m.type))];
-  const buffArmorAc = fx.mods.ac.filter((m) => NOT_TOUCH.has(m.type));
+  const typedAcMods = [...fx.mods.ac, ...passive.ac];
+  const dodge = [...extra.ac, ...typedAcMods].filter((m) => m.type === 'dodge');
+  const otherAc = [...extra.ac.filter((m) => m.type !== 'dodge'), ...misc('ac'), ...typedAcMods.filter((m) => m.type !== 'dodge' && !NOT_TOUCH.has(m.type))];
+  const buffArmorAc = typedAcMods.filter((m) => NOT_TOUCH.has(m.type));
   // Losing the Dex bonus to AC (blinded, stunned...) drops a positive Dex modifier and every dodge bonus.
   const dexAcParts = loseDex ? (dexToAc < 0 ? [acDex] : []) : [acDex];
   const dodgeParts = loseDex ? [] : dodge;
@@ -391,7 +428,9 @@ export function computeCharacterStats(c: Character): CharacterStats {
     { value: mod(cmbAbility), type: 'ability', source: cmbSource },
     specialSize,
     ...cmbTogglePenalties,
-    // Bonuses and penalties on attack rolls from spells and conditions apply to combat maneuvers too.
+    // Bonuses and penalties on attack rolls from spells, items, feats and conditions apply to combat maneuvers too.
+    ...passive.attack,
+    ...passive.attackMelee,
     ...fx.mods.attack,
     ...fx.mods.attackMelee,
     ...fx.mods.cmb,
@@ -406,12 +445,12 @@ export function computeCharacterStats(c: Character): CharacterStats {
     specialSize,
     ...acDeflection,
     ...extra.cmd.filter((m) => !(loseDex && m.type === 'dodge')),
-    // CMD gains the AC bonus types listed in the CMD rules, and every AC penalty.
-    ...fx.mods.ac.filter((m) => m.value < 0 || (CMD_FROM_AC.has(m.type) && !(loseDex && m.type === 'dodge'))),
+    // CMD gains the AC bonus types listed in the CMD rules (deflection, dodge, insight, luck, morale, profane, sacred), and every AC penalty.
+    ...typedAcMods.filter((m) => m.value < 0 || (CMD_FROM_AC.has(m.type) && !(loseDex && m.type === 'dodge'))),
     ...fx.mods.cmd,
     ...misc('cmd'),
   ]);
-  const initiative = sumModifiers([{ value: mod('DEX'), type: 'ability', source: 'Dex' }, ...extra.initiative, ...fx.mods.initiative, ...misc('initiative')]);
+  const initiative = sumModifiers([{ value: mod('DEX'), type: 'ability', source: 'Dex' }, ...extra.initiative, ...passive.initiative, ...fx.mods.initiative, ...misc('initiative')]);
 
   const racialBaseSpeed = sheet.speed ?? race?.speed ?? 30;
   // Barbarian / Unchained Barbarian / Bloodrager Fast Movement (CRB p.31): +10 ft in no/light/medium armor and not heavy load,
@@ -451,7 +490,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
       ? { ...m, value: Math.max(0, normalSpeed), source: `${m.source} (capped at 2× speed)` }
       : m,
   );
-  const speed = sumModifiers([speedBase, ...(loadLevel === 'overloaded' ? [] : [...extra.speed, ...monkSpeed, ...buffSpeeds])]);
+  const speed = sumModifiers([speedBase, ...(loadLevel === 'overloaded' ? [] : [...extra.speed, ...passive.speed, ...monkSpeed, ...buffSpeeds])]);
 
   // ---------------------------------------------------------------- weapon attacks
   const finesse = has('weaponfinesse');
@@ -519,6 +558,8 @@ export function computeCharacterStats(c: Character): CharacterStats {
         ...finesseShieldAcp,
         ...featAttack,
         ...togglePenalties,
+        ...passive.attack,
+        ...(melee ? passive.attackMelee : passive.attackRanged),
         ...fx.mods.attack,
         ...(melee ? fx.mods.attackMelee : fx.mods.attackRanged),
       ]);
@@ -544,6 +585,8 @@ export function computeCharacterStats(c: Character): CharacterStats {
         ...(weapon.enhancement ? [{ value: weapon.enhancement, type: 'enhancement' as const, source: `+${weapon.enhancement} weapon` }] : []),
         ...featDamage,
         ...toggleDamage,
+        ...passive.damage,
+        ...(melee ? passive.damageMelee : passive.damageRanged),
         ...fx.mods.damage,
         ...(melee ? fx.mods.damageMelee : mode === 'thrown' ? [...fx.mods.damageThrown, ...fx.mods.damageRanged] : fx.mods.damageRanged),
       ]);
