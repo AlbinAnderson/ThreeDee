@@ -34,6 +34,7 @@ import {
   masterOf,
   COMPANION_TYPE_LABEL,
 } from '../../pf1e/companions';
+import { normalizeName } from '../../pf1e/rules';
 import { applySpend, canSpend, effectiveTurn } from '../../pf1e/economy';
 import { tokenSyncFor } from '../../pf1e/tokenSync';
 import {
@@ -310,7 +311,22 @@ export const companionActions = {
         const token = place && typeof place !== 'string' ? manifestToken(ctx.state, c, place, randomId(ctx.random)) : null;
         return { companionId, harbored, token };
       },
-      // Everyone gets it: a public token is removed or placed. The payload holds no private data.
+      // Public token removal/placement goes to everyone; GM-hidden tokens must never leak to non-GMs.
+      audience(viewer, p, { state }) {
+        if (isGm(viewer) || canSeeId(viewer, p.companionId, state)) return true;
+        if (p.harbored) return !!p.tokenId && !!state.tokens[p.tokenId] && !state.tokens[p.tokenId]!.hidden;
+        return !!p.token && !p.token.hidden;
+      },
+      redactPayload(viewer, p, { state }) {
+        if (isGm(viewer)) return p;
+        if (p.harbored && p.tokenId && state.tokens[p.tokenId]?.hidden) {
+          return { companionId: p.companionId, harbored: true, tokenId: null };
+        }
+        if (!p.harbored && p.token?.hidden) {
+          return { companionId: p.companionId, harbored: false, token: null };
+        }
+        return p;
+      },
       apply(draft, { companionId, harbored, tokenId, token }, meta) {
         const c = draft.characters[companionId];
         if (harbored) {
@@ -486,6 +502,10 @@ export const companionActions = {
         const name = hpLinkName(companion.companion!.type)!;
         const mNext = m.current - p.amount;
         const cNext = cp.current + p.amount;
+        const isUnchainedSummoner = master.build.classes.some((cl) => {
+          const k = normalizeName(cl.name);
+          return k === 'unchainedsummoner' || k === 'summonerunchained';
+        });
         return {
           companionId: p.companionId,
           amount: p.amount,
@@ -494,17 +514,30 @@ export const companionActions = {
           master: { id: master.id, tokenId: m.tokenId, current: mNext },
           companion: { id: companion.id, tokenId: cp.tokenId, current: cNext },
           label: `${master.name}: ${name}`.slice(0, 120),
-          subtitle: companion.companion!.type === 'phantom' ? 'No action (reaction to damage)' : 'Free action',
+          subtitle: companion.companion!.type === 'phantom' || isUnchainedSummoner ? 'No action (reaction to damage)' : 'Free action',
           text: `${master.name} sacrifices ${p.amount} HP (now ${mNext}/${m.max}) to keep ${companion.name} going (now ${cNext}/${cp.max}).`.slice(0, 400),
         };
       },
-      // Token HP is public, so anyone may need the token side; the chat card and HP of unlinked characters follow visibility.
-      audience: (viewer, p, { meta, state }) =>
-        canSeeMessage(viewer, meta.userId, p.whisper) ||
-        [p.master, p.companion].some((side) => !!side && (!!side.tokenId || canSeeId(viewer, side.id, state))),
+      // Visible token HP is public, so anyone may need the token side; GM-hidden tokens, chat cards, and unlinked characters follow visibility.
+      audience: (viewer, p, { meta, state }) => {
+        const visibleToken = (side: z.infer<typeof HpSideSchema> | undefined) => {
+          if (!side?.tokenId) return false;
+          const t = state.tokens[side.tokenId];
+          return !!t && (!t.hidden || isGm(viewer));
+        };
+        return (
+          canSeeMessage(viewer, meta.userId, p.whisper) ||
+          [p.master, p.companion].some((side) => !!side && (visibleToken(side) || canSeeId(viewer, side.id, state)))
+        );
+      },
       redactPayload(viewer, p, { meta, state }) {
+        const visibleToken = (side: z.infer<typeof HpSideSchema> | undefined) => {
+          if (!side?.tokenId) return false;
+          const t = state.tokens[side.tokenId];
+          return !!t && (!t.hidden || isGm(viewer));
+        };
         const keep = (side: z.infer<typeof HpSideSchema> | undefined) =>
-          side && (side.tokenId || canSeeId(viewer, side.id, state)) ? side : side ? { id: side.id, tokenId: null } : undefined;
+          side && (visibleToken(side) || canSeeId(viewer, side.id, state)) ? side : side ? { id: side.id, tokenId: null } : undefined;
         const chat = canSeeMessage(viewer, meta.userId, p.whisper);
         return {
           companionId: p.companionId,

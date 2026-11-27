@@ -197,4 +197,41 @@ describe('[Epic 9] regressions', () => {
     act(alice, companionActions.update.create({ companionId: 'pet', changes: { type: 'animalCompanion', link: false } }));
     assert.equal(link().link, false);
   });
+
+  test('wire privacy: harboring/manifesting a GM-hidden companion token never leaks the token to Bob', () => {
+    const { room, gm, alice, bob, act } = setup({ tokens: true });
+    act(gm, tokenActions.update.create({ id: 'tPet', changes: { hidden: true, name: 'HiddenPhantom' } }));
+    const since = bob.inbox.length;
+    act(alice, companionActions.setHarbored.create({ companionId: 'pet', harbored: true }));
+    act(alice, companionActions.setHarbored.create({ companionId: 'pet', harbored: false }));
+    assert.equal(bob.inbox.length, since);
+    assertNoWireLeak(bob, since, /HiddenPhantom|tPet|"hidden":true/);
+    assert.equal(room.currentState.tokens[room.currentState.characters.pet!.tokenId!]!.hidden, true);
+  });
+
+  test('wire privacy: Life Link on GM-hidden tokens with GM whisper leaks nothing to Bob', () => {
+    const { gm, alice, bob, act } = setup({ tokens: true, type: 'eidolon' });
+    act(gm, tokenActions.update.create({ id: 'tSum', changes: { hidden: true } }));
+    act(gm, tokenActions.update.create({ id: 'tPet', changes: { hidden: true, hp: { value: 2, max: 12, temp: 0 } } }));
+    const since = bob.inbox.length;
+    act(alice, companionActions.hpLink.create({ companionId: 'pet', amount: 2, chatId: 'hl-hidden', whisper: { mode: 'gm', to: [] } }));
+    assert.deepEqual(alice.rejects(), []);
+    assert.equal(bob.inbox.length, since);
+    assertNoWireLeak(bob, since, /Secret|tSum|tPet|Life Link|"current"/);
+  });
+
+  test('setOwner no-op on unshared master does not wrongly unlink shared companion on Bob’s client', () => {
+    fx = createRoomFixture();
+    const { room, gm, alice, bob, act } = fx;
+    act(alice, characterActions.import.create({ character: char('sum', 'Secretmaster') }));
+    act(alice, characterActions.import.create({ character: char('pet', 'Pet', ALICE.id, true) }));
+    act(alice, companionActions.link.create({ companionId: 'pet', masterId: 'sum', type: 'familiar' }));
+    const bobBefore = structuredClone(redactState(room.currentState, BOB));
+    act(gm, characterActions.setOwner.create({ id: 'sum', ownerId: ALICE.id }));
+    // Apply the exact action Bob received to Bob's redacted snapshot and confirm pet stays linked!
+    const last = bob.actions().slice(-1)[0];
+    assert.equal(last?.action.type, 'character/setOwner');
+    characterActions.setOwner.apply(bobBefore as never, last!.action.payload as never, last!.meta);
+    assert.equal(bobBefore.characters.pet!.companion?.masterId, 'sum');
+  });
 });

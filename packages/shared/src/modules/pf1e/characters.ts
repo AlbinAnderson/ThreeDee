@@ -70,7 +70,7 @@ function beforeOrAfterOrLinked(viewer: User, id: string, full: Character | undef
  * characters with a different owner (after setOwner), or all its companions'
  * links (when it is deleted).
  */
-function dropBrokenLinks(draft: Draft<GameState>, id: string, ts: number, deleted = false) {
+function dropBrokenLinks(draft: Draft<GameState>, id: string, ts: number, deleted = false, newOwnerId?: string | null) {
   const c = draft.characters[id];
   if (c?.companion) {
     const master = draft.characters[c.companion.masterId];
@@ -79,9 +79,10 @@ function dropBrokenLinks(draft: Draft<GameState>, id: string, ts: number, delete
       c.updatedAt = ts;
     }
   }
+  const targetOwner = newOwnerId !== undefined ? newOwnerId : c?.ownerId;
   for (const o of Object.values(draft.characters)) {
     if (o.companion?.masterId !== id) continue;
-    if (deleted || !c || o.ownerId !== c.ownerId) {
+    if (deleted || targetOwner === undefined || o.ownerId !== targetOwner) {
       o.companion = null;
       o.updatedAt = ts;
     }
@@ -204,7 +205,7 @@ export const characterActions = {
           c.ownerId = ownerId;
           c.updatedAt = meta.ts;
         }
-        dropBrokenLinks(draft, id, meta.ts);
+        dropBrokenLinks(draft, id, meta.ts, false, ownerId);
       },
     },
   ),

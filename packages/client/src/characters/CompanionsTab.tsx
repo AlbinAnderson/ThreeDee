@@ -22,6 +22,7 @@ import {
   MAX_KNOWN_TRICKS,
   newId,
   normalizeName,
+  signed,
   STANDARD_TRICKS,
   tricksFromBuild,
   type Character,
@@ -501,7 +502,7 @@ function Tricks({ character: c, manage, canHandle, master }: { character: Charac
         {handle && (
           <span className="muted small-text">
             {' '}
-            · Handle DC {handle.dc} ({costText(handle.cost)}) · Push DC {push!.dc} ({costText(push!.cost)}) · roll +{handle.bonus}
+            · Handle DC {handle.dc} ({costText(handle.cost)}) · Push DC {push!.dc} ({costText(push!.cost)}) · roll {signed(handle.bonus)}
           </span>
         )}
       </h4>
