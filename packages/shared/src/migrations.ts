@@ -130,6 +130,15 @@ const migrations: Record<number, Migration> = {
       ),
     };
   },
+  // Epic 9: companion links (MASTER/FOLLOWER) between characters.
+  11: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 12,
+      characters: Object.fromEntries(Object.entries(characters).map(([id, c]) => [id, { companion: null, ...c }])),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {

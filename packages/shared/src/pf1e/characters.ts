@@ -38,6 +38,7 @@ export function createCharacterFromPcg(
     sheet: structuredClone(EMPTY_SHEET),
     runtime: structuredClone(EMPTY_RUNTIME),
     inventory: seedInventory(build),
+    companion: null,
     createdAt: opts.now,
     updatedAt: opts.now,
   };

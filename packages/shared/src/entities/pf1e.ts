@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import { PcgenCharacterSchema } from '../pcgen/schema';
-import { AssetUrlSchema, IdSchema } from '../primitives';
+import { AssetUrlSchema, ColorSchema, IdSchema } from '../primitives';
 
 export const CharacterSourceSchema = z.object({
   kind: z.literal('pcgen'),
@@ -408,6 +408,58 @@ export const InventorySchema = z.object({
 });
 export type Inventory = z.infer<typeof InventorySchema>;
 
+// ------------------------------------------------------------------ companions (Epic 9)
+
+export const CompanionTypeSchema = z.enum(['familiar', 'animalCompanion', 'mount', 'eidolon', 'phantom', 'cohort', 'other']);
+export type CompanionType = z.infer<typeof CompanionTypeSchema>;
+export const TrickNameSchema = z.string().trim().min(1).max(40);
+export const MAX_KNOWN_TRICKS = 40;
+export const MAX_COMPANIONS_PER_MASTER = 20;
+
+/**
+ * Where a harbored/dismissed companion's token was and what it looked like, so
+ * manifesting brings back the same token. Live HP and conditions are kept on
+ * the character (like any unlinked character), not here.
+ */
+export const CompanionStashSchema = z.object({
+  sceneId: IdSchema,
+  x: z.number().min(-100000).max(100000),
+  y: z.number().min(-100000).max(100000),
+  name: z.string().trim().max(60),
+  imageUrl: AssetUrlSchema.nullable(),
+  color: ColorSchema,
+  size: z.number().min(0.25).max(20),
+  ownerIds: z.array(IdSchema).max(50),
+  hidden: z.boolean(),
+  showName: z.boolean(),
+  hpVisible: z.boolean(),
+  conditionRounds: z
+    .record(z.string().trim().min(1).max(40), z.number().int().min(1).max(10000))
+    .refine((r) => Object.keys(r).length <= 30, 'Too many condition timers'),
+});
+export type CompanionStash = z.infer<typeof CompanionStashSchema>;
+
+/**
+ * This character is a companion of another (its master). Lives on the
+ * companion: a companion has one master, a master any number of companions.
+ */
+export const CompanionLinkSchema = z.object({
+  masterId: IdSchema,
+  type: CompanionTypeSchema,
+  /** Tricks an animal knows (Handle Animal). */
+  knownTricks: z
+    .array(TrickNameSchema)
+    .max(MAX_KNOWN_TRICKS)
+    .refine((arr) => new Set(arr.map((t) => t.toLowerCase())).size === arr.length, 'Duplicate trick'),
+  /** The master has the Link class feature (animal companions, special mounts): handle as a free action, push as a move action, +4 on Handle Animal. */
+  link: z.boolean(),
+  /** Harbored / dismissed / in its satchel: not on the map. */
+  harbored: z.boolean(),
+  /** The token put away when the companion was harbored (null = it had none). */
+  stash: CompanionStashSchema.nullable(),
+});
+export type CompanionLink = z.infer<typeof CompanionLinkSchema>;
+
 export const CharacterSchema = z.object({
   id: IdSchema,
   name: z.string().trim().min(1).max(80),
@@ -422,6 +474,8 @@ export const CharacterSchema = z.object({
   sheet: CharacterSheetSchema,
   runtime: CharacterRuntimeSchema,
   inventory: InventorySchema,
+  /** Companion link to a master character (Epic 9); null = not a companion. */
+  companion: CompanionLinkSchema.nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
