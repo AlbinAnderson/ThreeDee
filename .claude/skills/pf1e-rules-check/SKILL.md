@@ -27,6 +27,15 @@ Trace every modifier through the full stat pipeline before adding it:
 - **Attacks & CMB:** `fx.mods.attack`, `fx.mods.attackMelee`, and melee combat toggles (`Power Attack`, `Piranha Strike`, `Combat Expertise`, `Fighting Defensively`) flow into `cmb` — do **not** add a second `cmb` penalty on conditions like `Grappled` that already penalize `attack`.
 - **Size:** Multiple magical size increases (or decreases) do not stack (`maxGrow + maxShrink`), clamped to `Fine..Colossal`.
 
-## 4. Verification
-- Verify class progression tables, caster levels, and spell/condition effects against PF1e Core/APG/ACG/AoN rather than guessing.
-- List every newly added table or uncertain ruling under **"Verify in audit"** in your summary.
+## 4. Offline Verification Against Local PCGen Data
+- **Verify tables offline, never guess from memory:** Query the local PCGen PF1e `.lst` database (git-ignored at `./data/pcgen/data/pathfinder/`) using the bundled lookup script:
+  ```bash
+  node .claude/skills/pf1e-rules-check/scripts/pcgen-lookup.mjs <class|race|spell|feat|ability|equip|equipmod|skill|any> "<query>"
+  ```
+  *(Prioritizes Paizo books; pass `--all` for 3rd-party publishers.)*
+- **Do not scrape or fetch `aonprd.com`:** Keep your workflow 100% offline using local PCGen `.lst` data. Any prose/exception rulings not clear from `.lst` files should be listed under **"Verify in audit"** for Antigravity to double-check against AoN during review.
+- **4-way interaction tests for every new mechanic:** Whenever adding a feat, spell, buff, or condition rule, write tests covering:
+  1. **Stacking:** same bonus type (highest wins), different bonus types (stack), and penalties (always stack).
+  2. **Downstream propagation:** assert exact deltas on every affected stat (`AC`, `Touch`, `FF`, `CMB`, `CMD`, `Saves`, `Skills`, `Speed`, `Spells`).
+  3. **Idempotency / dedup:** duplicate `.pcg` entries (`ABILITY` + `FEAT`/`VFEAT`) and condition marker + active buff together.
+  4. **PCGen naming variants:** `"Base (Variant)"`, `"Base, Variant"`, mixed casing, and fractional ranks.
