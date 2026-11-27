@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
+import { ArrowDown, ArrowUp, ChevronLeft, Dices, Eye, EyeOff, Play, X } from 'lucide-react';
 import { canControlCombatant, canControlToken, combatantName, combatActions, isCombatantHidden, newId, type Combatant } from '@vtt/shared';
 import { initiativeForToken } from '../characters/characterActions';
 import { NumberField } from '../components/fields';
+import { confirmDialog, promptDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
 import { useGame, useIsGm, useSelf } from '../state/hooks';
@@ -50,8 +52,8 @@ export function CombatPanel() {
   const myTurn = !!current && combat.active && canControlCombatant(state, self, current);
   const unrolled = combat.combatants.filter((c) => c.initiative === null && canControlCombatant(state, self, c));
 
-  function addCustom() {
-    const name = prompt('Name (e.g. "Lair action" or "Goblin 3"):')?.trim();
+  async function addCustom() {
+    const name = (await promptDialog({ title: 'Add custom entry', label: 'Name', placeholder: 'e.g. Lair action or Goblin 3', confirmLabel: 'Add', maxLength: 60 }))?.trim();
     if (!name) return;
     dispatch(
       combatActions.add.create({
@@ -69,15 +71,15 @@ export function CombatPanel() {
             <div className="button-row compact">
               {combat.active ? (
                 <>
-                  <button type="button" className="small" onClick={() => dispatch(combatActions.prev.create({}))} title="Previous turn">
-                    ◀
+                  <button type="button" className="small" onClick={() => dispatch(combatActions.prev.create({}))} title="Previous turn" aria-label="Previous turn">
+                    <ChevronLeft size={13} />
                   </button>
                   <button type="button" className="small" onClick={() => dispatch(combatActions.end.create({ clear: false }))}>
                     End
                   </button>
                 </>
               ) : (
-                <button type="button" className="small primary" onClick={() => dispatch(combatActions.start.create({}))}>
+                <button type="button" className="small gold" onClick={() => dispatch(combatActions.start.create({}))}>
                   Start combat
                 </button>
               )}
@@ -86,8 +88,8 @@ export function CombatPanel() {
         </div>
 
         {(myTurn || (gm && combat.active)) && (
-          <button type="button" className="primary wide" onClick={() => dispatch(combatActions.next.create({}))}>
-            {myTurn && !gm ? 'End my turn' : 'Next turn ▶'}
+          <button type="button" className="gold wide" onClick={() => dispatch(combatActions.next.create({}))}>
+            {myTurn && !gm ? 'End my turn' : 'Next turn'} <Play size={12} />
           </button>
         )}
 
@@ -115,7 +117,7 @@ export function CombatPanel() {
           + Add selected tokens
         </button>
         {gm && (
-          <button type="button" onClick={addCustom}>
+          <button type="button" onClick={() => void addCustom()}>
             + Custom entry
           </button>
         )}
@@ -125,7 +127,15 @@ export function CombatPanel() {
           </button>
         )}
         {gm && !combat.active && combat.combatants.length > 0 && (
-          <button type="button" className="danger" onClick={() => confirm('Clear the turn order?') && dispatch(combatActions.end.create({ clear: true }))}>
+          <button
+            type="button"
+            className="danger"
+            onClick={async () => {
+              if (await confirmDialog({ title: 'Clear turn order?', message: 'Remove all combatants from the turn tracker?', confirmLabel: 'Clear', danger: true })) {
+                dispatch(combatActions.end.create({ clear: true }));
+              }
+            }}
+          >
             Clear
           </button>
         )}
@@ -185,26 +195,28 @@ function CombatRow({
       </div>
       {canEdit && (
         <div className="combat-actions">
-          <button type="button" className="icon-button" title="Roll initiative" onClick={() => dispatch(combatActions.rollInitiative.create({ ids: [c.id] }))}>
-            🎲
+          <button type="button" className="icon-button" title="Roll initiative" aria-label="Roll initiative" onClick={() => dispatch(combatActions.rollInitiative.create({ ids: [c.id] }))}>
+            <Dices size={13} />
           </button>
           <button
             type="button"
             className="icon-button"
             title="Move up"
+            aria-label="Move up"
             disabled={!prevId}
             onClick={() => prevId && dispatch(combatActions.move.create({ id: c.id, beforeId: prevId }))}
           >
-            ↑
+            <ArrowUp size={13} />
           </button>
           <button
             type="button"
             className="icon-button"
             title="Move down (delay)"
+            aria-label="Move down"
             disabled={isLast}
             onClick={() => dispatch(combatActions.move.create({ id: c.id, beforeId: nextNextId }))}
           >
-            ↓
+            <ArrowDown size={13} />
           </button>
           {gm && (
             <button
@@ -212,13 +224,14 @@ function CombatRow({
               className="icon-button"
               disabled={tokenHidden}
               title={tokenHidden ? 'Hidden because its token is hidden' : c.hidden ? 'Reveal to players' : 'Hide from players'}
+              aria-label={c.hidden ? 'Reveal' : 'Hide'}
               onClick={() => update({ hidden: !c.hidden })}
             >
-              {hidden ? '👁' : '◌'}
+              {hidden ? <EyeOff size={13} /> : <Eye size={13} />}
             </button>
           )}
-          <button type="button" className="icon-button" title="Remove" onClick={() => dispatch(combatActions.remove.create({ id: c.id }))}>
-            ×
+          <button type="button" className="icon-button" title="Remove" aria-label="Remove" onClick={() => dispatch(combatActions.remove.create({ id: c.id }))}>
+            <X size={13} />
           </button>
         </div>
       )}

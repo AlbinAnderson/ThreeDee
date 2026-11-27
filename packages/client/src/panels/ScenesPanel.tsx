@@ -1,6 +1,7 @@
 import { createScene, fogActions, newId, sceneActions, type DiagonalRule, type Scene } from '@vtt/shared';
 import { CheckboxField, ColorField, ImageUploadButton, NumberField, SelectField, TextField } from '../components/fields';
 import { loadImageSize, uploadAsset } from '../lib/assets';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useCurrentScene, useGame } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -84,8 +85,8 @@ function SceneSettings({ scene }: { scene: Scene }) {
     }
   }
 
-  function deleteScene() {
-    if (confirm(`Delete "${scene.name}" and all its tokens? This cannot be undone.`)) {
+  async function deleteScene() {
+    if (await confirmDialog({ title: `Delete "${scene.name}"?`, message: 'This removes the scene and all of its tokens. This cannot be undone.', confirmLabel: 'Delete scene', danger: true })) {
       dispatch(sceneActions.remove.create({ id: scene.id }));
       useUi.getState().setViewedScene(null);
     }

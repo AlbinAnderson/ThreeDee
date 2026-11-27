@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SnapshotInfo } from '@vtt/shared';
 import { request } from '../net/rpc';
+import { confirmDialog } from '../state/dialogs';
 import { notify } from '../state/notifications';
 
 const REASON_LABEL: Record<SnapshotInfo['reason'], string> = {
@@ -58,10 +59,15 @@ export function HistoryPanel() {
     });
   }
 
-  function restore(s: SnapshotInfo) {
+  async function restore(s: SnapshotInfo) {
     const when = new Date(s.createdAt).toLocaleString();
-    if (!confirm(`Restore the whole room to ${when}${s.label ? ` ("${s.label}")` : ''}?\n\nEveryone's view resets to that point. The current state is saved first, so you can undo this.`))
-      return;
+    const ok = await confirmDialog({
+      title: 'Restore snapshot?',
+      message: `Restore the whole room to ${when}${s.label ? ` ("${s.label}")` : ''}?\n\nEveryone's view resets to that point. The current state is saved first so you can undo this.`,
+      confirmLabel: 'Restore',
+      danger: true,
+    });
+    if (!ok) return;
     void run(() => request('snapshots.restore', { id: s.id }));
   }
 

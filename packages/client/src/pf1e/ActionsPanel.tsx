@@ -5,6 +5,7 @@
  * announces the action, so the panel doubles as a rules reference.
  */
 import { useMemo, useState } from 'react';
+import { Dices, Moon, Play } from 'lucide-react';
 import {
   canControlCombatant,
   canManageCharacter,
@@ -31,6 +32,8 @@ import {
 import { create } from 'zustand';
 import { rollCheck } from '../characters/characterActions';
 import { CombatToggles } from '../characters/CombatToggles';
+import { InfoTip } from '../components/InfoTip';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { useUi } from '../state/uiStore';
@@ -147,18 +150,17 @@ export function ActionsPanel() {
 
       {stats && (
         <div className="button-row">
-          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Melee attack', genericMelee)}>
-            🎲 Melee {signed(genericMelee)}
+          <button type="button" className="small rollable tnum" onClick={() => rollCheck(actor.character!, 'Melee attack', genericMelee)}>
+            <Dices size={12} /> Melee {signed(genericMelee)}
           </button>
-          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Ranged attack', genericRanged)}>
-            🎲 Ranged {signed(genericRanged)}
+          <button type="button" className="small rollable tnum" onClick={() => rollCheck(actor.character!, 'Ranged attack', genericRanged)}>
+            <Dices size={12} /> Ranged {signed(genericRanged)}
           </button>
-          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Combat maneuver (CMB)', stats.cmb.total)}>
-            🎲 CMB {signed(stats.cmb.total)}
+          <button type="button" className="small rollable tnum" onClick={() => rollCheck(actor.character!, 'Combat maneuver (CMB)', stats.cmb.total)}>
+            <Dices size={12} /> CMB {signed(stats.cmb.total)}
           </button>
         </div>
       )}
-      {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size + toggles); action 🎲 buttons use your wielded weapon when one is equipped.</p>}
       {stats && actor.character && <CombatToggles character={actor.character} stats={stats} />}
 
       {pools.length > 0 && (
@@ -170,9 +172,13 @@ export function ActionsPanel() {
                 type="button"
                 className="small"
                 title="Restore all daily uses (after 8 hours of rest)"
-                onClick={() => confirm('Restore all daily uses?') && dispatch(pf1eTurnActions.resetUses.create({ characterId: actor.character!.id }))}
+                onClick={async () => {
+                  if (await confirmDialog({ title: 'Rest 8 hours?', message: 'Restore all daily uses, spell slots, and prepared spells?', confirmLabel: 'Rest' })) {
+                    dispatch(pf1eTurnActions.resetUses.create({ characterId: actor.character!.id }));
+                  }
+                }}
               >
-                Rest
+                <Moon size={12} /> Rest
               </button>
             )}
           </div>
@@ -324,32 +330,31 @@ function ActionList({
         const out = uses ? uses.used + cost > uses.max : false;
         const blocked = spend !== true ? spend : out ? (remaining > 0 ? `Needs ${cost} (only ${remaining} left)` : 'None left today') : null;
         const [badge, badgeTitle] = PROVOKES_BADGE[a.provokes];
-        const tooltip = `${a.notes}${blocked ? `\n\nCan’t now: ${blocked}` : ''}`;
+        const tipBody = `${a.notes}${blocked ? `\n\nBlocked: ${blocked}` : ''}`;
         return (
-          <li key={a.id} className={blocked ? 'blocked' : ''} title={tooltip}>
-            <button
-              type="button"
-              className="action-main"
-              disabled={!onAct || !!blocked}
-              title={tooltip}
-              onClick={() => onAct?.(a)}
-            >
-              <span className="action-name">{a.name}</span>
-              <span className="action-meta">
-                <span className={`cost-badge cost-${a.cost}`}>{a.costLabel ?? COST_LABEL[a.cost]}</span>
-                <span className={`aoo-badge aoo-${a.provokes}`} title={badgeTitle}>
-                  {badge}
+          <li key={a.id} className={blocked ? 'blocked' : ''}>
+            <InfoTip title={a.name} body={tipBody} hint={blocked ? undefined : `${a.costLabel ?? COST_LABEL[a.cost]} · ${badgeTitle}`}>
+              <button
+                type="button"
+                className="action-main"
+                disabled={!onAct || !!blocked}
+                onClick={() => onAct?.(a)}
+              >
+                <span className="action-name">{a.name}</span>
+                <span className="action-meta">
+                  <span className={`cost-badge cost-${a.cost}`}>{a.costLabel ?? COST_LABEL[a.cost]}</span>
+                  <span className={`aoo-badge aoo-${a.provokes}`}>{badge}</span>
+                  {uses && (
+                    <span className="muted small-text tnum">
+                      {remaining}/{uses.max}
+                    </span>
+                  )}
                 </span>
-                {uses && (
-                  <span className="muted small-text">
-                    {remaining}/{uses.max}
-                  </span>
-                )}
-              </span>
-            </button>
+              </button>
+            </InfoTip>
             {a.roll && onRoll && (
-              <button type="button" className="icon-button" title="Roll it" onClick={() => onRoll(a)}>
-                🎲
+              <button type="button" className="icon-button" title="Roll attack / CMB" onClick={() => onRoll(a)}>
+                <Dices size={14} />
               </button>
             )}
           </li>
@@ -387,13 +392,13 @@ export function TurnBar() {
       </button>
       <button
         type="button"
-        className="small primary"
+        className="small gold"
         onClick={() => {
           useActionsUi.setState({ actorKey: null });
           dispatch(combatActions.next.create({}));
         }}
       >
-        End turn ▶
+        End turn <Play size={11} />
       </button>
     </div>
   );

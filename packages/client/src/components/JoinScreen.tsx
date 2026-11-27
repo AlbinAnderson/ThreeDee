@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Dices, Shield } from 'lucide-react';
 import { newId, RoomIdSchema, UserNameSchema } from '@vtt/shared';
 import { joinRoom, useSession } from '../state/session';
 
@@ -56,18 +57,27 @@ export function JoinScreen() {
   return (
     <div className="join-screen">
       <form className="join-card" onSubmit={onSubmit}>
-        <h1>Tabletop</h1>
+        <div className="join-brand">
+          <div className="join-emblem">
+            <Dices size={22} strokeWidth={1.9} />
+          </div>
+          <div>
+            <h1>ThreeDee</h1>
+            <p>Pathfinder 1e Virtual Tabletop</p>
+          </div>
+        </div>
         <label>
           Your name
-          <input autoFocus value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
+          <input autoFocus placeholder="e.g. Valeros" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
         </label>
         <label>
-          Room
-          <input value={profile.roomId} onChange={(e) => setProfile({ ...profile, roomId: e.target.value })} />
+          Room code
+          <input placeholder="main" value={profile.roomId} onChange={(e) => setProfile({ ...profile, roomId: e.target.value })} />
         </label>
         <label className="checkbox">
           <input type="checkbox" checked={profile.asGm} onChange={(e) => setProfile({ ...profile, asGm: e.target.checked })} />
-          Join as GM
+          <Shield size={14} />
+          <span>Join as Game Master</span>
         </label>
         {profile.asGm && (
           <label>
@@ -75,9 +85,9 @@ export function JoinScreen() {
             <input type="password" value={gmPassword} onChange={(e) => setGmPassword(e.target.value)} />
           </label>
         )}
-        {(formError ?? error) && <p className="error">{formError ?? error}</p>}
-        <button type="submit" className="primary">
-          Join
+        {(formError ?? error) && <p className="error small-text">{formError ?? error}</p>}
+        <button type="submit" className="gold">
+          Enter Table
         </button>
       </form>
     </div>

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { canManageCharacter, inventoryActions, isGm, lootActions, newId, type LootItem, type User } from '@vtt/shared';
 import { CheckboxField, ImageUploadButton, NumberField, SelectField, TextAreaField, TextField } from '../components/fields';
 import { uploadAsset } from '../lib/assets';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -208,7 +209,11 @@ function LootEditor({ item, users, self }: { item: LootItem; users: User[]; self
         <button
           type="button"
           className="danger"
-          onClick={() => confirm(`Delete "${item.name}"?`) && dispatch(lootActions.remove.create({ id: item.id }))}
+          onClick={async () => {
+            if (await confirmDialog({ title: `Delete "${item.name}"?`, message: 'Remove this item from party loot?', confirmLabel: 'Delete', danger: true })) {
+              dispatch(lootActions.remove.create({ id: item.id }));
+            }
+          }}
         >
           Delete item
         </button>

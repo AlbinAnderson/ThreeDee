@@ -1,5 +1,6 @@
-/** The core PF1e character sheet: live numbers with breakdowns and one-click rolls. */
+/** The core PF1e character sheet: live numbers with instant breakdown popovers and one-click rolls. */
 import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, RefreshCw, Timer } from 'lucide-react';
 import {
   canManageCharacter,
   characterHp,
@@ -15,6 +16,7 @@ import {
   type SaveKey,
   type StatLine,
 } from '@vtt/shared';
+import { InfoTip } from '../components/InfoTip';
 import { applyHpDelta } from '../components/TokenStatusEditors';
 import { rollToChat } from '../panels/ChatPanel';
 import { CombatToggles } from './CombatToggles';
@@ -23,7 +25,15 @@ import { rollCheck, rollInitiative, setHp, syncLinkedToken, updateRuntime } from
 
 const STAT_NAMES: Record<string, string> = { STR: 'Strength', DEX: 'Dexterity', CON: 'Constitution', INT: 'Intelligence', WIS: 'Wisdom', CHA: 'Charisma' };
 
-export function CharacterSheet({ character: c, onOpenSettings }: { character: Character; onOpenSettings: () => void }) {
+export function CharacterSheet({
+  character: c,
+  onOpenSettings,
+  onOpenEffects,
+}: {
+  character: Character;
+  onOpenSettings: () => void;
+  onOpenEffects?: () => void;
+}) {
   const self = useSelf();
   const tokens = useGame((s) => s.tokens);
   const scenes = useGame((s) => s.scenes);
@@ -69,7 +79,10 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
       {stats.warnings.length > 0 && (
         <div className="sheet-warnings">
           {stats.warnings.map((w, i) => (
-            <div key={i}>⚠ {w}</div>
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>{w}</span>
+            </div>
           ))}
           {manage && (
             <button type="button" className="link-button" onClick={onOpenSettings}>
@@ -82,7 +95,7 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
       <HpBlock character={c} stats={stats} manage={manage} />
       {manage && tokenOutOfDate && (
         <button type="button" className="small sync-hint" onClick={() => syncLinkedToken(c)}>
-          ↻ Update token (stats / name / senses)
+          <RefreshCw size={12} /> Update linked token (stats / name / senses)
         </button>
       )}
 
@@ -90,17 +103,23 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
         {STAT_KEYS.map((k) => {
           const a = stats.abilities[k];
           return (
-            <button
+            <InfoTip
               key={k}
-              type="button"
-              className={`sheet-ability${a.damage ? ' damaged' : ''}`}
-              title={`${STAT_NAMES[k]}: ${describeLine(a.line)}${a.damage ? `, ${a.damage} damage` : ''}. Click to roll a ${k} check.`}
-              onClick={() => rollCheck(c, `${STAT_NAMES[k]} check`, a.mod)}
+              title={`${STAT_NAMES[k]} (${a.score})`}
+              line={a.line}
+              body={a.damage ? `Ability damage: ${a.damage} (−${Math.floor(a.damage / 2)} to checks)` : undefined}
+              hint={`Click to roll a ${k} check`}
             >
-              <span className="sheet-ability-name">{k}</span>
-              <span className="sheet-ability-mod">{signed(a.mod)}</span>
-              <span className="sheet-ability-score">{a.score}</span>
-            </button>
+              <button
+                type="button"
+                className={`sheet-ability${a.damage ? ' damaged' : ''}`}
+                onClick={() => rollCheck(c, `${STAT_NAMES[k]} check`, a.mod)}
+              >
+                <span className="sheet-ability-name">{k}</span>
+                <span className="sheet-ability-mod">{signed(a.mod)}</span>
+                <span className="sheet-ability-score">{a.score}</span>
+              </button>
+            </InfoTip>
           );
         })}
       </div>
@@ -121,31 +140,41 @@ export function CharacterSheet({ character: c, onOpenSettings }: { character: Ch
         <Stat label="CMB" line={stats.cmb} bonus roll={() => rollCheck(c, 'Combat maneuver (CMB)', stats.cmb.total)} />
         <Stat label="Initiative" line={stats.initiative} bonus roll={() => rollInitiative(c, stats.initiative.total)} />
       </div>
-      <p className="muted small-text">Click a highlighted number to roll it (uses your chat mode). Hover for the breakdown.</p>
 
       <CombatToggles character={c} stats={stats} />
       {stats.effects.sources.length > 0 && (
-        <div className="active-effects" title="Buffs and conditions included in these numbers (Effects tab)">
+        <div className="active-effects" aria-label="Active buffs and conditions">
           {stats.effects.sources.map((s, i) => (
-            <span key={`${s.kind}|${s.name}|${i}`} className={`badge${s.kind === 'condition' ? ' warn' : ''}`}>
-              {s.name}
-              {s.roundsLeft !== null ? ` ⏱${s.roundsLeft}` : ''}
-            </span>
+            <button
+              key={`${s.kind}|${s.name}|${i}`}
+              type="button"
+              className={`badge clickable${s.kind === 'condition' ? ' warn' : ''}`}
+              title="Open Effects tab"
+              onClick={onOpenEffects}
+            >
+              <span>{s.name}</span>
+              {s.roundsLeft !== null && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                  <Timer size={10} />
+                  {s.roundsLeft}
+                </span>
+              )}
+            </button>
           ))}
         </div>
       )}
       <Attacks character={c} stats={stats} />
-      <div className="muted small-text">
+      <div className="muted small-text" style={{ marginTop: 6 }}>
         {[
           `Load: ${stats.load.weight.total} lb (${stats.load.level})`,
-          stats.armor.acp ? `check penalty ${stats.armor.acp}` : null,
-          stats.armor.asf ? `spell failure ${stats.armor.asf}%` : null,
+          stats.armor.acp ? `ACP ${stats.armor.acp}` : null,
+          stats.armor.asf ? `ASF ${stats.armor.asf}%` : null,
         ]
           .filter(Boolean)
           .join(' · ')}
       </div>
 
-      <details className="inspector-section">
+      <details className="inspector-section" style={{ marginTop: 8 }}>
         <summary>Class progression</summary>
         <ul className="sheet-classes">
           {stats.classes.map((k) => (
@@ -191,23 +220,33 @@ function Attacks({ character: c, stats }: { character: Character; stats: Charact
                 ? ` · full ${a.fullAttack.map(signed).join('/')}`
                 : ` (${a.fullAttack.slice(1).map(signed).join('/')})`
               : '';
-          const attackTitle = `Attack: ${describeLine(a.attack)}${fullDiffers ? `. Full attack: ${a.fullAttack.map(signed).join('/')}` : ''}. Click to roll.`;
           return (
             <li key={`${a.itemId}-${a.mode}`}>
-              <span className="sheet-attack-name">{label(a)}</span>
-              <button type="button" className="small rollable" title={attackTitle} onClick={() => rollCheck(c, `${label(a)} attack`, a.attack.total)}>
-                {signed(a.attack.total)}
-                {fullSuffix}
-              </button>
-              <button
-                type="button"
-                className="small"
-                title={`Damage: ${a.dice}${a.damage.parts.length ? ` + ${describeLine(a.damage)}` : ''}. Click to roll.`}
-                onClick={() => rollToChat(dmg(a), `${c.name}: ${label(a)} damage`.slice(0, 100))}
+              <span className="sheet-attack-name" title={label(a)}>
+                {label(a)}
+              </span>
+              <InfoTip
+                title={`${label(a)} Attack`}
+                line={a.attack}
+                body={fullDiffers ? `Full attack: ${a.fullAttack.map(signed).join('/')}` : undefined}
+                hint="Click to roll attack"
               >
-                {dmg(a)}
-              </button>
-              <span className="muted small-text">
+                <button type="button" className="small rollable tnum" onClick={() => rollCheck(c, `${label(a)} attack`, a.attack.total)}>
+                  {signed(a.attack.total)}
+                  {fullSuffix}
+                </button>
+              </InfoTip>
+              <InfoTip
+                title={`${label(a)} Damage (${a.dice})`}
+                line={a.damage}
+                body={a.damage.parts.length === 0 ? `Base dice: ${a.dice}` : undefined}
+                hint="Click to roll damage"
+              >
+                <button type="button" className="small tnum" onClick={() => rollToChat(dmg(a), `${c.name}: ${label(a)} damage`.slice(0, 100))}>
+                  {dmg(a)}
+                </button>
+              </InfoTip>
+              <span className="muted small-text tnum">
                 {a.crit}
                 {a.range ? ` · ${a.range} ft` : ''}
               </span>
@@ -216,8 +255,8 @@ function Attacks({ character: c, stats }: { character: Character; stats: Charact
         })}
       </ul>
       {stats.twoWeapon && (
-        <p className="small-text muted">
-          Two-weapon full attack: {stats.twoWeapon.primaryName} {stats.twoWeapon.primary.map(signed).join('/')}, {stats.twoWeapon.offHandName}{' '}
+        <p className="small-text muted tnum">
+          TWF full attack: {stats.twoWeapon.primaryName} {stats.twoWeapon.primary.map(signed).join('/')}, {stats.twoWeapon.offHandName}{' '}
           {stats.twoWeapon.offHand.map(signed).join('/')}
         </p>
       )}
@@ -227,17 +266,20 @@ function Attacks({ character: c, stats }: { character: Character; stats: Charact
 
 function Stat({ label, line, roll, bonus }: { label: string; line: StatLine; roll?: () => void; bonus?: boolean }) {
   const value = bonus ? signed(line.total) : String(line.total);
-  const title = `${label}: ${describeLine(line)}${roll ? '. Click to roll.' : ''}`;
-  return roll ? (
-    <button type="button" className="sheet-stat rollable" title={title} onClick={roll}>
-      <span className="sheet-stat-label">{label}</span>
-      <span className="sheet-stat-value">{value}</span>
-    </button>
-  ) : (
-    <div className="sheet-stat" title={title}>
-      <span className="sheet-stat-label">{label}</span>
-      <span className="sheet-stat-value">{value}</span>
-    </div>
+  return (
+    <InfoTip title={`${label}: ${value}`} line={line} hint={roll ? 'Click to roll' : undefined}>
+      {roll ? (
+        <button type="button" className="sheet-stat rollable" onClick={roll}>
+          <span className="sheet-stat-label">{label}</span>
+          <span className="sheet-stat-value">{value}</span>
+        </button>
+      ) : (
+        <div className="sheet-stat" tabIndex={0}>
+          <span className="sheet-stat-label">{label}</span>
+          <span className="sheet-stat-value">{value}</span>
+        </div>
+      )}
+    </InfoTip>
   );
 }
 
@@ -257,23 +299,26 @@ function HpBlock({ character: c, stats, manage }: { character: Character; stats:
 
   const pct = Math.max(0, Math.min(100, (hp.current / max) * 100));
   return (
-    <div className="sheet-hp" title={`Max HP: ${describeLine(stats.hp)}`}>
-      <div className="sheet-hp-numbers">
-        <span className="sheet-hp-current">{hp.current}</span>
-        <span className="muted"> / {max} HP</span>
-        {hp.temp > 0 && <span className="temp-hp"> +{hp.temp} temp</span>}
-        {hp.nonlethal > 0 && <span className="warn-text"> · {hp.nonlethal} nonlethal</span>}
-        {hp.fromToken && <span className="muted small-text"> · on token</span>}
-      </div>
+    <div className="sheet-hp">
+      <InfoTip title={`Max HP: ${max}`} line={stats.hp}>
+        <div className="sheet-hp-numbers">
+          <span className="sheet-hp-current">{hp.current}</span>
+          <span className="muted">/ {max} HP</span>
+          {hp.temp > 0 && <span className="temp-hp">+{hp.temp} temp</span>}
+          {hp.nonlethal > 0 && <span className="warn-text">· {hp.nonlethal} nonlethal</span>}
+          {hp.fromToken && <span className="muted small-text">· token</span>}
+        </div>
+      </InfoTip>
       <div className="hp-bar-html">
-        <div style={{ width: `${pct}%`, background: pct > 50 ? '#40c057' : pct > 25 ? '#fab005' : '#fa5252' }} />
+        <div style={{ width: `${pct}%`, background: pct > 50 ? 'var(--ok)' : pct > 25 ? 'var(--warn)' : 'var(--danger)' }} />
       </div>
       {manage && (
         <div className="field-row hp-quick">
           <input
             type="number"
             min={0}
-            placeholder="Amount"
+            placeholder="HP ±"
+            aria-label="HP amount"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && apply(-1)}
@@ -297,19 +342,20 @@ function HpBlock({ character: c, stats, manage }: { character: Character; stats:
           >
             Temp
           </button>
-          <button
-            type="button"
-            className="small"
-            title="Add nonlethal damage (negative to heal)"
-            onClick={() => {
-              if (amount.trim() === '') return;
-              const n = Math.round(Number(amount));
-              if (Number.isFinite(n) && n !== 0) setHp(c, { ...hp, nonlethal: Math.max(0, hp.nonlethal + n) }, max);
-              setAmount('');
-            }}
-          >
-            NL
-          </button>
+          <InfoTip title="Nonlethal damage" body="Add nonlethal damage (enter a negative number to heal nonlethal)">
+            <button
+              type="button"
+              className="small"
+              onClick={() => {
+                if (amount.trim() === '') return;
+                const n = Math.round(Number(amount));
+                if (Number.isFinite(n) && n !== 0) setHp(c, { ...hp, nonlethal: Math.max(0, hp.nonlethal + n) }, max);
+                setAmount('');
+              }}
+            >
+              NL
+            </button>
+          </InfoTip>
         </div>
       )}
     </div>
@@ -385,3 +431,6 @@ function AdjustInput({ value, min, max, onCommit }: { value: number; min: number
     />
   );
 }
+
+// Keep describeLine import used for future debugging if needed
+void describeLine;

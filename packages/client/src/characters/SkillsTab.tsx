@@ -1,9 +1,10 @@
 /**
  * Skills manager (Epic 5): every PF1e skill with ranks, class-skill status,
- * breakdown tooltips and one-click rolls (chat mode, GM-only, Take 10/20),
+ * instant breakdown popovers and one-click rolls (chat mode, GM-only, Take 10/20),
  * plus situational modifiers and sheet overrides.
  */
 import { useMemo, useState } from 'react';
+import { Lock, MoreHorizontal, Star } from 'lucide-react';
 import {
   canManageCharacter,
   characterSheetActions,
@@ -23,13 +24,14 @@ import {
   type SkillRow,
 } from '@vtt/shared';
 import { NumberField, OptionalNumberField, SelectField } from '../components/fields';
+import { InfoTip } from '../components/InfoTip';
 import { rollToChat } from '../panels/ChatPanel';
 import { dispatch } from '../state/dispatch';
 import { useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
+import { useCharactersUi, type SkillFilter } from './store';
 
-type Filter = 'all' | 'trained' | 'usable' | 'favorites';
-const FILTERS: [Filter, string][] = [
+const FILTERS: [SkillFilter, string][] = [
   ['all', 'All'],
   ['trained', 'Trained'],
   ['usable', 'Usable'],
@@ -38,7 +40,6 @@ const FILTERS: [Filter, string][] = [
 const GM_ONLY: ChatWhisper = { mode: 'gm', to: [] };
 const DEFAULT_OVERRIDE: SkillOverride = { ranks: null, misc: 0, classSkill: null, favorite: false, custom: false };
 
-/** Change one skill's override; entries back at their defaults are dropped. Skips token sync since skills never affect tokens. */
 function setOverride(c: Character, name: string, patch: Partial<SkillOverride>) {
   const next = { ...c.sheet.skills };
   const merged = { ...DEFAULT_OVERRIDE, ...next[name], ...patch };
@@ -60,8 +61,8 @@ export function SkillsTab({ character: c }: { character: Character }) {
   const manage = canManageCharacter(self, c);
   const stats = useMemo(() => computeCharacterStats(c), [c]);
   const summary = useMemo(() => computeSkills(c, stats), [c, stats]);
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
+  const query = useCharactersUi((s) => s.skillsQuery);
+  const filter = useCharactersUi((s) => s.skillsFilter);
   const [openName, setOpenName] = useState<string | null>(null);
 
   const rows = summary.rows.filter((r) => {
@@ -74,9 +75,9 @@ export function SkillsTab({ character: c }: { character: Character }) {
 
   return (
     <div className="skills">
-      <div className="muted small-text">
-        {summary.totalRanks} ranks spent · max {summary.maxRanks} per skill
-        {stats.armor.acp ? ` · armor check penalty ${stats.armor.acp} on Str/Dex skills` : ''}
+      <div className="muted small-text tnum">
+        {summary.totalRanks} ranks spent · max {summary.maxRanks}/skill
+        {stats.armor.acp ? ` · ACP ${stats.armor.acp} on Str/Dex` : ''}
       </div>
       {summary.warnings.length > 0 && (
         <div className="sheet-warnings">
@@ -86,10 +87,16 @@ export function SkillsTab({ character: c }: { character: Character }) {
         </div>
       )}
       <div className="loot-toolbar">
-        <input placeholder="Search skills…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input placeholder="Search skills…" value={query} onChange={(e) => useCharactersUi.setState({ skillsQuery: e.target.value })} />
         <div className="segmented" role="group" aria-label="Filter skills">
           {FILTERS.map(([id, label]) => (
-            <button key={id} type="button" className={filter === id ? 'active' : ''} onClick={() => setFilter(id)} title={id === 'favorites' ? 'Favorites' : undefined}>
+            <button
+              key={id}
+              type="button"
+              className={filter === id ? 'active' : ''}
+              onClick={() => useCharactersUi.setState({ skillsFilter: id })}
+              title={id === 'favorites' ? 'Favorites' : undefined}
+            >
               {label}
             </button>
           ))}
@@ -106,15 +113,12 @@ export function SkillsTab({ character: c }: { character: Character }) {
         ))}
       </ul>
       {manage && <AddSubSkill character={c} existing={summary.rows.map((r) => r.name)} />}
-      <p className="muted small-text">
-        Click a total to roll (uses your chat mode); 🔒 rolls for the GM only. Open a skill (⋯) for situational bonuses and to adjust ranks or misc.
-      </p>
     </div>
   );
 }
 
 function SkillLine({ character: c, row, manage, open, onToggle }: { character: Character; row: SkillRow; manage: boolean; open: boolean; onToggle: () => void }) {
-  const title = `${row.name}: ${describeLine(row.total)}${row.trainedOnly ? ' · trained only' : ''}${row.usable ? '' : ' (needs ranks)'}`;
+  const extraBody = [row.trainedOnly ? 'Trained only' : null, !row.usable ? 'Needs ranks to attempt' : null].filter(Boolean).join(' · ') || undefined;
   return (
     <div className="skill-row">
       <button
@@ -125,29 +129,33 @@ function SkillLine({ character: c, row, manage, open, onToggle }: { character: C
         disabled={!manage}
         onClick={() => setOverride(c, row.name, { favorite: !row.favorite })}
       >
-        {row.favorite ? '★' : '☆'}
+        <Star size={13} fill={row.favorite ? 'currentColor' : 'none'} />
       </button>
-      <span className="skill-name" title={title}>
-        {row.name}
-        {row.classSkill && (
-          <span className="badge" title="Class skill: +3 with at least 1 rank">
-            C
-          </span>
-        )}
-        {row.trainedOnly && <span className="muted small-text" title="Trained only"> ᵀ</span>}
-      </span>
+      <InfoTip title={`${row.name} (${signed(row.total.total)})`} line={row.total} body={extraBody}>
+        <span className="skill-name">
+          {row.name}
+          {row.classSkill && (
+            <span className="badge" title="Class skill: +3 with at least 1 rank">
+              C
+            </span>
+          )}
+          {row.trainedOnly && <span className="muted small-text" title="Trained only"> ᵀ</span>}
+        </span>
+      </InfoTip>
       <span className="muted small-text skill-ability">{row.ability ?? '—'}</span>
       <span className="muted small-text skill-ranks" title="Ranks">
         {row.ranks}
       </span>
-      <button type="button" className="small rollable skill-total" title={`${title}. Click to roll.`} onClick={() => roll(c, row)} aria-label={`Roll ${row.name}`}>
-        {signed(row.total.total)}
+      <InfoTip title={`${row.name} (${signed(row.total.total)})`} line={row.total} hint="Click to roll">
+        <button type="button" className="small rollable skill-total" onClick={() => roll(c, row)} aria-label={`Roll ${row.name}`}>
+          {signed(row.total.total)}
+        </button>
+      </InfoTip>
+      <button type="button" className="small icon-button" title="Roll for GM only" aria-label={`Roll ${row.name} for the GM only`} onClick={() => roll(c, row, { whisper: GM_ONLY })}>
+        <Lock size={12} />
       </button>
-      <button type="button" className="small" title="Roll for the GM only" aria-label={`Roll ${row.name} for the GM only`} onClick={() => roll(c, row, { whisper: GM_ONLY })}>
-        🔒
-      </button>
-      <button type="button" className="small" aria-expanded={open} aria-label={`More for ${row.name}`} onClick={onToggle}>
-        ⋯
+      <button type="button" className="small icon-button" aria-expanded={open} aria-label={`More for ${row.name}`} title="Situational bonuses & overrides" onClick={onToggle}>
+        <MoreHorizontal size={14} />
       </button>
     </div>
   );
@@ -164,7 +172,6 @@ function SkillDetail({ character: c, stats, row, manage }: { character: Characte
   const go = (opts: { take?: 10 | 20; whisper?: ChatWhisper }) => {
     for (const x of chosen) {
       if (!x.spendActionId) continue;
-      // Spend the resource (and announce it); stop if there's none left.
       if (!dispatch(pf1eTurnActions.act.create({ actionId: x.spendActionId, characterId: c.id, chatId: newId() }))) return;
     }
     roll(c, row, { ...opts, extras, labelExtra });
@@ -172,7 +179,7 @@ function SkillDetail({ character: c, stats, row, manage }: { character: Characte
 
   return (
     <div className="skill-detail">
-      <div className="small-text">{describeLine(row.total) || 'No modifiers'}</div>
+      <div className="small-text muted">{describeLine(row.total) || 'No modifiers'}</div>
       {situational.length > 0 && (
         <div className="skill-situational">
           {situational.map((x) => {
@@ -195,21 +202,21 @@ function SkillDetail({ character: c, stats, row, manage }: { character: Characte
         <NumberField label="Situational ±" value={extra} min={-50} max={50} step={1} onCommit={(v) => setExtra(Math.round(v))} />
       </div>
       <div className="button-row">
-        <button type="button" className="primary" onClick={() => go({})}>
+        <button type="button" className="gold small" onClick={() => go({})}>
           Roll {signed(row.total.total + extras.filter((e): e is number => typeof e === 'number').reduce((a, b) => a + b, 0))}
           {extras
             .filter((e): e is string => typeof e === 'string')
             .map((s) => `+${s}`)
             .join('')}
         </button>
-        <button type="button" onClick={() => go({ take: 10 })} title="Take 10: when not threatened or distracted">
+        <button type="button" className="small" onClick={() => go({ take: 10 })} title="Take 10: when not threatened or distracted">
           Take 10
         </button>
-        <button type="button" onClick={() => go({ take: 20 })} title="Take 20: with time and no penalty for failure (takes 20× as long)">
+        <button type="button" className="small" onClick={() => go({ take: 20 })} title="Take 20: with time and no penalty for failure">
           Take 20
         </button>
-        <button type="button" onClick={() => go({ whisper: GM_ONLY })} title="Roll for the GM only">
-          🔒 GM
+        <button type="button" className="small" onClick={() => go({ whisper: GM_ONLY })} title="Roll for the GM only">
+          <Lock size={11} /> GM
         </button>
       </div>
 

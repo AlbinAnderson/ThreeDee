@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@vtt/shared": "^0.1.0",
+    "lucide-react": "^1.81.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zustand": "^5.1.0"

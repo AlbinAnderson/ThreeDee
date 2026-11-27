@@ -1,3 +1,4 @@
+import { DialogHost } from './components/Dialogs';
 import { JoinScreen } from './components/JoinScreen';
 import { TableView } from './components/TableView';
 import { Toasts } from './components/Toasts';
@@ -27,6 +28,7 @@ export function App() {
     <>
       {content}
       <Toasts />
+      <DialogHost />
     </>
   );
 }

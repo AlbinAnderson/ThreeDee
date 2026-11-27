@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { audioActions, newId, type AudioTrack } from '@vtt/shared';
 import { ImageUploadButton } from '../components/fields';
 import { uploadAsset } from '../lib/assets';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useIsGm } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -105,7 +106,16 @@ function TrackRow({ track: t }: { track: AudioTrack }) {
       <button type="button" className={`icon-button${t.loop ? ' on' : ''}`} title={t.loop ? 'Looping' : 'Plays once'} onClick={() => update({ loop: !t.loop })}>
         ⟳
       </button>
-      <button type="button" className="icon-button" title="Delete" onClick={() => confirm(`Delete "${t.name}"?`) && dispatch(audioActions.remove.create({ id: t.id }))}>
+      <button
+        type="button"
+        className="icon-button"
+        title="Delete"
+        onClick={async () => {
+          if (await confirmDialog({ title: `Delete "${t.name}"?`, message: 'Remove this audio track from the room?', confirmLabel: 'Delete', danger: true })) {
+            dispatch(audioActions.remove.create({ id: t.id }));
+          }
+        }}
+      >
         ×
       </button>
     </li>

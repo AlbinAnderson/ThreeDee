@@ -1,9 +1,9 @@
 /**
  * Abilities (Epic 6): resource pools with pips and Rest, and a categorized
- * browser of feats, traits, class features, racial traits and proficiencies
- * with descriptions and "post to chat".
+ * browser of feats, traits, class features, racial traits and proficiencies.
  */
 import { useMemo, useState } from 'react';
+import { Moon, X } from 'lucide-react';
 import {
   ABILITY_CATEGORIES,
   canManageCharacter,
@@ -14,16 +14,17 @@ import {
   MAX_CUSTOM_POOLS,
   newId,
   pf1eTurnActions,
-  type AbilityCategory,
   type AbilityEntry,
   type Character,
   type CustomPool,
   type ResourcePool,
 } from '@vtt/shared';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { currentWhisper } from '../state/uiStore';
+import { useCharactersUi } from './store';
 
 const NATURE_LABEL: Record<string, [string, string]> = {
   NORMAL: ['chosen', 'Chosen when building the character'],
@@ -56,13 +57,17 @@ function Resources({ character: c, manage }: { character: Character; manage: boo
             type="button"
             className="small"
             title="Restore every pool (after 8 hours of rest)"
-            onClick={() => confirm('Rest 8 hours and restore every resource?') && dispatch(pf1eTurnActions.resetUses.create({ characterId: c.id }))}
+            onClick={async () => {
+              if (await confirmDialog({ title: 'Rest 8 hours?', message: 'Restore every spell slot, prepared spell, and daily resource pool?', confirmLabel: 'Rest' })) {
+                dispatch(pf1eTurnActions.resetUses.create({ characterId: c.id }));
+              }
+            }}
           >
-            Rest (8 hr)
+            <Moon size={12} /> Rest (8 hr)
           </button>
         )}
       </div>
-      {pools.length === 0 && <p className="muted small-text">No tracked resources. Add one below for anything your class uses up (ki, a homebrew power...).</p>}
+      {pools.length === 0 && <p className="muted small-text">No tracked resources. Add one below for ki, homebrew pools, etc.</p>}
       <ul className="pool-list">
         {pools.map((p) => {
           const left = Math.max(0, p.max - p.used);
@@ -72,7 +77,7 @@ function Resources({ character: c, manage }: { character: Character; manage: boo
                 <span className="flex1" title={p.className ? `${p.className} class resource` : 'Custom pool'}>
                   {p.name}
                 </span>
-                <span className={left === 0 ? 'warn-text small-text' : 'small-text'}>
+                <span className={`${left === 0 ? 'warn-text ' : ''}small-text tnum`}>
                   {left}/{p.max} {p.unit}
                 </span>
                 {manage && (
@@ -90,12 +95,13 @@ function Resources({ character: c, manage }: { character: Character; manage: boo
                     type="button"
                     className="small icon-button"
                     aria-label={`Remove ${p.name}`}
-                    onClick={() =>
-                      confirm(`Remove the ${p.name} pool?`) &&
-                      dispatch(characterSheetActions.updateSheet.create({ id: c.id, changes: { customPools: c.sheet.customPools.filter((x) => `custom.${x.id}` !== p.key) } }))
-                    }
+                    onClick={async () => {
+                      if (await confirmDialog({ title: `Remove ${p.name}?`, message: `Delete the custom "${p.name}" resource pool?`, confirmLabel: 'Remove', danger: true })) {
+                        dispatch(characterSheetActions.updateSheet.create({ id: c.id, changes: { customPools: c.sheet.customPools.filter((x) => `custom.${x.id}` !== p.key) } }));
+                      }
+                    }}
                   >
-                    ×
+                    <X size={13} />
                   </button>
                 )}
               </div>
@@ -153,8 +159,8 @@ function AddPool({ character: c }: { character: Character }) {
 
 function AbilityBrowser({ character: c }: { character: Character }) {
   const all = useMemo(() => characterAbilities(c), [c]);
-  const [category, setCategory] = useState<AbilityCategory | 'all'>('all');
-  const [query, setQuery] = useState('');
+  const category = useCharactersUi((s) => s.abilitiesCategory);
+  const query = useCharactersUi((s) => s.abilitiesQuery);
   const [openId, setOpenId] = useState<string | null>(null);
   const q = query.trim().toLowerCase();
   const shown = all.filter(
@@ -169,13 +175,23 @@ function AbilityBrowser({ character: c }: { character: Character }) {
       <div className="section-header">
         <h3>Feats, traits &amp; features</h3>
       </div>
-      <input className="actions-search" placeholder="Search abilities…" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <input
+        className="actions-search"
+        placeholder="Search abilities…"
+        value={query}
+        onChange={(e) => useCharactersUi.setState({ abilitiesQuery: e.target.value })}
+      />
       <div className="ability-filters" role="group" aria-label="Category">
-        <button type="button" className={`small${category === 'all' ? ' active' : ''}`} onClick={() => setCategory('all')}>
+        <button type="button" className={`small${category === 'all' ? ' active' : ''}`} onClick={() => useCharactersUi.setState({ abilitiesCategory: 'all' })}>
           All {all.length}
         </button>
         {ABILITY_CATEGORIES.filter((k) => counts[k.id]).map((k) => (
-          <button key={k.id} type="button" className={`small${category === k.id ? ' active' : ''}`} onClick={() => setCategory(k.id)}>
+          <button
+            key={k.id}
+            type="button"
+            className={`small${category === k.id ? ' active' : ''}`}
+            onClick={() => useCharactersUi.setState({ abilitiesCategory: k.id })}
+          >
             {k.label} {counts[k.id]}
           </button>
         ))}
@@ -193,10 +209,6 @@ function AbilityBrowser({ character: c }: { character: Character }) {
           </ul>
         </div>
       ))}
-      <p className="muted small-text">
-        PCGen saves only chosen abilities; features marked <span className="badge subtle">rules</span> come from the VTT's own tables and may be incomplete above
-        level 1.
-      </p>
     </section>
   );
 }

@@ -1,4 +1,5 @@
 import { DRAWING_MAX_COORDS, drawingActions, newId, type Drawing, type DrawingShape } from '@vtt/shared';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useCurrentScene, useIsGm, useSelf } from '../state/hooks';
 import { useUi } from '../state/uiStore';
@@ -143,10 +144,11 @@ function DrawOptions() {
             <button
               type="button"
               className="small danger"
-              onClick={() =>
-                confirm(`Erase every drawing on "${scene.name}"?`) &&
-                dispatch(drawingActions.clear.create({ sceneId: scene.id }))
-              }
+              onClick={async () => {
+                if (await confirmDialog({ title: 'Erase all drawings?', message: `Erase every drawing on "${scene.name}"?`, confirmLabel: 'Erase all', danger: true })) {
+                  dispatch(drawingActions.clear.create({ sceneId: scene.id }));
+                }
+              }}
             >
               Clear all
             </button>

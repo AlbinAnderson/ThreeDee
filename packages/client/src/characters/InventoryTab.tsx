@@ -3,6 +3,7 @@
  * a container tree of items with quick steppers, slots and per-item rules data.
  */
 import { useMemo, useState } from 'react';
+import { Flame, Package } from 'lucide-react';
 import {
   activeLoadout,
   canControlToken,
@@ -32,6 +33,7 @@ import {
   type ItemWeapon,
 } from '@vtt/shared';
 import { CheckboxField, NumberField, OptionalNumberField, SelectField, TextAreaField, TextField } from '../components/fields';
+import { confirmDialog, promptDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
 import { useGame, useSelf } from '../state/hooks';
@@ -162,8 +164,16 @@ export function InventoryTab({ character: c }: { character: Character }) {
 function LoadoutBar({ character: c, manage, act }: { character: Character; manage: boolean; act: (a: GameAction) => boolean }) {
   const inv = c.inventory;
   const current = activeLoadout(inv);
-  const create = (copy: boolean) => {
-    const name = prompt(copy ? `Name for a copy of "${current.name}"` : 'Name for the new loadout', copy ? `${current.name} (copy)` : 'Combat')?.trim();
+  const create = async (copy: boolean) => {
+    const name = (
+      await promptDialog({
+        title: copy ? `Copy "${current.name}"` : 'New loadout',
+        label: 'Loadout name',
+        defaultValue: copy ? `${current.name} (copy)` : 'Combat',
+        confirmLabel: 'Create',
+        maxLength: 60,
+      })
+    )?.trim();
     if (name) act(inventoryActions.createLoadout.create({ characterId: c.id, loadoutId: newId(), name: name.slice(0, 60), copyFrom: copy ? current.id : undefined }));
   };
   return (
@@ -186,17 +196,17 @@ function LoadoutBar({ character: c, manage, act }: { character: Character; manag
       </select>
       {manage && (
         <>
-          <button type="button" className="small" title="Copy this loadout" onClick={() => create(true)}>
+          <button type="button" className="small" title="Copy this loadout" onClick={() => void create(true)}>
             Copy
           </button>
-          <button type="button" className="small" title="New loadout (everything carried)" onClick={() => create(false)}>
+          <button type="button" className="small" title="New loadout (everything carried)" onClick={() => void create(false)}>
             New
           </button>
           <button
             type="button"
             className="small"
-            onClick={() => {
-              const name = prompt('Rename loadout', current.name)?.trim();
+            onClick={async () => {
+              const name = (await promptDialog({ title: 'Rename loadout', label: 'Loadout name', defaultValue: current.name, confirmLabel: 'Rename', maxLength: 60 }))?.trim();
               if (name && name !== current.name) act(inventoryActions.renameLoadout.create({ characterId: c.id, loadoutId: current.id, name: name.slice(0, 60) }));
             }}
           >
@@ -206,7 +216,11 @@ function LoadoutBar({ character: c, manage, act }: { character: Character; manag
             <button
               type="button"
               className="small danger"
-              onClick={() => confirm(`Delete loadout "${current.name}"?`) && act(inventoryActions.deleteLoadout.create({ characterId: c.id, loadoutId: current.id }))}
+              onClick={async () => {
+                if (await confirmDialog({ title: `Delete loadout "${current.name}"?`, message: 'Items stay in your inventory; only this loadout preset is deleted.', confirmLabel: 'Delete', danger: true })) {
+                  act(inventoryActions.deleteLoadout.create({ characterId: c.id, loadoutId: current.id }));
+                }
+              }}
             >
               Delete
             </button>
@@ -346,10 +360,10 @@ function ItemRow({
   return (
     <div className={`inv-row${slot === 'notCarried' && !container ? ' not-carried' : ''}`} style={{ paddingLeft: depth * 14 }}>
       <button type="button" className="inv-name" onClick={onToggle} aria-expanded={open} title={item.notes || undefined}>
-        {item.container ? '▣ ' : ''}
-        {item.name}
-        {item.quantity !== 1 && <span className="muted"> ×{item.quantity}</span>}
-        {unidentified && <span className="badge subtle"> unidentified</span>}
+        {item.container && <Package size={12} className="muted" style={{ flexShrink: 0 }} />}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
+        {item.quantity !== 1 && <span className="muted">×{item.quantity}</span>}
+        {unidentified && <span className="badge subtle">unidentified</span>}
       </button>
       {item.charges && (
         <span className="inv-stepper" title="Charges">
@@ -385,7 +399,13 @@ function ItemRow({
           title={item.lit ? 'Put it out' : `Light it (${item.light.bright} ft bright, ${item.light.dim} ft dim on your token)`}
           onClick={() => act(inventoryActions.setLit.create({ characterId: c.id, itemId: item.id, lit: !item.lit }))}
         >
-          {item.lit ? '🔥 Lit' : 'Light'}
+          {item.lit ? (
+            <>
+              <Flame size={12} /> Lit
+            </>
+          ) : (
+            'Light'
+          )}
         </button>
       )}
       {container ? (
@@ -505,7 +525,11 @@ function ItemEditor({ character: c, item, manage, act }: { character: Character;
         <button
           type="button"
           className="danger"
-          onClick={() => confirm(`Delete "${item.name}"?${item.container ? ' Its contents stay in the inventory.' : ''}`) && act(inventoryActions.removeItem.create({ characterId: c.id, itemId: item.id }))}
+          onClick={async () => {
+            if (await confirmDialog({ title: `Delete "${item.name}"?`, message: item.container ? 'Its contents will remain in your inventory.' : 'Remove this item from your inventory?', confirmLabel: 'Delete', danger: true })) {
+              act(inventoryActions.removeItem.create({ characterId: c.id, itemId: item.id }));
+            }
+          }}
         >
           Delete
         </button>

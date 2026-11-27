@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { deckActions, newId, tableActions, type Card, type Deck, type RollTable, type TableEntry } from '@vtt/shared';
 import { CheckboxField, ImageUploadButton, TextAreaField, TextField } from '../components/fields';
 import { uploadAsset } from '../lib/assets';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useIsGm, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -100,7 +101,15 @@ function TableEditor({ table: t }: { table: RollTable }) {
         onCommit={(text) => update({ entries: parseEntries(text, t.entries) })}
       />
       <CheckboxField label="Players can see and roll" value={t.playersCanRoll} onCommit={(playersCanRoll) => update({ playersCanRoll })} />
-      <button type="button" className="danger small" onClick={() => confirm(`Delete "${t.name}"?`) && dispatch(tableActions.remove.create({ id: t.id }))}>
+      <button
+        type="button"
+        className="danger small"
+        onClick={async () => {
+          if (await confirmDialog({ title: `Delete "${t.name}"?`, message: 'Remove this roll table?', confirmLabel: 'Delete', danger: true })) {
+            dispatch(tableActions.remove.create({ id: t.id }));
+          }
+        }}
+      >
         Delete table
       </button>
     </div>
@@ -307,7 +316,15 @@ function DeckEditor({ deck }: { deck: Deck }) {
           ))}
         </ul>
       </details>
-      <button type="button" className="danger small" onClick={() => confirm(`Delete "${deck.name}"?`) && dispatch(deckActions.remove.create({ id: deck.id }))}>
+      <button
+        type="button"
+        className="danger small"
+        onClick={async () => {
+          if (await confirmDialog({ title: `Delete "${deck.name}"?`, message: 'Remove this card deck?', confirmLabel: 'Delete', danger: true })) {
+            dispatch(deckActions.remove.create({ id: deck.id }));
+          }
+        }}
+      >
         Delete deck
       </button>
     </div>

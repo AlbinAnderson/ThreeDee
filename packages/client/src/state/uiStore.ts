@@ -1,5 +1,5 @@
 /**
- * Local-only UI state (never synced): current tool, selection, camera, etc.
+ * Local-only UI state (never synced): current tool, selection, camera, sidebar sizing, etc.
  */
 import { create } from 'zustand';
 import type { ChatWhisper, DrawingShape } from '@vtt/shared';
@@ -24,6 +24,10 @@ export interface ChatMode {
   to: string[];
 }
 
+export const SIDEBAR_MIN = 300;
+export const SIDEBAR_MAX = 640;
+export const SIDEBAR_DEFAULT = 360;
+
 interface UiState {
   toolId: string;
   selectedTokenIds: string[];
@@ -32,6 +36,10 @@ interface UiState {
   camera: Camera;
   viewport: { width: number; height: number };
   sidebarPanel: string;
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
+  shortcutsOpen: boolean;
+  lastSeenChatId: string | null;
   draw: DrawSettings;
   chatMode: ChatMode;
   /** Local volume multiplier for the jukebox (0..1). */
@@ -44,6 +52,11 @@ interface UiState {
   setCamera(camera: Camera): void;
   setViewport(size: { width: number; height: number }): void;
   setSidebarPanel(id: string): void;
+  setSidebarWidth(width: number): void;
+  setSidebarCollapsed(collapsed: boolean): void;
+  toggleSidebar(): void;
+  setShortcutsOpen(open: boolean): void;
+  markChatSeen(id: string): void;
   setDraw(changes: Partial<DrawSettings>): void;
   setChatMode(mode: ChatMode): void;
   setMasterVolume(v: number): void;
@@ -59,6 +72,16 @@ function loadVolume(): number {
   }
 }
 
+function loadSidebarWidth(): number {
+  try {
+    const raw = localStorage.getItem('vtt.sidebarWidth');
+    const v = Number(raw);
+    return raw !== null && Number.isFinite(v) ? Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(v))) : SIDEBAR_DEFAULT;
+  } catch {
+    return SIDEBAR_DEFAULT;
+  }
+}
+
 export const useUi = create<UiState>()((set) => ({
   toolId: 'select',
   selectedTokenIds: [],
@@ -66,6 +89,10 @@ export const useUi = create<UiState>()((set) => ({
   camera: { x: 0, y: 0, zoom: 1 },
   viewport: { width: 0, height: 0 },
   sidebarPanel: 'chat',
+  sidebarWidth: loadSidebarWidth(),
+  sidebarCollapsed: false,
+  shortcutsOpen: false,
+  lastSeenChatId: null,
   draw: { shape: 'freehand', color: '#ff4d4d', width: 4, fill: false },
   chatMode: { mode: 'public', to: [] },
   masterVolume: loadVolume(),
@@ -76,7 +103,20 @@ export const useUi = create<UiState>()((set) => ({
   setViewedScene: (viewedSceneId) => set({ viewedSceneId, selectedTokenIds: [] }),
   setCamera: (camera) => set({ camera }),
   setViewport: (viewport) => set({ viewport }),
-  setSidebarPanel: (sidebarPanel) => set({ sidebarPanel }),
+  setSidebarPanel: (sidebarPanel) => set({ sidebarPanel, sidebarCollapsed: false }),
+  setSidebarWidth: (raw) => {
+    const sidebarWidth = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(raw)));
+    set({ sidebarWidth });
+    try {
+      localStorage.setItem('vtt.sidebarWidth', String(sidebarWidth));
+    } catch {
+      /* ignore */
+    }
+  },
+  setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  markChatSeen: (lastSeenChatId) => set({ lastSeenChatId }),
   setDraw: (changes) => set((s) => ({ draw: { ...s.draw, ...changes } })),
   setChatMode: (chatMode) => set({ chatMode }),
   setMasterVolume: (masterVolume) => {
@@ -87,7 +127,7 @@ export const useUi = create<UiState>()((set) => ({
       /* ignore */
     }
   },
-  resetForRoom: () => set({ selectedTokenIds: [], viewedSceneId: null, toolId: 'select' }),
+  resetForRoom: () => set({ selectedTokenIds: [], viewedSceneId: null, toolId: 'select', lastSeenChatId: null, shortcutsOpen: false }),
 }));
 
 /** The `whisper` field for a message posted with the current chat mode. */
