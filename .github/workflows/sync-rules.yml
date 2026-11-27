@@ -1,0 +1,109 @@
+name: Sync Rules Pack
+
+# Builds the PF1e rules pack on GitHub Actions from PCGen's Pathfinder data
+# using this repo's `vtt rules build` CLI, then uploads and atomically installs
+# it into DATA_DIR/rules on the production droplet.
+#
+# Run manually from Actions -> Sync Rules Pack -> Run workflow whenever
+# `buildPack.ts` or PCGen source data changes. Uses the same DEPLOY_* secrets
+# as the Deploy workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pcgen_ref:
+        description: 'PCGen commit SHA, branch, or tag from github.com/PCGen/pcgen'
+        required: true
+        default: 'f82b6e7674dfe05b85f354bc39669d81df2c3645'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  sync-rules:
+    name: Build and sync PF1e rules pack to the droplet
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      PCGEN_REF: ${{ inputs.pcgen_ref }}
+      RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sparse-checkout PCGen Pathfinder data
+        run: |
+          if [[ ! "$PCGEN_REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error::Invalid pcgen_ref: $PCGEN_REF"
+            exit 1
+          fi
+          rm -rf /tmp/pcgen
+          git init /tmp/pcgen
+          git -C /tmp/pcgen remote add origin https://github.com/PCGen/pcgen.git
+          git -C /tmp/pcgen sparse-checkout init --cone
+          git -C /tmp/pcgen sparse-checkout set data/pathfinder
+          git -C /tmp/pcgen fetch --depth=1 --filter=blob:none origin "$PCGEN_REF"
+          git -C /tmp/pcgen checkout FETCH_HEAD
+
+      - name: Build and package rules pack
+        run: |
+          rm -rf /tmp/rules-pack
+          npm run -s vtt -- rules build /tmp/pcgen/data/pathfinder /tmp/rules-pack
+          test -f /tmp/rules-pack/manifest.json
+          test -f /tmp/rules-pack/class.json
+          test -f /tmp/rules-pack/race.json
+          tar -czf rules-pack.tgz -C /tmp/rules-pack .
+          ls -lh rules-pack.tgz
+
+      - name: Set up SSH
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          for name in HOST DEPLOY_USER SSH_KEY KNOWN_HOSTS; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required GitHub secret for deployment ($name). Configure DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, and DEPLOY_KNOWN_HOSTS."
+              exit 1
+            fi
+          done
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Upload rules pack
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          scp -i ~/.ssh/deploy_key -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            rules-pack.tgz "$DEPLOY_USER@$HOST:/tmp/rules-pack-$RUN_ID.tgz"
+          scp -i ~/.ssh/deploy_key -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            scripts/install-rules-remote.sh "$DEPLOY_USER@$HOST:/tmp/install-rules-remote-$RUN_ID.sh"
+
+      - name: Install rules pack and restart on the droplet
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$HOST" \
+            "trap 'rm -f /tmp/install-rules-remote-$RUN_ID.sh' EXIT; bash /tmp/install-rules-remote-$RUN_ID.sh /tmp/rules-pack-$RUN_ID.tgz"
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
