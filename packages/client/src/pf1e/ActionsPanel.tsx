@@ -7,6 +7,7 @@
 import { useMemo, useState } from 'react';
 import { Dices, Moon, Play } from 'lucide-react';
 import {
+  actionCostFor,
   canControlCombatant,
   canManageCharacter,
   canSpend,
@@ -264,13 +265,13 @@ export function ActionsPanel() {
 
       <input className="actions-search" placeholder="Search actions…" value={query} onChange={(e) => setQuery(e.target.value)} />
 
-      {classSets.map(({ set }) => {
+      {classSets.map(({ set, level }) => {
         const list = set.actions.filter(matches);
         if (!list.length) return null;
         return (
           <section key={set.className}>
             <h3>{set.className}</h3>
-            <ActionList actions={list} econ={econ} onAct={act} onRoll={roll} usesFor={(a) => resources.find((r) => r.set === set && r.def.id === a.resource)} />
+            <ActionList actions={list} classLevel={level} econ={econ} onAct={act} onRoll={roll} usesFor={(a) => resources.find((r) => r.set === set && r.def.id === a.resource)} />
           </section>
         );
       })}
@@ -359,12 +360,14 @@ function TurnPips({ econ, combatantId }: { econ: EffectiveTurn; combatantId: str
 
 function ActionList({
   actions,
+  classLevel,
   econ,
   onAct,
   onRoll,
   usesFor,
 }: {
   actions: Pf1Action[];
+  classLevel?: number;
   econ: EffectiveTurn | null;
   onAct: ((a: Pf1Action) => void) | null;
   onRoll?: ((a: Pf1Action) => void) | null;
@@ -373,14 +376,15 @@ function ActionList({
   return (
     <ul className="action-list">
       {actions.map((a) => {
-        const spend = econ ? canSpend(econ, a.cost, a.movement) : true;
+        const actionCost = actionCostFor(a, classLevel ?? 1);
+        const spend = econ ? canSpend(econ, actionCost, a.movement) : true;
         const uses = a.resource ? usesFor?.(a) : undefined;
         const cost = a.resourceCost ?? 1;
         const remaining = uses ? Math.max(0, uses.max - uses.used) : 0;
         const out = uses ? uses.used + cost > uses.max : false;
         const blocked = spend !== true ? spend : out ? (remaining > 0 ? `Needs ${cost} (only ${remaining} left)` : 'None left today') : null;
         const [badge, badgeTitle, badgeBody] = PROVOKES_BADGE[a.provokes];
-        const [costTitle, costBody] = COST_GLOSSARY[a.cost];
+        const [costTitle, costBody] = COST_GLOSSARY[actionCost];
         const tipBody = `${a.notes}${blocked ? `\n\nBlocked: ${blocked}` : ''}`;
         return (
           <li key={a.id} className={blocked ? 'blocked' : ''}>
@@ -397,8 +401,8 @@ function ActionList({
               </InfoTip>
               <span className="action-meta">
                 <InfoTip title={a.costLabel ? `${costTitle} (${a.costLabel})` : costTitle} body={costBody} hint="Click badge to pin" clickToPin>
-                  <button type="button" className={`cost-badge badge-btn cost-${a.cost}`} aria-label={`Explain ${a.costLabel ?? COST_LABEL[a.cost]}`}>
-                    {a.costLabel ?? COST_LABEL[a.cost]}
+                  <button type="button" className={`cost-badge badge-btn cost-${actionCost}`} aria-label={`Explain ${a.costLabel ?? COST_LABEL[actionCost]}`}>
+                    {a.costLabel ?? COST_LABEL[actionCost]}
                   </button>
                 </InfoTip>
                 <InfoTip title={badgeTitle} body={badgeBody} hint="Click badge to pin" clickToPin>

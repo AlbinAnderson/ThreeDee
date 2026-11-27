@@ -164,12 +164,52 @@ function hasBonusSlot(c: Character, def: CasterClass | null, className: string):
 function conversionsFor(c: Character, def: CasterClass | null): ConversionKind[] {
   if (def?.convert === 'summonNaturesAlly') return ['sna'];
   if (def?.convert !== 'cureInflict') return [];
-  // Good casters convert to cure, evil to inflict; neutral ones choose when they take the class (offer both).
+  // Good casters convert to cure, evil to inflict; neutral ones follow their chosen Channel Energy (positive -> cure, negative -> inflict).
   const align = (c.build.attributes.alignment ?? '').trim().toUpperCase();
-  const moral = align.length === 2 ? align[1] : align === 'TN' || align === 'N' ? 'N' : '';
-  if (moral === 'G') return ['cure'];
-  if (moral === 'E') return ['inflict'];
+  const isGood = (align.length === 2 && align[1] === 'G') || /\bGOOD\b/.test(align);
+  const isEvil = (align.length === 2 && align[1] === 'E') || /\bEVIL\b/.test(align);
+  if (isGood) return ['cure'];
+  if (isEvil) return ['inflict'];
+  const abKeys = c.build.abilities.map((a) => a.key.toLowerCase());
+  const pos = abKeys.some((k) => k.includes('channel positive energy'));
+  const neg = abKeys.some((k) => k.includes('channel negative energy'));
+  if (pos && !neg) return ['cure'];
+  if (neg && !pos) return ['inflict'];
   return ['cure', 'inflict'];
+}
+
+/**
+ * Effective Arcane Spell Failure % for a specific arcane class's spells (CRB/APG/ACG):
+ * - Bard: ignores light armor & non-tower shields
+ * - Skald: ignores light/medium armor & non-tower shields
+ * - Magus: ignores light (1+), medium (7+), heavy (13+) armor; shields still incur ASF
+ * - Bloodrager: ignores light/medium armor; shields still incur ASF
+ * - Summoner / Unchained Summoner: ignores light armor; shields still incur ASF
+ */
+export function casterAsf(info: Pick<CasterInfo, 'className' | 'classLevel' | 'tradition'>, stats: CharacterStats): number {
+  if (info.tradition !== 'arcane') return 0;
+  const cls = normalizeName(info.className);
+  const { armorCategory, armorAsf, shieldAsf, towerShield } = stats.armor;
+  let effectiveArmor = armorAsf;
+  let effectiveShield = shieldAsf;
+  if (cls === 'bard') {
+    if (armorCategory === 'light') effectiveArmor = 0;
+    if (!towerShield) effectiveShield = 0;
+  } else if (cls === 'skald') {
+    if (armorCategory === 'light' || armorCategory === 'medium') effectiveArmor = 0;
+    if (!towerShield) effectiveShield = 0;
+  } else if (cls === 'magus') {
+    const ok =
+      armorCategory === 'light' ||
+      (armorCategory === 'medium' && info.classLevel >= 7) ||
+      (armorCategory === 'heavy' && info.classLevel >= 13);
+    if (ok) effectiveArmor = 0;
+  } else if (cls === 'bloodrager') {
+    if (armorCategory === 'light' || armorCategory === 'medium') effectiveArmor = 0;
+  } else if (cls === 'summoner' || cls === 'summonerunchained' || cls === 'unchainedsummoner') {
+    if (armorCategory === 'light') effectiveArmor = 0;
+  }
+  return Math.min(100, effectiveArmor + effectiveShield);
 }
 
 /** Times-expanded prepared list from the first prepared book in the .pcg, overflowing into domain/school slots when normal slots are full. */
@@ -324,7 +364,8 @@ export function spellDcLevel(info: CasterInfo, name: string, slotLevel: number, 
 }
 
 export function spellDc(c: Character, info: CasterInfo, name: string, dcLevel: number, schoolOverride?: string | null): number {
-  const school = schoolOverride ?? spellSchool(name) ?? c.rulesData.spellSchools[normalizeName(name)] ?? null;
+  const rawSchool = schoolOverride ?? spellSchool(name) ?? c.rulesData.spellSchools[normalizeName(name)] ?? null;
+  const school = rawSchool ? rawSchool.split(/[\s(]/)[0]! : null;
   return info.dcBase + dcLevel + spellFocusBonus(c, school);
 }
 
@@ -477,7 +518,7 @@ export function spellCard(c: Character, plan: CastPlan, who = c.name, rules?: Ru
     lines.push(`Save DC ${dc} if the spell allows a save.`);
   }
   if (info.tradition === 'arcane') {
-    const asf = computeCharacterStats(c).armor.asf;
+    const asf = casterAsf(info, computeCharacterStats(c));
     if (asf > 0 && !plan.metamagic.some((m) => featKey(m) === 'stillspell')) lines.push(`Arcane spell failure ${asf}% if it has somatic components.`);
   }
   const clampBonus = (n: number) => Math.max(-100, Math.min(200, Math.round(n)));

@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { defineAction, type AuthContext, type AuthResult, type Redactor } from '../../actions/define';
 import { isGm } from '../../actions/auth';
-import { classActionSetsFor, classSetForAction, COST_LABEL, lookupPf1Action, type Pf1Action } from '../../pf1e/actions';
+import { actionCostFor, classActionSetsFor, classSetForAction, COST_LABEL, lookupPf1Action, type Pf1Action } from '../../pf1e/actions';
 import { applySpend, canSpend, characterForCombatant, effectiveTurn, freshTurn, turnWindow } from '../../pf1e/economy';
 import { computeCharacterStats } from '../../pf1e/engine';
 import { resourceKey, resourceMax } from '../../pf1e/resources';
@@ -16,6 +16,13 @@ import { canControlCombatant, combatantName, isCombatantHidden } from '../combat
 import { canManageCharacter } from './characters';
 
 const PROVOKES_LABEL = { yes: 'provokes AoO', no: 'no AoO', varies: 'AoO varies', ranged: 'ranged provokes' } as const;
+
+function effectiveActionCost(c: Character | undefined, action: Pf1Action) {
+  if (!action.costForLevel || !c) return action.cost;
+  const set = classSetForAction(action.id);
+  const entry = set ? classActionSetsFor(c.build.classes).find((x) => x.set === set) : undefined;
+  return actionCostFor(action, entry?.level ?? 1);
+}
 
 /** Class actions need a character with that class, and resource actions enough uses left. */
 function classCheck(c: Character | undefined, action: Pf1Action): AuthResult {
@@ -77,7 +84,7 @@ export const pf1eTurnActions = {
         const res = classCheck(character, action);
         if (res !== true) return res;
         if (combatantId && ctx.state.combat.active) {
-          const spend = canSpend(effectiveTurn(ctx.state, combatantId), action.cost, action.movement);
+          const spend = canSpend(effectiveTurn(ctx.state, combatantId), effectiveActionCost(character, action), action.movement);
           if (spend !== true) return spend;
         }
         return true;
@@ -99,10 +106,11 @@ export const pf1eTurnActions = {
         const state = draft as unknown as GameState;
         const { character, combatant } = actor(state, combatantId, characterId);
 
+        const cost = effectiveActionCost(character, action);
         if (combatantId && combatant && draft.combat.active) {
           const e = effectiveTurn(state, combatantId);
           const turn = { ...e.turn };
-          applySpend(turn, e, action.cost, action.movement);
+          applySpend(turn, e, cost, action.movement);
           draft.pf1eTurns[combatantId] = turn;
           // Forget turn state of combatants that left the turn order.
           for (const id of Object.keys(draft.pf1eTurns)) if (!draft.combat.combatants.some((c) => c.id === id)) delete draft.pf1eTurns[id];
@@ -124,7 +132,7 @@ export const pf1eTurnActions = {
           ...(whisper ? { whisper } : {}),
           card: {
             title: `${who}: ${action.name}`.slice(0, 120),
-            subtitle: `${action.costLabel ?? COST_LABEL[action.cost]} · ${PROVOKES_LABEL[action.provokes]}`,
+            subtitle: `${action.costLabel ?? COST_LABEL[cost]} · ${PROVOKES_LABEL[action.provokes]}`,
             text: action.notes,
           },
         });

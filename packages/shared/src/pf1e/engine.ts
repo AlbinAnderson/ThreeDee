@@ -37,6 +37,8 @@ export interface AbilityScore {
   damage: number;
   /** Modifier, including ability damage. */
   mod: number;
+  /** Modifier without temporary buffs/conditions or runtime.abilityTemp (used for Barbarian Rage rounds per CRB p.32). */
+  permanentMod: number;
   line: StatLine;
 }
 
@@ -68,9 +70,15 @@ export interface CharacterStats {
     maxDex: number | null;
     /** Effective armor check penalty (worse of armor+shield and load). */
     acp: number;
-    /** Arcane spell failure chance, percent. */
+    /** Arcane spell failure chance, percent (all worn armor + shield). */
     asf: number;
+    /** Wearing medium or heavy armor (blocks light-armor-only feats like Fleet). */
     heavyArmor: boolean;
+    /** Worn armor category (null if unarmored) and individual ASF breakdown for class armored casting. */
+    armorCategory: 'light' | 'medium' | 'heavy' | null;
+    armorAsf: number;
+    shieldAsf: number;
+    towerShield: boolean;
   };
   load: { weight: LoadWeight; capacity: CarryingCapacity; level: LoadLevel };
   attacks: WeaponAttack[];
@@ -199,21 +207,25 @@ export function computeCharacterStats(c: Character): CharacterStats {
 
   const abilities = {} as Record<StatKey, AbilityScore>;
   for (const key of STAT_KEYS) {
-    const mods: Modifier[] = [{ value: build.attributes.stats[key] ?? 10, type: 'base', source: 'Base' }];
+    const permMods: Modifier[] = [{ value: build.attributes.stats[key] ?? 10, type: 'base', source: 'Base' }];
     const racial = race?.anyPlusTwo ? (sheet.racialChoice === key ? 2 : 0) : (race?.stats[key] ?? 0);
-    if (racial) mods.push({ value: racial, type: 'racial', source: build.attributes.race ?? 'Race' });
-    if (levelUps[key]) mods.push({ value: levelUps[key]!, type: 'untyped', source: 'Level-up increases' });
+    if (racial) permMods.push({ value: racial, type: 'racial', source: build.attributes.race ?? 'Race' });
+    if (levelUps[key]) permMods.push({ value: levelUps[key]!, type: 'untyped', source: 'Level-up increases' });
+    if (runtime.abilityDrain[key]) permMods.push({ value: -runtime.abilityDrain[key]!, type: 'untyped', source: 'Drain' });
+    permMods.push(...passive[key]);
+    const mods: Modifier[] = [...permMods];
     if (runtime.abilityTemp[key]) mods.push({ value: runtime.abilityTemp[key]!, type: 'untyped', source: 'Temporary' });
-    if (runtime.abilityDrain[key]) mods.push({ value: -runtime.abilityDrain[key]!, type: 'untyped', source: 'Drain' });
-    mods.push(...passive[key], ...fx.mods[key]);
+    mods.push(...fx.mods[key]);
     let line = sumModifiers(mods);
+    const permLine = sumModifiers(permMods);
     // Helpless / paralyzed: the ability counts as a score of 0 (effective modifier −5).
     const zeroed = fx.zero.includes(key);
     if (zeroed && line.total !== 0) line = sumModifiers([...mods, { value: -line.total, type: 'untyped', source: 'Helpless (score 0)' }]);
     const damage = Math.max(0, runtime.abilityDamage[key] ?? 0);
     // PF1e: every 2 points of ability damage apply a -1 penalty without altering the score.
     const abilityMod = zeroed ? -5 : Math.floor((line.total - 10) / 2) - Math.floor(damage / 2);
-    abilities[key] = { key, score: line.total, damage, mod: abilityMod, line };
+    const permanentMod = Math.floor((permLine.total - 10) / 2) - Math.floor(damage / 2);
+    abilities[key] = { key, score: line.total, damage, mod: abilityMod, permanentMod, line };
   }
   const mod = (k: StatKey) => abilities[k].mod;
 
@@ -366,7 +378,11 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const dexToAc = maxDex === null ? mod('DEX') : Math.min(mod('DEX'), maxDex);
   const armorAcp = effectiveWorn.reduce((s, w) => s + w.armor.acp, 0);
   const acp = Math.min(armorAcp, loadFx.acp);
-  const asf = Math.min(100, effectiveWorn.reduce((s, w) => s + w.armor.asf, 0));
+  const armorCategory = armorItem && (armorItem.armor.category === 'light' || armorItem.armor.category === 'medium' || armorItem.armor.category === 'heavy') ? armorItem.armor.category : null;
+  const armorAsf = effectiveWorn.filter((w) => w.armor.kind === 'armor').reduce((s, w) => s + w.armor.asf, 0);
+  const shieldAsf = effectiveWorn.filter((w) => w.armor.kind === 'shield').reduce((s, w) => s + w.armor.asf, 0);
+  const towerShield = effectiveWorn.some((w) => w.armor.kind === 'shield' && /tower/i.test(w.name));
+  const asf = Math.min(100, armorAsf + shieldAsf);
 
   const acDex: Modifier = {
     value: dexToAc,
@@ -436,18 +452,45 @@ export function computeCharacterStats(c: Character): CharacterStats {
   ]);
   const initiative = sumModifiers([{ value: mod('DEX'), type: 'ability', source: 'Dex' }, ...extra.initiative, ...passive.initiative, ...fx.mods.initiative, ...misc('initiative')]);
 
-  const baseSpeed = sheet.speed ?? race?.speed ?? 30;
+  const racialBaseSpeed = sheet.speed ?? race?.speed ?? 30;
+  // Barbarian / Unchained Barbarian / Bloodrager Fast Movement (CRB p.31): +10 ft in no/light/medium armor and not heavy load,
+  // applied BEFORE armor/load speed reduction (e.g. Gnome 20+10=30 -> 20 in medium armor; Human 30+10=40 -> 30 in medium armor).
+  const hasBarbFastMove =
+    sheet.speed === null &&
+    classes.some((k) => k.level >= 1 && ['barbarian', 'barbarianunchained', 'unchainedbarbarian', 'bloodrager'].includes(k.name.toLowerCase().replace(/[^a-z0-9]/g, ''))) &&
+    armorCategory !== 'heavy' &&
+    loadLevel !== 'heavy' &&
+    loadLevel !== 'overloaded';
+  const baseSpeed = racialBaseSpeed + (hasBarbFastMove ? 10 : 0);
   // Steady races (dwarves) aren't slowed by armor or load.
   const armorSlows = heavyArmor && !race?.steady && sheet.speed === null;
   const loadSlows = heavyLoad && !race?.steady && sheet.speed === null;
-  // PF1e Table: Armor and Shields — 20->15, 30->20, 40->30, 50->35, 60->40.
-  const reducedSpeed = baseSpeed <= 0 ? 0 : Math.max(5, Math.ceil((baseSpeed * 2) / 3 / 5) * 5);
-  const why = [armorSlows ? `${armorItem!.armor.category} armor` : null, loadSlows ? `${loadLevel} load` : null].filter(Boolean).join(', ');
+  // PF1e Table: Armor and Shields — 10->5, 15->10, 20->15, 30->20, 40->30, 50->35, 60->40.
+  const reducedSpeed =
+    baseSpeed <= 0 ? 0 : baseSpeed <= 15 ? Math.max(5, baseSpeed - 5) : Math.max(5, Math.ceil((baseSpeed * 2) / 3 / 5) * 5);
+  const why = [hasBarbFastMove ? 'Fast movement +10' : null, armorSlows ? `${armorItem!.armor.category} armor` : null, loadSlows ? `${loadLevel} load` : null]
+    .filter(Boolean)
+    .join(', ');
   const speedBase: Modifier =
     loadLevel === 'overloaded' && sheet.speed === null
       ? { value: 5, type: 'base', source: 'Overloaded: can only stagger 5 ft' }
-      : { value: armorSlows || loadSlows ? reducedSpeed : baseSpeed, type: 'base', source: why ? `Base ${baseSpeed} ft, ${why}` : 'Base' };
-  const speed = sumModifiers([speedBase, ...(loadLevel === 'overloaded' ? [] : [...extra.speed, ...passive.speed, ...fx.mods.speed])]);
+      : { value: armorSlows || loadSlows ? reducedSpeed : baseSpeed, type: 'base', source: why ? `Base ${racialBaseSpeed} ft (${why})` : 'Base' };
+  // Monk / Unchained Monk Fast Movement (CRB p.59): +10 ft enhancement per 3 levels when unarmored and light load.
+  const monkLevel = classes
+    .filter((k) => ['monk', 'monkunchained', 'unchainedmonk'].includes(k.name.toLowerCase().replace(/[^a-z0-9]/g, '')))
+    .reduce((s, k) => s + k.level, 0);
+  const monkSpeed: Modifier[] =
+    monkLevel >= 3 && !armorItem && !heavyLoad
+      ? [{ value: 10 * Math.floor(monkLevel / 3), type: 'enhancement', source: 'Fast movement (Monk)' }]
+      : [];
+  // Haste (CRB p.293): +30 ft enhancement bonus, capped at the subject's normal speed (max 2× normal speed).
+  const normalSpeed = speedBase.value;
+  const buffSpeeds: Modifier[] = fx.mods.speed.map((m) =>
+    m.type === 'enhancement' && /hast/i.test(m.source) && m.value > normalSpeed
+      ? { ...m, value: Math.max(0, normalSpeed), source: `${m.source} (capped at 2× speed)` }
+      : m,
+  );
+  const speed = sumModifiers([speedBase, ...(loadLevel === 'overloaded' ? [] : [...extra.speed, ...passive.speed, ...monkSpeed, ...buffSpeeds])]);
 
   // ---------------------------------------------------------------- weapon attacks
   const finesse = has('weaponfinesse');
@@ -501,11 +544,18 @@ export function computeCharacterStats(c: Character): CharacterStats {
       if (hasWeaponFeat('weaponspecialization', item.name)) featDamage.push({ value: 2, type: 'untyped', source: 'Weapon Specialization' });
       if (hasWeaponFeat('greaterweaponspecialization', item.name)) featDamage.push({ value: 2, type: 'untyped', source: 'Greater Weapon Specialization' });
 
+      // PF1e Weapon Finesse (CRB p.136): carrying a shield applies its ACP to Dex-based melee attack rolls.
+      const finesseShieldAcp: Modifier[] =
+        melee && useDex && shieldItem && shieldItem.armor.acp < 0
+          ? [{ value: shieldItem.armor.acp, type: 'untyped', source: `${shieldItem.name} ACP (Weapon Finesse)` }]
+          : [];
+
       const attack = sumModifiers([
         { value: bab.total, type: 'base', source: 'BAB' },
         attackAbility,
         { value: SIZE_MOD[size], type: 'size', source: size },
         ...weaponBonus,
+        ...finesseShieldAcp,
         ...featAttack,
         ...togglePenalties,
         ...passive.attack,
@@ -538,7 +588,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
         ...passive.damage,
         ...(melee ? passive.damageMelee : passive.damageRanged),
         ...fx.mods.damage,
-        ...(melee ? fx.mods.damageMelee : fx.mods.damageRanged),
+        ...(melee ? fx.mods.damageMelee : mode === 'thrown' ? [...fx.mods.damageThrown, ...fx.mods.damageRanged] : fx.mods.damageRanged),
       ]);
       let fullAttack = mode === 'thrown' ? [attack.total] : iteratives(bab.total, attack.total);
       // Rapid Shot: one extra ranged attack at the highest bonus, every attack at -2.
@@ -624,7 +674,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
     size,
     speed,
     senses: { darkvision: sheet.darkvision ?? race?.darkvision ?? 0, lowLight: race?.lowLight ?? false },
-    armor: { worn: effectiveWorn.map((w) => w.name), maxDex, acp, asf, heavyArmor },
+    armor: { worn: effectiveWorn.map((w) => w.name), maxDex, acp, asf, heavyArmor, armorCategory, armorAsf, shieldAsf, towerShield },
     load: { weight, capacity, level: loadLevel },
     attacks,
     toggles: [...toggles],

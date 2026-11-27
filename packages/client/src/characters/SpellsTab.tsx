@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { BookOpen, Compass, Moon, Settings, X } from 'lucide-react';
 import {
   canManageCharacter,
+  casterAsf,
   characterSheetActions,
   characterSpellcasting,
   checkPrepared,
@@ -87,7 +88,7 @@ export function SpellsTab({ character: c }: { character: Character }) {
         </label>
       )}
       {casters.map((info) => (
-        <CasterSection key={info.className} character={c} info={info} manage={manage} placeArea={placeArea} asf={stats.armor.asf} />
+        <CasterSection key={info.className} character={c} info={info} manage={manage} placeArea={placeArea} asf={casterAsf(info, stats)} />
       ))}
       {manage && <AddCasterClass character={c} casters={casters} />}
     </div>

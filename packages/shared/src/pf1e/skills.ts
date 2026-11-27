@@ -231,7 +231,11 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
   }
 
   const feats = featsWithTargets(c);
-  const bardic = classLevel(c, 'bard', 'skald') > 0;
+  const bardLevel = classLevel(c, 'bard');
+  const bardic = bardLevel > 0 || classLevel(c, 'skald') > 0;
+  // Bard Jack of All Trades (CRB p.37): 10th = use any skill untrained; 16th = all skills are class skills.
+  const jackUntrained = bardLevel >= 10;
+  const jackClassSkills = bardLevel >= 16;
   const hd = Math.max(1, stats.hitDice);
   const warnings: string[] = [];
 
@@ -241,7 +245,7 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
     const o = overrides[name] ?? overrideByLower.get(name.toLowerCase());
     const ranks = o?.ranks ?? file?.ranks ?? 0;
     const fromClassSnapshot = snapshotClassSkills.has(name.toLowerCase()) || (def ? snapshotClassSkills.has(def.name.toLowerCase()) : false);
-    const classSkill = o?.classSkill ?? (file !== undefined ? file.classSkill : fromClassSnapshot);
+    const classSkill = o?.classSkill ?? (jackClassSkills || (file !== undefined ? file.classSkill : fromClassSnapshot));
     const ability = def?.ability ?? null;
     const mods: Modifier[] = [];
     if (ranks) mods.push({ value: ranks, type: 'base', source: 'Ranks' });
@@ -274,7 +278,7 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
     mods.push(...stats.effects.skills);
 
     const trainedOnly = def?.trainedOnly ?? false;
-    const usable = !trainedOnly || ranks > 0 || (bardic && def?.name === 'Knowledge');
+    const usable = !trainedOnly || ranks > 0 || jackUntrained || (bardic && def?.name === 'Knowledge');
     if (ranks > hd) warnings.push(`${name}: ${ranks} ranks is more than your ${hd} hit dice allow.`);
     if (!def) warnings.push(`${name}: unknown skill, add its bonus under Misc.`);
     return {

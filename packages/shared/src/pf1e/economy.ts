@@ -11,7 +11,7 @@ import type { Pf1TurnState } from '../entities/pf1e';
 import type { GameState } from '../state';
 import type { ActionCost } from './actions';
 import { computeCharacterStats } from './engine';
-import { featKey } from './rules';
+import { featKey, normalizeName } from './rules';
 
 export interface EffectiveTurn {
   /** Turn state for the current window (fresh if nothing recorded yet). */
@@ -69,16 +69,24 @@ export function effectiveTurn(state: GameState, combatantId: string): EffectiveT
 
   let combatReflexes = false;
   let aooMax = 1;
+  let hasUncannyDodge = false;
   if (character) {
-    combatReflexes = [...character.build.abilities.map((a) => a.key), ...character.build.legacyFeats, ...character.build.virtualFeats].some((n) => featKey(n) === 'combatreflexes');
+    const allFeats = [...character.build.abilities.map((a) => a.key), ...character.build.legacyFeats, ...character.build.virtualFeats];
+    combatReflexes = allFeats.some((n) => featKey(n) === 'combatreflexes');
     if (combatReflexes) aooMax = Math.max(1, 1 + computeCharacterStats(character).abilities.DEX.mod);
+    const classLvl = (...keys: string[]) =>
+      character.build.classes.filter((k) => keys.includes(normalizeName(k.name))).reduce((s, k) => s + k.level, 0);
+    hasUncannyDodge =
+      classLvl('barbarian', 'barbarianunchained', 'unchainedbarbarian', 'bloodrager') >= 2 ||
+      classLvl('rogue', 'rogueunchained', 'unchainedrogue', 'skald') >= 4 ||
+      allFeats.some((n) => /uncanny\s*dodge/i.test(n));
   }
   const swiftLocked = inheritsLock;
 
   return {
     turn,
     isTurn: combat.active && combat.currentId === combatantId,
-    flatFooted: (combat.active && window === 0) || !!token?.conditions.some((c) => c.toLowerCase() === 'flat-footed'),
+    flatFooted: (combat.active && window === 0 && !hasUncannyDodge) || !!token?.conditions.some((c) => c.toLowerCase() === 'flat-footed'),
     swiftLocked,
     aooMax,
     combatReflexes,

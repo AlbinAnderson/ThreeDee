@@ -64,6 +64,15 @@ const ABILITY_SPELLS: [string, string, StatKey][] = [
 
 const MUTAGEN_PAIR: Record<string, StatKey> = { STR: 'INT', DEX: 'WIS', CON: 'CHA' };
 
+/** Best caster-class level on the character (for scaling spell buff preset defaults). */
+function bestCasterLevel(c: Character): number {
+  const full = classLevelOf(c, 'cleric', 'druid', 'oracle', 'shaman', 'wizard', 'sorcerer', 'witch', 'arcanist', 'psychic');
+  const six = classLevelOf(c, 'bard', 'skald', 'inquisitor', 'magus', 'warpriest', 'alchemist', 'investigator', 'summoner', 'summonerunchained', 'unchainedsummoner', 'hunter', 'mesmerist', 'occultist', 'spiritualist');
+  const four = Math.max(0, classLevelOf(c, 'paladin', 'antipaladin', 'ranger') - 3);
+  const br = classLevelOf(c, 'bloodrager');
+  return Math.max(1, full, six, four, br >= 4 ? br : 0);
+}
+
 export const BUFF_PRESETS: BuffPreset[] = [
   // ---- spells
   { id: 'bless', name: 'Bless', group: 'Spells', condition: 'Blessed', note: '+1 morale on saves against fear.', effects: () => [e('attack', 1, 'morale')] },
@@ -81,8 +90,24 @@ export const BUFF_PRESETS: BuffPreset[] = [
     name: 'Divine Favor',
     group: 'Spells',
     note: 'Luck bonus on attack and weapon damage rolls: +1 per three caster levels (+1 to +3).',
-    option: { label: 'Bonus', choices: choices([1, 2, 3], (v) => `+${v}`), initial: () => '1' },
+    option: {
+      label: 'Bonus',
+      choices: choices([1, 2, 3], (v) => `+${v}`),
+      initial: (c) => String(Math.max(1, Math.min(3, Math.floor(bestCasterLevel(c) / 3)))),
+    },
     effects: (_c, o) => [e('attack', Number(o), 'luck'), e('damage', Number(o), 'luck')],
+  },
+  {
+    id: 'divinePower',
+    name: 'Divine Power',
+    group: 'Spells',
+    note: '+1 luck per three caster levels (max +6) on attack, weapon damage, Strength checks and Str skills, one extra attack on a full attack, and 1 temporary HP per caster level.',
+    option: {
+      label: 'Bonus',
+      choices: choices([1, 2, 3, 4, 5, 6], (v) => `+${v}`),
+      initial: (c) => String(Math.max(1, Math.min(6, Math.floor(bestCasterLevel(c) / 3)))),
+    },
+    effects: (_c, o) => [e('attack', Number(o), 'luck'), e('damage', Number(o), 'luck'), e('extraAttack', 1)],
   },
   {
     id: 'haste',
@@ -116,7 +141,11 @@ export const BUFF_PRESETS: BuffPreset[] = [
     name: 'Shield of Faith',
     group: 'Spells',
     note: '+2 deflection, +1 per six caster levels (max +5).',
-    option: { label: 'Bonus', choices: choices([2, 3, 4, 5], (v) => `+${v}`), initial: () => '2' },
+    option: {
+      label: 'Bonus',
+      choices: choices([2, 3, 4, 5], (v) => `+${v}`),
+      initial: (c) => String(Math.min(5, 2 + Math.floor(bestCasterLevel(c) / 6))),
+    },
     effects: (_c, o) => [e('ac', Number(o), 'deflection')],
   },
   {
@@ -124,7 +153,11 @@ export const BUFF_PRESETS: BuffPreset[] = [
     name: 'Barkskin',
     group: 'Spells',
     note: '+2 enhancement to natural armor, +1 per three caster levels above 3rd (max +5). Stacks with natural armor.',
-    option: { label: 'Bonus', choices: choices([2, 3, 4, 5], (v) => `+${v}`), initial: () => '2' },
+    option: {
+      label: 'Bonus',
+      choices: choices([2, 3, 4, 5], (v) => `+${v}`),
+      initial: (c) => String(Math.min(5, 2 + Math.floor(Math.max(0, bestCasterLevel(c) - 3) / 3))),
+    },
     effects: (_c, o) => [e('ac', Number(o), 'enhancement')],
   },
   {
@@ -154,10 +187,10 @@ export const BUFF_PRESETS: BuffPreset[] = [
     group: 'Class abilities',
     condition: 'Raging',
     classes: ['barbarianunchained', 'unchainedbarbarian'],
-    note: 'Also +2 temporary hit points per Hit Die (+3 greater, +4 mighty) and the same bonus on thrown weapon damage. Fatigued afterwards.',
+    note: 'Also +2 temporary hit points per Hit Die (+3 greater, +4 mighty); not regained within 1 minute. Fatigued for 1 minute afterwards.',
     effects: (c) => {
       const b = 2 + rank([11, 20], classLevelOf(c, 'barbarianunchained', 'unchainedbarbarian'));
-      return [e('attackMelee', b), e('damageMelee', b), e('will', b), e('ac', -2)];
+      return [e('attackMelee', b), e('damageMelee', b), e('damageThrown', b), e('will', b), e('ac', -2)];
     },
   },
   {
@@ -191,13 +224,39 @@ export const BUFF_PRESETS: BuffPreset[] = [
     id: 'inspireCourage',
     name: 'Inspire Courage',
     group: 'Class abilities',
-    note: 'From a bard: competence bonus on attack and weapon damage rolls (+1, +2 at 5th, +3 at 11th, +4 at 17th) and a morale bonus on saves against fear.',
+    note: 'From a bard: competence bonus on attack and weapon damage rolls (+1, +2 at 5th, +3 at 11th, +4 at 17th) and the same morale bonus on saves against charm and fear effects.',
     option: {
       label: 'Bonus',
       choices: choices([1, 2, 3, 4], (v) => `+${v}`),
       initial: (c) => String(1 + rank([5, 11, 17], classLevelOf(c, 'bard'))),
     },
     effects: (_c, o) => [e('attack', Number(o), 'competence'), e('damage', Number(o), 'competence')],
+  },
+  {
+    id: 'inspireCompetence',
+    name: 'Inspire Competence',
+    group: 'Class abilities',
+    note: 'From a bard (3rd+): competence bonus on one chosen skill check (+2 at 3rd, +3 at 7th, +4 at 11th, +5 at 15th, +6 at 19th). Cannot target the bard.',
+    option: {
+      label: 'Bonus',
+      choices: choices([2, 3, 4, 5, 6], (v) => `+${v}`),
+      initial: (c) => String(2 + rank([7, 11, 15, 19], classLevelOf(c, 'bard'))),
+    },
+    effects: (_c, o) => [e('skills', Number(o), 'competence')],
+  },
+  {
+    id: 'inspireGreatness',
+    name: 'Inspire Greatness',
+    group: 'Class abilities',
+    note: 'From a bard (9th+): +2 competence attack, +1 competence Fortitude, and 2 bonus Hit Dice (2d10 + 2×Con temporary HP).',
+    effects: () => [e('attack', 2, 'competence'), e('fort', 1, 'competence')],
+  },
+  {
+    id: 'inspireHeroics',
+    name: 'Inspire Heroics',
+    group: 'Class abilities',
+    note: 'From a bard (15th+): +4 morale bonus on saving throws and +4 dodge bonus to AC.',
+    effects: () => [e('saves', 4, 'morale'), e('ac', 4, 'dodge')],
   },
   {
     id: 'mutagen',
@@ -400,7 +459,7 @@ export interface CharacterEffects {
 }
 
 const TARGETS: BuffTarget[] = [
-  'STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA', 'attack', 'attackMelee', 'attackRanged', 'damage', 'damageMelee', 'damageRanged',
+  'STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA', 'attack', 'attackMelee', 'attackRanged', 'damage', 'damageMelee', 'damageThrown', 'damageRanged',
   'ac', 'cmb', 'cmd', 'initiative', 'saves', 'fort', 'ref', 'will', 'skills', 'speed', 'casterLevel', 'sizeSteps', 'extraAttack',
 ];
 
@@ -475,7 +534,7 @@ export const NOT_TOUCH = new Set<BonusType>(['armor', 'shield', 'natural', 'enha
 export function describeEffects(effects: BuffEffect[]): string {
   const label: Record<BuffTarget, string> = {
     STR: 'Str', DEX: 'Dex', CON: 'Con', INT: 'Int', WIS: 'Wis', CHA: 'Cha', attack: 'attack', attackMelee: 'melee attack', attackRanged: 'ranged attack',
-    damage: 'damage', damageMelee: 'melee damage', damageRanged: 'ranged damage', ac: 'AC', cmb: 'CMB', cmd: 'CMD', initiative: 'initiative',
+    damage: 'damage', damageMelee: 'melee damage', damageThrown: 'thrown damage', damageRanged: 'ranged damage', ac: 'AC', cmb: 'CMB', cmd: 'CMD', initiative: 'initiative',
     saves: 'saves', fort: 'Fort', ref: 'Ref', will: 'Will', skills: 'skills', speed: 'ft. speed', casterLevel: 'caster level', sizeSteps: 'size', extraAttack: 'extra attack',
   };
   return effects
