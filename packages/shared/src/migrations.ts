@@ -3,6 +3,7 @@
  * bump CURRENT_SCHEMA_VERSION in state.ts and add a step here that upgrades
  * the previous version's raw JSON. Steps run in order on load.
  */
+import { seedBio, splitDmNotes } from './pf1e/bio';
 import { seedInventory } from './pf1e/inventory';
 import { PcgenCharacterSchema } from './pcgen/schema';
 import { CURRENT_SCHEMA_VERSION, GameStateSchema, type GameState } from './state';
@@ -137,6 +138,20 @@ const migrations: Record<number, Migration> = {
       ...raw,
       schemaVersion: 12,
       characters: Object.fromEntries(Object.entries(characters).map(([id, c]) => [id, { companion: null, ...c }])),
+    };
+  },
+  // Epic 10: VTT-owned bio seeded from the .pcg; GM-only notes move out of the shared build into bio.dmNotes.
+  12: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 13,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => {
+          const { build, dmNotes } = splitDmNotes(PcgenCharacterSchema.parse(c.build));
+          return [id, { ...c, build, bio: seedBio(build, dmNotes) }];
+        }),
+      ),
     };
   },
 };

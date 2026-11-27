@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ArrowLeft, Link2, Maximize2, Minimize2, MoreVertical, PawPrint, Upload, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Link2, Maximize2, Minimize2, MoreVertical, PawPrint, Upload, X } from 'lucide-react';
 import {
   canControlToken,
   canManageCharacter,
@@ -27,6 +27,7 @@ import { SkillsTab } from './SkillsTab';
 import { SpellsTab } from './SpellsTab';
 import { EffectsTab } from './EffectsTab';
 import { CompanionStrip, CompanionsTab } from './CompanionsTab';
+import { BioTab } from './BioTab';
 import { openImport } from './ImportDialog';
 import { useCharactersUi, type CharacterTab } from './store';
 
@@ -135,6 +136,7 @@ export function CharactersPanel() {
                 <li key={c.id} className={depth > 0 ? 'companion-item' : undefined} style={depth > 0 ? { paddingLeft: Math.min(depth, 3) * 14 } : undefined}>
                   <button type="button" onClick={() => useCharactersUi.setState({ selectedId: c.id })}>
                     <span className="character-name">
+                      {c.bio.portraitUrl && <img className="character-avatar small" src={c.bio.portraitUrl} alt="" />}
                       {c.companion && <PawPrint size={12} style={{ marginRight: 4, verticalAlign: -1 }} />}
                       {c.name}
                       {c.companion && <span className="badge subtle" style={{ marginLeft: 6 }}>{COMPANION_TYPE_LABEL[c.companion.type]}</span>}
@@ -174,10 +176,11 @@ const PLAY_TABS: [CharacterTab, string][] = [
   ['effects', 'Effects'],
   ['inventory', 'Inventory'],
   ['companions', 'Companions'],
+  ['bio', 'Bio & notes'],
 ];
 
 /** Tabs shown as an icon only (the sidebar is narrow). */
-const ICON_TABS: Partial<Record<CharacterTab, typeof PawPrint>> = { companions: PawPrint };
+const ICON_TABS: Partial<Record<CharacterTab, typeof PawPrint>> = { companions: PawPrint, bio: BookOpen };
 
 const POPOUT_RIGHT_TABS: [CharacterTab, string][] = [
   ['skills', 'Skills'],
@@ -186,6 +189,7 @@ const POPOUT_RIGHT_TABS: [CharacterTab, string][] = [
   ['effects', 'Effects'],
   ['inventory', 'Inventory'],
   ['companions', 'Companions'],
+  ['bio', 'Bio'],
 ];
 
 /** Quick switch between the characters you can see (companions under their masters). */
@@ -286,6 +290,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
             <ArrowLeft size={12} /> All characters
           </button>
           <h2 className="character-title" title={c.name}>
+            {c.bio.portraitUrl && <img className="character-avatar" src={c.bio.portraitUrl} alt="" />}
             {c.name}
           </h2>
         </div>
@@ -326,6 +331,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
       {activeTab === 'effects' && <EffectsTab character={c} />}
       {activeTab === 'inventory' && <InventoryTab character={c} />}
       {activeTab === 'companions' && <CompanionsTab character={c} />}
+      {activeTab === 'bio' && <BioTab character={c} />}
       {activeTab === 'imported' && <CharacterSummary build={c.build} />}
       {activeTab === 'settings' && manage && <CharacterSettings character={c} />}
       {activeTab === 'manage' && manage && <ManageCharacter character={c} onBack={onBack} />}
@@ -386,6 +392,7 @@ export function CharacterPopout() {
               {rightTab === 'effects' && <EffectsTab character={c} />}
               {rightTab === 'inventory' && <InventoryTab character={c} />}
               {rightTab === 'companions' && <CompanionsTab character={c} />}
+              {rightTab === 'bio' && <BioTab character={c} />}
               {rightTab === 'imported' && <CharacterSummary build={c.build} />}
               {rightTab === 'settings' && manage && <CharacterSettings character={c} />}
               {rightTab === 'manage' && manage && <ManageCharacter character={c} onBack={() => useCharactersUi.setState({ selectedId: null, poppedOut: false })} />}

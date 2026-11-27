@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { AbilityCategory, PcgenCharacter } from '@vtt/shared';
 
-export type CharacterTab = 'sheet' | 'skills' | 'abilities' | 'spells' | 'effects' | 'inventory' | 'companions' | 'imported' | 'settings' | 'manage';
+export type CharacterTab = 'sheet' | 'skills' | 'abilities' | 'spells' | 'effects' | 'inventory' | 'companions' | 'bio' | 'imported' | 'settings' | 'manage';
 export type SkillFilter = 'all' | 'trained' | 'usable' | 'favorites';
 
 interface CharactersUiState {
