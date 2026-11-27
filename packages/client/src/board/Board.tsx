@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import type { Scene } from '@vtt/shared';
+import type { Scene, Token } from '@vtt/shared';
 import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
 import { getCurrentScene, useCurrentScene } from '../state/hooks';
@@ -12,6 +12,10 @@ import { boardLayers } from './layers';
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 6;
+
+/** Zoom range kept when re-centering on a token, so a far zoomed-out/in view stays usable. */
+const FOCUS_MIN_ZOOM = 0.4;
+const FOCUS_MAX_ZOOM = 3;
 
 type Gesture = { kind: 'pan'; pointerId: number; lastX: number; lastY: number } | { kind: 'tool'; pointerId: number };
 
@@ -26,6 +30,56 @@ export function fitCamera(scene: Scene, viewport: { width: number; height: numbe
     x: (viewport.width - scene.width * zoom) / 2,
     y: (viewport.height - scene.height * zoom) / 2,
   };
+}
+
+/** Camera that centers `token` in the viewport, keeping the current zoom (clamped to a sensible range). */
+export function centerOnToken(token: Token, scene: Scene, viewport: { width: number; height: number }, currentZoom: number): Camera {
+  const zoom = Math.min(FOCUS_MAX_ZOOM, Math.max(FOCUS_MIN_ZOOM, Number.isFinite(currentZoom) ? currentZoom : 1));
+  const half = (token.size * scene.grid.size) / 2;
+  const cx = token.x + half;
+  const cy = token.y + half;
+  return { zoom, x: viewport.width / 2 - cx * zoom, y: viewport.height / 2 - cy * zoom };
+}
+
+/**
+ * A camera to use instead of the auto-fit the next time `sceneId` is first shown
+ * (e.g. the GM jumps to a token on another scene).
+ */
+let pendingSceneCamera: { sceneId: string; camera: Camera } | null = null;
+let cameraAnimation: number | null = null;
+
+function stopCameraAnimation() {
+  if (cameraAnimation !== null) cancelAnimationFrame(cameraAnimation);
+  cameraAnimation = null;
+}
+
+/**
+ * Move the camera to `target`. Animates briefly unless `instant` (or the user prefers reduced
+ * motion); any pan/zoom by the user mid-flight wins and stops the animation.
+ */
+export function moveCamera(target: Camera, opts: { sceneId?: string; instant?: boolean } = {}) {
+  stopCameraAnimation();
+  if (opts.sceneId) pendingSceneCamera = { sceneId: opts.sceneId, camera: target };
+  const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const ui = useUi.getState();
+  if (opts.instant || reduced || typeof requestAnimationFrame === 'undefined') {
+    ui.setCamera(target);
+    return;
+  }
+  const from = ui.camera;
+  const start = performance.now();
+  const duration = 260;
+  let last: Camera = from;
+  const step = (now: number) => {
+    // The user panned/zoomed (or something else moved the camera): stop fighting them.
+    if (useUi.getState().camera !== last) return void (cameraAnimation = null);
+    const t = Math.min(1, (now - start) / duration);
+    const k = 1 - Math.pow(1 - t, 3);
+    last = t >= 1 ? target : { zoom: from.zoom + (target.zoom - from.zoom) * k, x: from.x + (target.x - from.x) * k, y: from.y + (target.y - from.y) * k };
+    useUi.getState().setCamera(last);
+    cameraAnimation = t < 1 ? requestAnimationFrame(step) : null;
+  };
+  cameraAnimation = requestAnimationFrame(step);
 }
 
 export function Board() {
@@ -92,7 +146,10 @@ export function Board() {
     if (!scene || viewportWidth === 0 || fittedSceneId.current === scene.id) return;
     fittedSceneId.current = scene.id;
     const ui = useUi.getState();
-    ui.setCamera(fitCamera(scene, ui.viewport));
+    const pending = pendingSceneCamera?.sceneId === scene.id ? pendingSceneCamera.camera : null;
+    pendingSceneCamera = null;
+    stopCameraAnimation();
+    ui.setCamera(pending ?? fitCamera(scene, ui.viewport));
   }, [scene, viewportWidth]);
 
   // Wheel zoom around the cursor (native listener so we can preventDefault).

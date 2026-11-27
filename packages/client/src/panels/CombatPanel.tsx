@@ -1,14 +1,26 @@
 import { useMemo } from 'react';
-import { ArrowDown, ArrowUp, ChevronLeft, Dices, Eye, EyeOff, Play, X } from 'lucide-react';
-import { canControlCombatant, canControlToken, combatantName, combatActions, isCombatantHidden, newId, type Combatant } from '@vtt/shared';
+import { ArrowDown, ArrowUp, BookOpen, ChevronLeft, ChevronRight, Dices, Eye, EyeOff, Play, X } from 'lucide-react';
+import {
+  canControlCombatant,
+  canControlToken,
+  combatantName,
+  combatActions,
+  isCombatantHidden,
+  newId,
+  type Character,
+  type Combatant,
+  type Token,
+} from '@vtt/shared';
 import { initiativeForToken } from '../characters/characterActions';
 import { NumberField } from '../components/fields';
 import { confirmDialog, promptDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
-import { useGame, useIsGm, useSelf } from '../state/hooks';
+import { useCurrentSceneId, useGame, useIsGm, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { useUi } from '../state/uiStore';
+import { canFocusToken, canSeeTokenHp, characterForToken, focusToken, openCharacterSheet } from '../lib/tokens';
+import { conditionStyle, hpColor } from '../config/conditions';
 
 /** Add the selected tokens (that you control) to the turn order. */
 export function addSelectedToCombat() {
@@ -50,6 +62,7 @@ export function CombatPanel() {
   const visible = useMemo(() => combat.combatants.filter((c) => gm || !isCombatantHidden(state, c)), [combat.combatants, gm, state]);
   const current = combat.combatants.find((c) => c.id === combat.currentId);
   const myTurn = !!current && combat.active && canControlCombatant(state, self, current);
+  const currentSceneId = useCurrentSceneId();
   const unrolled = combat.combatants.filter((c) => c.initiative === null && canControlCombatant(state, self, c));
 
   async function addCustom() {
@@ -95,10 +108,16 @@ export function CombatPanel() {
 
         {visible.length === 0 && <p className="muted">Nobody in the turn order. Select tokens on the map and add them.</p>}
         <ol className="combat-list">
-          {visible.map((c, i) => (
+          {visible.map((c, i) => {
+            const token = c.tokenId ? state.tokens[c.tokenId] : undefined;
+            return (
             <CombatRow
               key={c.id}
               combatant={c}
+              token={token}
+              character={characterForToken(state, token?.id)}
+              hpShown={!!token && canSeeTokenHp(self, token)}
+              canFocus={!!token && canFocusToken(self, token, currentSceneId)}
               name={combatantName(state, c)}
               hidden={isCombatantHidden(state, c)}
               tokenHidden={isCombatantHidden(state, c) && !c.hidden}
@@ -109,7 +128,8 @@ export function CombatPanel() {
               nextNextId={visible[i + 2]?.id ?? null}
               isLast={i === visible.length - 1}
             />
-          ))}
+            );
+          })}
         </ol>
       </section>
       <section className="button-row">
@@ -148,8 +168,14 @@ export function CombatPanel() {
   );
 }
 
+const MAX_ROW_CONDITIONS = 3;
+
 function CombatRow({
   combatant: c,
+  token,
+  character,
+  hpShown,
+  canFocus,
   name,
   hidden,
   tokenHidden,
@@ -161,6 +187,11 @@ function CombatRow({
   isLast,
 }: {
   combatant: Combatant;
+  token: Token | undefined;
+  /** Linked character the viewer can see. */
+  character: Character | undefined;
+  hpShown: boolean;
+  canFocus: boolean;
   name: string;
   hidden: boolean;
   /** Hidden because its token is hidden (not via the tracker's own toggle). */
@@ -177,12 +208,36 @@ function CombatRow({
   return (
     <li className={`combat-row${isCurrent ? ' current' : ''}${hidden ? ' hidden-entry' : ''}`}>
       <div className="combat-main">
-        <span className="combat-name" title={name}>
-          {isCurrent && '▶ '}
-          {name}
-        </span>
+        {isCurrent && <ChevronRight size={14} className="combat-current-icon" aria-label="Current turn" />}
+        {token && <CombatantAvatar token={token} portraitUrl={character?.bio.portraitUrl ?? null} />}
+        {canFocus ? (
+          <button type="button" className="combat-name link-like" title={`${name} — select & center on map`} onClick={() => token && focusToken(token.id)}>
+            {name}
+          </button>
+        ) : (
+          <span className="combat-name" title={name}>
+            {name}
+          </span>
+        )}
         {hidden && <span className="badge subtle" title={tokenHidden ? 'Its token is hidden' : undefined}>hidden</span>}
+        {character && (
+          <button
+            type="button"
+            className="icon-button combat-sheet-button"
+            title={`Open ${character.name}'s character sheet`}
+            aria-label={`Open ${character.name}'s character sheet`}
+            onClick={() => openCharacterSheet(character.id)}
+          >
+            <BookOpen size={12} />
+          </button>
+        )}
       </div>
+      {token && (hpShown || token.conditions.length > 0) && (
+        <div className="combat-status">
+          {hpShown && token.hp && <CombatHp hp={token.hp} />}
+          {token.conditions.length > 0 && <CombatConditions conditions={token.conditions} />}
+        </div>
+      )}
       <div className="combat-fields">
         {canEdit ? (
           <>
@@ -236,5 +291,49 @@ function CombatRow({
         </div>
       )}
     </li>
+  );
+}
+
+function CombatantAvatar({ token, portraitUrl }: { token: Token; portraitUrl: string | null }) {
+  const src = token.imageUrl ?? portraitUrl;
+  return src ? (
+    <img className="combat-avatar" src={src} alt="" style={{ borderColor: token.color }} />
+  ) : (
+    <span className="combat-avatar dot" style={{ background: token.color }} aria-hidden="true" />
+  );
+}
+
+function CombatHp({ hp }: { hp: NonNullable<Token['hp']> }) {
+  const pct = Math.max(0, Math.min(100, (hp.value / Math.max(1, hp.max)) * 100));
+  const label = `${hp.value}/${hp.max}${hp.temp ? ` (+${hp.temp} temp)` : ''} HP`;
+  return (
+    <span className="combat-hp" title={label} aria-label={label}>
+      <span className="combat-hp-bar">
+        <span style={{ width: `${pct}%`, background: hpColor(hp.value, hp.max) }} />
+      </span>
+      <span className="combat-hp-text tnum">
+        {hp.value}/{hp.max}
+        {hp.temp ? <span className="temp-hp">+{hp.temp}</span> : null}
+      </span>
+    </span>
+  );
+}
+
+function CombatConditions({ conditions }: { conditions: string[] }) {
+  const shown = conditions.slice(0, MAX_ROW_CONDITIONS);
+  const rest = conditions.slice(MAX_ROW_CONDITIONS);
+  return (
+    <span className="combat-conditions">
+      {shown.map((name) => (
+        <span key={name} className="combat-condition" style={{ background: conditionStyle(name).color }} title={name}>
+          {name}
+        </span>
+      ))}
+      {rest.length > 0 && (
+        <span className="combat-condition more" title={rest.join(', ')}>
+          +{rest.length}
+        </span>
+      )}
+    </span>
   );
 }

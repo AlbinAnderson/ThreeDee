@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Compass, Dices } from 'lucide-react';
+import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { ArrowDown, Compass, Dices } from 'lucide-react';
 import {
   chatActions,
   formatTermNotation,
@@ -17,6 +17,8 @@ import { useGame, useIsGm, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { currentWhisper, useUi } from '../state/uiStore';
 import { armTemplate } from '../tools/templateTool';
+import { getChatHistory, pushChatHistory } from '../state/chatHistory';
+import { d20Highlight } from '../lib/rolls';
 
 const QUICK_DICE = [4, 6, 8, 10, 12, 20, 100];
 
@@ -85,46 +87,169 @@ function submitChat(input: string, users: User[]): boolean {
   return dispatch(chatActions.send.create({ id: newId(), text: input, whisper: currentWhisper() }));
 }
 
+type ChatFilter = 'all' | 'rolls' | 'whispers';
+
+const CHAT_FILTERS: [ChatFilter, string][] = [
+  ['all', 'All'],
+  ['rolls', 'Rolls'],
+  ['whispers', 'Whispers'],
+];
+
+/** How close (px) to the bottom still counts as "following" the log. */
+const STICK_THRESHOLD = 60;
+
+function matchesFilter(m: ChatMessage, filter: ChatFilter): boolean {
+  if (filter === 'rolls') return !!m.roll;
+  if (filter === 'whispers') return !!m.whisper;
+  return true;
+}
+
 export function ChatPanel() {
   const chat = useGame((s) => s.chat);
   const users = useGame((s) => s.users);
   const gm = useIsGm();
   const [input, setInput] = useState('');
+  const [filter, setFilter] = useState<ChatFilter>('all');
+  const [unseen, setUnseen] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const stickRef = useRef(true);
+  /** Position while browsing sent lines (null = editing the draft) and the draft kept meanwhile. */
+  const historyRef = useRef<{ index: number | null; draft: string }>({ index: null, draft: '' });
   const userList = useMemo(() => Object.values(users), [users]);
+  const shown = useMemo(() => (filter === 'all' ? chat : chat.filter((m) => matchesFilter(m, filter))), [chat, filter]);
+  const lastId = shown[shown.length - 1]?.id ?? null;
 
-  useEffect(() => {
+  function scrollToBottom() {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [chat.length]);
+    stickRef.current = true;
+    setUnseen(false);
+  }
+
+  // Switching filters (and first mount) always lands on the newest message.
+  useLayoutEffect(() => {
+    scrollToBottom();
+  }, [filter]);
+
+  // New messages: follow along only if already near the bottom; otherwise offer a jump button.
+  // Keyed by the newest id (not length) because the log is capped and may stay the same length.
+  useLayoutEffect(() => {
+    if (!lastId) return setUnseen(false);
+    if (stickRef.current) scrollToBottom();
+    else setUnseen(true);
+  }, [lastId]);
+
+  function onScroll() {
+    const el = logRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
+    stickRef.current = near;
+    if (near) setUnseen(false);
+  }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (text && submitChat(text, userList)) setInput('');
+    if (!text) return;
+    if (submitChat(text, userList)) {
+      pushChatHistory(text);
+      historyRef.current = { index: null, draft: '' };
+      setInput('');
+      // Your own message should always be visible.
+      stickRef.current = true;
+    }
+  }
+
+  function onInputKey(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.nativeEvent.isComposing) return;
+    const lines = getChatHistory();
+    const h = historyRef.current;
+    if (!lines.length) return;
+    if (e.key === 'ArrowUp') {
+      const index = h.index === null ? lines.length - 1 : Math.max(0, h.index - 1);
+      if (h.index === null) h.draft = input;
+      h.index = index;
+      setInput(lines[index]!);
+    } else {
+      if (h.index === null) return;
+      const index = h.index + 1;
+      if (index >= lines.length) {
+        h.index = null;
+        setInput(h.draft);
+      } else {
+        h.index = index;
+        setInput(lines[index]!);
+      }
+    }
+    e.preventDefault();
+    // Put the caret at the end of the recalled line.
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }
+
+  function quickDie(d: number, shift: boolean) {
+    if (!shift) {
+      rollToChat(`1d${d}`);
+      return;
+    }
+    historyRef.current.index = null;
+    setInput(`/r 1d${d}+`);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
   }
 
   return (
     <div className="chat-panel">
-      <div className="chat-log" ref={logRef}>
-        {chat.length === 0 && <p className="muted">No messages yet. Try /r 1d20+5 # Attack, /gr for a GM-only roll, /w Name to whisper.</p>}
-        {chat.map((m) => (
-          <ChatLine key={m.id} message={m} users={users} />
+      <div className="chat-filters" role="group" aria-label="Filter chat">
+        {CHAT_FILTERS.map(([id, label]) => (
+          <button key={id} type="button" className={filter === id ? 'active' : ''} aria-pressed={filter === id} onClick={() => setFilter(id)}>
+            {label}
+          </button>
         ))}
+      </div>
+      <div className="chat-log-wrap">
+        <div className="chat-log" ref={logRef} onScroll={onScroll} role="log">
+          {chat.length === 0 && <p className="muted">No messages yet. Try /r 1d20+5 # Attack, /gr for a GM-only roll, /w Name to whisper.</p>}
+          {chat.length > 0 && shown.length === 0 && (
+            <p className="muted small-text">{filter === 'rolls' ? 'No rolls yet.' : 'No whispers or GM-only messages yet.'}</p>
+          )}
+          {shown.map((m) => (
+            <ChatLine key={m.id} message={m} users={users} />
+          ))}
+        </div>
+        {unseen && (
+          <button type="button" className="chat-jump-latest" onClick={scrollToBottom}>
+            <ArrowDown size={13} /> Jump to latest
+          </button>
+        )}
       </div>
       <ChatModePicker />
       <div className="quick-dice">
         {QUICK_DICE.map((d) => (
-          <button key={d} type="button" onClick={() => rollToChat(`1d${d}`)}>
+          <button key={d} type="button" title={`Roll 1d${d} (Shift+click to add modifier)`} onClick={(e) => quickDie(d, e.shiftKey)}>
             d{d}
           </button>
         ))}
       </div>
       <form className="chat-input" onSubmit={onSubmit}>
         <input
+          ref={inputRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            historyRef.current.index = null;
+            setInput(e.target.value);
+          }}
+          onKeyDown={onInputKey}
           placeholder="Message, /r 2d6+3 # label, /w Name hi"
+          aria-label="Chat message"
           maxLength={2000}
         />
         <button type="submit">Send</button>
@@ -249,8 +374,9 @@ function CardAttachment({ card, authorId }: { card: ChatCard; authorId: string }
 }
 
 export function RollCard({ roll, label }: { roll: RollResult; label: string }) {
+  const hi = d20Highlight(roll);
   return (
-    <div className="roll-card">
+    <div className={`roll-card${hi ? ` ${hi}` : ''}`}>
       {label && <div className="roll-label">{label}</div>}
       <div className="roll-body">
         <div className="roll-breakdown">
@@ -280,7 +406,10 @@ export function RollCard({ roll, label }: { roll: RollResult; label: string }) {
             ))}
           </div>
         </div>
-        <div className="roll-total">{roll.total}</div>
+        <div className={`roll-total${hi ? ` ${hi}` : ''}`}>
+          {roll.total}
+          {hi && <span className="roll-nat-badge">{hi === 'nat20' ? 'NAT 20' : 'NAT 1'}</span>}
+        </div>
       </div>
     </div>
   );

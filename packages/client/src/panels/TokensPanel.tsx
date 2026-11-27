@@ -6,6 +6,7 @@ import { dispatch } from '../state/dispatch';
 import { useCurrentScene, useGame, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { useUi, viewportCenterWorld } from '../state/uiStore';
+import { focusToken } from '../lib/tokens';
 
 export function TokensPanel() {
   const scene = useCurrentScene();
@@ -84,7 +85,7 @@ export function TokensPanel() {
         <ul className="token-list">
           {sceneTokens.map((t) => (
             <li key={t.id} className={selected.includes(t.id) ? 'selected' : ''}>
-              <button type="button" onClick={() => setSelection([t.id])}>
+              <button type="button" title="Select and center on map" onClick={() => focusToken(t.id)}>
                 <span className="swatch" style={{ background: t.color }} />
                 {t.name || '(unnamed)'}
                 {t.hidden && <span className="badge subtle">hidden</span>}

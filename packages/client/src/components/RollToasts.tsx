@@ -8,20 +8,11 @@ import { Dices, Sparkles, X } from 'lucide-react';
 import type { ChatMessage } from '@vtt/shared';
 import { useGame } from '../state/hooks';
 import { useUi } from '../state/uiStore';
+import { d20Highlight } from '../lib/rolls';
 
 interface FloatingEntry {
   id: string;
   message: ChatMessage;
-}
-
-function d20Highlight(m: ChatMessage): 'nat20' | 'nat1' | '' {
-  if (!m.roll) return '';
-  const d20 = m.roll.terms.find((t) => t.kind === 'dice' && t.sides === 20);
-  if (!d20 || d20.kind !== 'dice') return '';
-  const kept = d20.rolls.filter((r) => !r.dropped);
-  if (kept.some((r) => r.value === 20)) return 'nat20';
-  if (kept.some((r) => r.value === 1)) return 'nat1';
-  return '';
 }
 
 export function RollToasts() {
@@ -80,7 +71,7 @@ export function RollToasts() {
     <div className="roll-toast-stack" aria-live="polite">
       {items.map(({ id, message: m }) => {
         const author = users[m.userId]?.name ?? 'Table';
-        const hi = d20Highlight(m);
+        const hi = d20Highlight(m.roll);
         return (
           <div key={id} className="roll-toast" onClick={openChat} role="status">
             <div className="roll-toast-head">

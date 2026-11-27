@@ -23,6 +23,7 @@ import {
   type RulesHit,
 } from '@vtt/shared';
 import { request } from '../net/rpc';
+import { useDialogStore } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { notify } from '../state/notifications';
 import { openRulesCard, useRulesUi } from './store';
@@ -36,8 +37,9 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // A rules card opened from the catalog closes first.
-      if (e.key === 'Escape' && !useRulesUi.getState().card) {
+      // A rules card, a confirm dialog, or the compendium (Ctrl+K, rendered above) closes first.
+      const rules = useRulesUi.getState();
+      if (e.key === 'Escape' && !rules.card && !rules.compendiumOpen && !useDialogStore.getState().current) {
         e.stopImmediatePropagation();
         onClose();
       }

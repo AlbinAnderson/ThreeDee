@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollText } from 'lucide-react';
+import { ScrollText, X } from 'lucide-react';
 import { create } from 'zustand';
 import { handoutActions, newId, type Handout, type User } from '@vtt/shared';
 import { CheckboxField, ImageUploadButton, SelectField, TextAreaField, TextField } from '../components/fields';
@@ -180,8 +180,8 @@ export function HandoutViewer() {
       <div className="modal handout-modal">
         <div className="inspector-header">
           <strong>{handout.title}</strong>
-          <button type="button" className="icon-button" onClick={() => openHandout(null)} title="Close (Esc)">
-            ×
+          <button type="button" className="icon-button" onClick={() => openHandout(null)} title="Close (Esc)" aria-label="Close handout">
+            <X size={15} />
           </button>
         </div>
         {handout.imageUrl && <img src={handout.imageUrl} alt={handout.title} className="handout-image" />}

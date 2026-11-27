@@ -31,6 +31,7 @@ import { CompanionStrip, CompanionsTab } from './CompanionsTab';
 import { BioTab } from './BioTab';
 import { openImport } from './ImportDialog';
 import { useCharactersUi, type CharacterTab } from './store';
+import { focusToken } from '../lib/tokens';
 
 /**
  * Characters grouped under their masters (companions right after their master,
@@ -395,13 +396,7 @@ function CharacterPopoutBody({
   const canJumpToken = !!linked && (gm || linked.sceneId === currentSceneId);
 
   function selectLinkedToken() {
-    if (!linked) return;
-    if (linked.sceneId !== currentSceneId) {
-      if (!gm) return;
-      useUi.getState().setViewedScene(linked.sceneId);
-    }
-    useUi.getState().setSelection([linked.id]);
-    close();
+    if (linked && focusToken(linked.id)) close();
   }
 
   return (
@@ -486,13 +481,7 @@ function ManageCharacter({ character: c, onBack }: { character: Character; onBac
   const linkedOnOtherScene = !!linked && linked.sceneId !== currentSceneId;
 
   function selectLinkedToken() {
-    if (!linked) return;
-    if (linked.sceneId !== currentSceneId) {
-      if (!gm) return;
-      useUi.getState().setViewedScene(linked.sceneId);
-    }
-    useUi.getState().setSelection([linked.id]);
-    useCharactersUi.setState({ poppedOut: false });
+    if (linked && focusToken(linked.id)) useCharactersUi.setState({ poppedOut: false });
   }
 
   return (

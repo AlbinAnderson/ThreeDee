@@ -23,7 +23,7 @@ import {
   type RulesStatus,
 } from '@vtt/shared';
 import { request } from '../net/rpc';
-import { confirmDialog } from '../state/dialogs';
+import { confirmDialog, useDialogStore } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useCurrentScene, useGame, useIsGm, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -45,15 +45,16 @@ export function RulesCompendiumModal() {
 
   useEffect(() => {
     if (!open) return;
+    // Capture phase so the compendium (rendered above the sheet pop-out, handouts, import and
+    // shortcuts) consumes Escape before their own listeners close the layer underneath.
     const onKey = (e: KeyboardEvent) => {
-      // A rules card opened from the compendium closes first.
-      if (e.key === 'Escape' && !useRulesUi.getState().card) {
-        e.stopPropagation();
-        close();
-      }
+      // A rules card or confirm dialog on top closes first.
+      if (e.key !== 'Escape' || useRulesUi.getState().card || useDialogStore.getState().current) return;
+      e.stopImmediatePropagation();
+      close();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [open, close]);
 
   if (!open) return null;

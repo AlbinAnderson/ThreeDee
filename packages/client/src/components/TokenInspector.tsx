@@ -1,6 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { BookOpen, ChevronDown, ChevronUp, Maximize2, X } from 'lucide-react';
 import { canControlToken, isGm, tokenActions, type Token } from '@vtt/shared';
 import { uploadAsset } from '../lib/assets';
+import { characterForToken, openCharacterSheet } from '../lib/tokens';
+import { hpColor } from '../config/conditions';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -23,6 +27,11 @@ function Inspector({ token }: { token: Token }) {
   const self = useSelf();
   const users = useGame((s) => s.users);
   const gm = isGm(self);
+  const characters = useGame((s) => s.characters);
+  const linked = useMemo(() => characterForToken({ characters }, token.id), [characters, token.id]);
+  const collapsed = useUi((s) => s.inspectorCollapsed);
+  const setCollapsed = useUi((s) => s.setInspectorCollapsed);
+  const [conditionsOpen, setConditionsOpen] = useState(token.conditions.length > 0);
   const players = useMemo(() => Object.values(users).filter((u) => u.role !== 'gm'), [users]);
 
   const update = (changes: Parameters<typeof tokenActions.update.create>[0]['changes']) =>
@@ -33,14 +42,68 @@ function Inspector({ token }: { token: Token }) {
     update({ ownerIds });
   }
 
-  return (
-    <div className="inspector">
-      <div className="inspector-header">
-        <strong>{token.name || 'Token'}</strong>
-        <button type="button" className="icon-button" onClick={() => useUi.getState().clearSelection()} title="Close">
-          ×
+  async function deleteToken() {
+    const ok = await confirmDialog({
+      title: 'Remove token?',
+      message: `Remove "${token.name || 'Token'}" from the scene?`,
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    if (dispatch(tokenActions.remove.create({ id: token.id }))) useUi.getState().clearSelection();
+  }
+
+  const hp = token.hp;
+  const header = (
+    <div className="inspector-header">
+      <strong className="inspector-title" title={token.name || 'Token'}>
+        {token.name || 'Token'}
+      </strong>
+      {collapsed && hp && (
+        <span className="inspector-hp-badge tnum" style={{ color: hpColor(hp.value, hp.max) }} title={`${hp.value} / ${hp.max} HP${hp.temp ? ` (+${hp.temp} temp)` : ''}`}>
+          {hp.value}/{hp.max}
+          {hp.temp ? <span className="temp-hp">+{hp.temp}</span> : null}
+        </span>
+      )}
+      <div className="inspector-header-actions">
+        {linked && (
+          <>
+            <button type="button" className="icon-button" title={`Open ${linked.name}'s sheet`} aria-label="Open character sheet" onClick={() => openCharacterSheet(linked.id)}>
+              <BookOpen size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              title={`Expand ${linked.name}'s sheet`}
+              aria-label="Expand character sheet"
+              onClick={() => openCharacterSheet(linked.id, { popout: true })}
+            >
+              <Maximize2 size={14} />
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          className="icon-button"
+          title={collapsed ? 'Expand inspector' : 'Collapse inspector'}
+          aria-label={collapsed ? 'Expand inspector' : 'Collapse inspector'}
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          {collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+        </button>
+        <button type="button" className="icon-button" onClick={() => useUi.getState().clearSelection()} title="Deselect (Esc)" aria-label="Close inspector">
+          <X size={15} />
         </button>
       </div>
+    </div>
+  );
+
+  if (collapsed) return <div className="inspector collapsed">{header}</div>;
+
+  return (
+    <div className="inspector">
+      {header}
       <TextField label="Name" value={token.name} onCommit={(name) => update({ name })} />
       <div className="field-row">
         <ColorField label="Color" value={token.color} onCommit={(color) => update({ color })} />
@@ -69,7 +132,7 @@ function Inspector({ token }: { token: Token }) {
         <summary>Hit points</summary>
         <HpEditor token={token} />
       </details>
-      <details className="inspector-section" open={token.conditions.length > 0}>
+      <details className="inspector-section" open={conditionsOpen} onToggle={(e) => setConditionsOpen(e.currentTarget.open)}>
         <summary>Conditions{token.conditions.length ? ` (${token.conditions.length})` : ''}</summary>
         <ConditionsEditor token={token} />
       </details>
@@ -99,7 +162,7 @@ function Inspector({ token }: { token: Token }) {
         <button type="button" onClick={addSelectedToCombat}>
           Add to combat
         </button>
-        <button type="button" className="danger" onClick={() => dispatch(tokenActions.remove.create({ id: token.id }))}>
+        <button type="button" className="danger" onClick={() => void deleteToken()}>
           Delete token
         </button>
       </div>

@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { BookOpen, ExternalLink, X } from 'lucide-react';
+import { useDialogStore } from '../state/dialogs';
 import {
   aonEquipmentKind,
   aonUrl,
@@ -81,14 +82,15 @@ export function RulesCardModal() {
 
   useEffect(() => {
     if (!card) return;
+    // Capture phase + stopImmediatePropagation: the card is the top-most layer (z 95), so it alone
+    // consumes Escape even when the compendium/catalog/handout listeners were registered earlier.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        close();
-      }
+      if (e.key !== 'Escape' || useDialogStore.getState().current) return;
+      e.stopImmediatePropagation();
+      close();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [card, close]);
 
   if (!card) return null;

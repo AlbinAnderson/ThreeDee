@@ -39,6 +39,8 @@ interface UiState {
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   shortcutsOpen: boolean;
+  /** Floating token inspector tucked down to its header bar. */
+  inspectorCollapsed: boolean;
   lastSeenChatId: string | null;
   draw: DrawSettings;
   chatMode: ChatMode;
@@ -56,6 +58,7 @@ interface UiState {
   setSidebarCollapsed(collapsed: boolean): void;
   toggleSidebar(): void;
   setShortcutsOpen(open: boolean): void;
+  setInspectorCollapsed(collapsed: boolean): void;
   markChatSeen(id: string): void;
   setDraw(changes: Partial<DrawSettings>): void;
   setChatMode(mode: ChatMode): void;
@@ -92,6 +95,7 @@ export const useUi = create<UiState>()((set) => ({
   sidebarWidth: loadSidebarWidth(),
   sidebarCollapsed: false,
   shortcutsOpen: false,
+  inspectorCollapsed: false,
   lastSeenChatId: null,
   draw: { shape: 'freehand', color: '#ff4d4d', width: 4, fill: false },
   chatMode: { mode: 'public', to: [] },
@@ -116,6 +120,7 @@ export const useUi = create<UiState>()((set) => ({
   setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  setInspectorCollapsed: (inspectorCollapsed) => set({ inspectorCollapsed }),
   markChatSeen: (lastSeenChatId) => set({ lastSeenChatId }),
   setDraw: (changes) => set((s) => ({ draw: { ...s.draw, ...changes } })),
   setChatMode: (chatMode) => set({ chatMode }),
@@ -127,7 +132,17 @@ export const useUi = create<UiState>()((set) => ({
       /* ignore */
     }
   },
-  resetForRoom: () => set({ selectedTokenIds: [], viewedSceneId: null, toolId: 'select', lastSeenChatId: null, shortcutsOpen: false }),
+  resetForRoom: () =>
+    set({
+      selectedTokenIds: [],
+      viewedSceneId: null,
+      toolId: 'select',
+      lastSeenChatId: null,
+      shortcutsOpen: false,
+      inspectorCollapsed: false,
+      // Whisper targets are user ids from the room being left.
+      chatMode: { mode: 'public', to: [] },
+    }),
 }));
 
 /** The `whisper` field for a message posted with the current chat mode. */
