@@ -1,7 +1,9 @@
+import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { fitCamera } from '../board/Board';
 import { useCurrentScene, useIsGm } from '../state/hooks';
 import { useUi } from '../state/uiStore';
 import { tools } from '../tools';
+import { ToolIcon } from './Icons';
 
 export function Toolbar() {
   const gm = useIsGm();
@@ -22,38 +24,41 @@ export function Toolbar() {
 
   return (
     <div className="toolbar-wrap">
-    <div className="toolbar">
-      {tools
-        .filter((t) => gm || !t.gmOnly)
-        .map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={t.id === toolId ? 'active' : ''}
-            title={`${t.label}${t.hotkey ? ` (${t.hotkey.toUpperCase()})` : ''}`}
-            onClick={() => setTool(t.id)}
-          >
-            {t.icon}
-          </button>
-        ))}
-      <span className="toolbar-sep" />
-      <button type="button" title="Zoom out" onClick={() => zoomBy(1 / 1.25)}>
-        −
-      </button>
-      <span className="zoom-label">{Math.round(zoom * 100)}%</span>
-      <button type="button" title="Zoom in" onClick={() => zoomBy(1.25)}>
-        +
-      </button>
-      <button
-        type="button"
-        title="Fit scene to screen"
-        disabled={!scene}
-        onClick={() => scene && useUi.getState().setCamera(fitCamera(scene, useUi.getState().viewport))}
-      >
-        ⤢
-      </button>
-    </div>
-    {Options && <Options />}
+      <div className="toolbar" role="toolbar" aria-label="Board tools">
+        {tools
+          .filter((t) => gm || !t.gmOnly)
+          .map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={t.id === toolId ? 'active' : ''}
+              title={`${t.label}${t.hotkey ? ` (${t.hotkey.toUpperCase()})` : ''}`}
+              aria-label={t.label}
+              aria-pressed={t.id === toolId}
+              onClick={() => setTool(t.id)}
+            >
+              <ToolIcon id={t.id} fallback={t.icon} />
+            </button>
+          ))}
+        <span className="toolbar-sep" />
+        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.25)}>
+          <ZoomOut size={15} />
+        </button>
+        <span className="zoom-label">{Math.round(zoom * 100)}%</span>
+        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomBy(1.25)}>
+          <ZoomIn size={15} />
+        </button>
+        <button
+          type="button"
+          title="Fit scene to screen"
+          aria-label="Fit scene to screen"
+          disabled={!scene}
+          onClick={() => scene && useUi.getState().setCamera(fitCamera(scene, useUi.getState().viewport))}
+        >
+          <Maximize2 size={14} />
+        </button>
+      </div>
+      {Options && <Options />}
     </div>
   );
 }

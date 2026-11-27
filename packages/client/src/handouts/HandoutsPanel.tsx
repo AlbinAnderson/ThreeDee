@@ -4,6 +4,7 @@ import { handoutActions, newId, type Handout, type User } from '@vtt/shared';
 import { CheckboxField, ImageUploadButton, SelectField, TextAreaField, TextField } from '../components/fields';
 import { uploadAsset } from '../lib/assets';
 import { onEphemeral } from '../net/ephemeral';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGameStore } from '../state/gameStore';
 import { useGame, useIsGm } from '../state/hooks';
@@ -119,7 +120,15 @@ function HandoutEditor({ handout: h }: { handout: Handout }) {
         <button type="button" className="primary" onClick={showToPlayers}>
           Show to players
         </button>
-        <button type="button" className="danger" onClick={() => confirm(`Delete "${h.title}"?`) && dispatch(handoutActions.remove.create({ id: h.id }))}>
+        <button
+          type="button"
+          className="danger"
+          onClick={async () => {
+            if (await confirmDialog({ title: `Delete "${h.title}"?`, message: 'Remove this handout permanently?', confirmLabel: 'Delete', danger: true })) {
+              dispatch(handoutActions.remove.create({ id: h.id }));
+            }
+          }}
+        >
           Delete
         </button>
       </div>

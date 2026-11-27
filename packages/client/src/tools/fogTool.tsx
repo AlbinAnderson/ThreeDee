@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { fogActions, newId, type FogOp } from '@vtt/shared';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useCurrentScene } from '../state/hooks';
 import { defineTool } from './types';
@@ -148,7 +149,11 @@ function FogOptions() {
       <button
         type="button"
         className="small"
-        onClick={() => confirm('Cover the whole scene in fog again?') && dispatch(fogActions.reset.create({ sceneId, to: 'covered', opId: newId() }))}
+        onClick={async () => {
+          if (await confirmDialog({ title: 'Cover scene in fog?', message: 'Cover the whole scene in fog of war again?', confirmLabel: 'Cover all', danger: true })) {
+            dispatch(fogActions.reset.create({ sceneId, to: 'covered', opId: newId() }));
+          }
+        }}
       >
         Cover all
       </button>

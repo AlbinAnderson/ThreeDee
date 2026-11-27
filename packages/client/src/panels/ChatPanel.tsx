@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Compass, Dices } from 'lucide-react';
 import {
   chatActions,
   formatTermNotation,
@@ -10,10 +11,12 @@ import {
   type User,
 } from '@vtt/shared';
 import { dispatch } from '../state/dispatch';
+import { confirmDialog } from '../state/dialogs';
 import { useGameStore } from '../state/gameStore';
 import { useGame, useIsGm, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { currentWhisper, useUi } from '../state/uiStore';
+import { armTemplate } from '../tools/templateTool';
 
 const QUICK_DICE = [4, 6, 8, 10, 12, 20, 100];
 
@@ -130,7 +133,11 @@ export function ChatPanel() {
         <button
           type="button"
           className="link-button"
-          onClick={() => confirm('Clear the chat log for everyone?') && dispatch(chatActions.clear.create({}))}
+          onClick={async () => {
+            if (await confirmDialog({ title: 'Clear chat log?', message: 'Clear the chat log for everyone in the room?', confirmLabel: 'Clear chat', danger: true })) {
+              dispatch(chatActions.clear.create({}));
+            }
+          }}
         >
           Clear chat
         </button>
@@ -188,7 +195,7 @@ function ChatLine({ message, users }: { message: ChatMessage; users: Record<stri
     <div className={`chat-line${message.whisper ? ' private' : ''}`}>
       <div className="chat-meta">
         <span className="chat-author" style={{ color: author?.color }}>
-          {author?.name ?? 'Unknown'}
+          {author?.name ?? (message.userId === 'system' ? 'Table' : 'Unknown')}
         </span>
         {vis && <span className="badge warn">{vis}</span>}
         <span className="chat-time">{time}</span>
@@ -196,7 +203,7 @@ function ChatLine({ message, users }: { message: ChatMessage; users: Record<stri
       {message.roll ? (
         <RollCard roll={message.roll} label={message.text} />
       ) : message.card ? (
-        <CardAttachment card={message.card} />
+        <CardAttachment card={message.card} authorId={message.userId} />
       ) : (
         <div className="chat-text">{message.text}</div>
       )}
@@ -204,7 +211,11 @@ function ChatLine({ message, users }: { message: ChatMessage; users: Record<stri
   );
 }
 
-function CardAttachment({ card }: { card: ChatCard }) {
+function CardAttachment({ card, authorId }: { card: ChatCard; authorId: string }) {
+  const self = useSelf();
+  const gm = useIsGm();
+  // A card's checks and area belong to whoever posted it (and the GM, who runs everyone).
+  const mine = !!self && (self.id === authorId || gm);
   return (
     <div className="roll-card chat-card">
       {card.imageUrl && <img src={card.imageUrl} alt="" className="chat-card-image" />}
@@ -212,6 +223,26 @@ function CardAttachment({ card }: { card: ChatCard }) {
         {card.subtitle && <div className="roll-expr">{card.subtitle}</div>}
         <div className="roll-label">{card.title}</div>
         {card.text && <div className="chat-text">{card.text}</div>}
+        {mine && (card.rolls?.length || card.area) ? (
+          <div className="button-row chat-card-actions">
+            {card.rolls?.map((r) => (
+              <button
+                key={r.label}
+                type="button"
+                className="small rollable"
+                onClick={() => rollToChat(`1d20${r.bonus >= 0 ? '+' : ''}${r.bonus}`, `${card.title} — ${r.label}`.slice(0, 100))}
+              >
+                <Dices size={12} /> {r.label} {r.bonus >= 0 ? '+' : ''}
+                {r.bonus}
+              </button>
+            ))}
+            {card.area && (
+              <button type="button" className="small" title="Switch to the template tool with this area" onClick={() => armTemplate(card.area!)}>
+                <Compass size={12} /> {card.area.label}
+              </button>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

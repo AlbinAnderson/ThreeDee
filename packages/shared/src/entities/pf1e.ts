@@ -28,6 +28,115 @@ export const SizeNameSchema = z.enum(['Fine', 'Diminutive', 'Tiny', 'Small', 'Me
 const StatAdjustSchema = z.partialRecord(StatKeySchema, z.number().int().min(-50).max(50));
 const NonNegStatAdjustSchema = z.partialRecord(StatKeySchema, z.number().int().min(0).max(50));
 
+// ------------------------------------------------------------------ buffs & conditions (Epic 8)
+
+/** What a buff effect changes. Ability keys change the score; `sizeSteps` moves the size category; `extraAttack` adds a full-attack attack (haste). */
+export const BuffTargetSchema = z.enum([
+  'STR',
+  'DEX',
+  'CON',
+  'INT',
+  'WIS',
+  'CHA',
+  'attack',
+  'attackMelee',
+  'attackRanged',
+  'damage',
+  'damageMelee',
+  'damageRanged',
+  'ac',
+  'cmb',
+  'cmd',
+  'initiative',
+  'saves',
+  'fort',
+  'ref',
+  'will',
+  'skills',
+  'speed',
+  'casterLevel',
+  'sizeSteps',
+  'extraAttack',
+]);
+export type BuffTarget = z.infer<typeof BuffTargetSchema>;
+
+export const BonusTypeSchema = z.enum([
+  'untyped',
+  'alchemical',
+  'armor',
+  'circumstance',
+  'competence',
+  'deflection',
+  'dodge',
+  'enhancement',
+  'inherent',
+  'insight',
+  'luck',
+  'morale',
+  'natural',
+  'profane',
+  'racial',
+  'resistance',
+  'sacred',
+  'shield',
+  'size',
+  'trait',
+]);
+
+export const BuffEffectSchema = z.object({
+  target: BuffTargetSchema,
+  value: z.number().int().min(-50).max(50),
+  type: BonusTypeSchema,
+});
+export type BuffEffect = z.infer<typeof BuffEffectSchema>;
+
+/**
+ * A temporary effect on a character: a preset (Bless, Rage...) or a custom
+ * one. Presets fill in `effects` when added (scaled for the character), so
+ * every buff is just a named list of typed modifiers the player can edit.
+ */
+export const BuffSchema = z.object({
+  id: IdSchema,
+  /** Preset it came from (see pf1e/buffs.ts), or null for custom buffs. */
+  presetId: z.string().max(40).nullable(),
+  name: z.string().trim().min(1).max(60),
+  effects: z.array(BuffEffectSchema).max(20),
+  /** Reminder text for what the numbers don't cover ("+1 morale vs fear"). */
+  note: z.string().max(300),
+  active: z.boolean(),
+  /** Rounds left; counts down at the start of the character's turn in combat. null = no duration. */
+  roundsLeft: z.number().int().min(1).max(10000).nullable(),
+});
+export type Buff = z.infer<typeof BuffSchema>;
+export const MAX_BUFFS = 40;
+export const MAX_CONDITIONS = 30;
+export const ConditionNameSchema = z.string().trim().min(1).max(40);
+
+/** Highest spell level and how many metamagic feats one prepared spell or cast may carry. */
+export const MAX_SPELL_LEVEL = 9;
+export const MAX_METAMAGIC = 6;
+const SpellNameSchema = z.string().trim().min(1).max(80);
+const SpellLevelSchema = z.number().int().min(0).max(MAX_SPELL_LEVEL);
+export const MetamagicListSchema = z.array(z.string().trim().min(1).max(40)).max(MAX_METAMAGIC);
+
+/**
+ * One prepared spell for the day (one casting: a spell prepared twice is two
+ * entries). `level` is the slot it occupies, which metamagic raises.
+ */
+export const PreparedSpellSchema = z.object({
+  id: IdSchema,
+  name: SpellNameSchema,
+  level: SpellLevelSchema,
+  metamagic: MetamagicListSchema,
+  /** `bonus`: the domain/school slot, which only domain/school spells may fill. */
+  slot: z.enum(['normal', 'bonus']),
+  /** Already cast today (prepared casters). Cantrips never get used up. */
+  cast: z.boolean(),
+});
+export type PreparedSpell = z.infer<typeof PreparedSpellSchema>;
+export const MAX_PREPARED_PER_CLASS = 120;
+export const MAX_CASTING_CLASSES = 20;
+
 export const CharacterRuntimeSchema = z.object({
   /** Current hit points tracked in the VTT; null until the sheet sets them (Epic 2). */
   hp: z
@@ -38,16 +147,36 @@ export const CharacterRuntimeSchema = z.object({
     })
     .nullable(),
   /** Spent uses of daily/per-round resources and spell slots, keyed by resource id (Epics 6-7). */
-  uses: z.record(z.string().max(120), z.number().int().min(0).max(100000)),
+  uses: z.record(z.string().max(120), z.number().int().min(0).max(100000)).refine((r) => Object.keys(r).length <= 200, 'Too many tracked uses'),
   /** Ability damage (lowers the modifier) and drain (lowers the score). */
   abilityDamage: NonNegStatAdjustSchema,
   abilityDrain: NonNegStatAdjustSchema,
   /** Temporary score changes from spells/items not modelled yet (e.g. Bull's Strength +4). */
   abilityTemp: StatAdjustSchema,
+  /** Active combat options (Power Attack, Fight defensively...), keyed by toggle id; see pf1e/toggles.ts. */
+  toggles: z.record(z.string().max(40), z.boolean()).refine((r) => Object.keys(r).length <= 30, 'Too many toggles'),
+  /**
+   * Spells prepared for the day, by casting class name (Epic 7). A class with no
+   * entry uses the prepared book in the .pcg file until it is prepared in the VTT.
+   */
+  prepared: z
+    .record(z.string().trim().min(1).max(80), z.array(PreparedSpellSchema).max(MAX_PREPARED_PER_CLASS))
+    .refine((r) => Object.keys(r).length <= MAX_CASTING_CLASSES, 'Too many casting classes'),
+  /** Temporary buffs, active or ready to switch on (Epic 8). */
+  buffs: z
+    .array(BuffSchema)
+    .max(MAX_BUFFS)
+    .refine((arr) => new Set(arr.map((b) => b.id)).size === arr.length, 'Duplicate buff id'),
+  /**
+   * Conditions (Shaken, Prone...) with mechanical effects. While the character
+   * is linked to a token this mirrors the token's conditions; otherwise it's
+   * edited on the sheet.
+   */
+  conditions: z.array(ConditionNameSchema).max(MAX_CONDITIONS),
 });
 export type CharacterRuntime = z.infer<typeof CharacterRuntimeSchema>;
 
-export const EMPTY_RUNTIME: CharacterRuntime = { hp: null, uses: {}, abilityDamage: {}, abilityDrain: {}, abilityTemp: {} };
+export const EMPTY_RUNTIME: CharacterRuntime = { hp: null, uses: {}, abilityDamage: {}, abilityDrain: {}, abilityTemp: {}, toggles: {}, prepared: {}, buffs: [], conditions: [] };
 
 /** Progression for a class the rules tables don't know (prestige or homebrew). */
 export const ClassChassisSchema = z.object({
@@ -60,6 +189,29 @@ export const ClassChassisSchema = z.object({
 /** Sheet-only numbers that aren't modelled yet. */
 export const MiscTargetSchema = z.enum(['hp', 'ac', 'natural', 'deflection', 'initiative', 'fort', 'ref', 'will', 'cmb', 'cmd']);
 export type MiscTarget = z.infer<typeof MiscTargetSchema>;
+
+/** A resource pool the rules tables don't model (Ki at higher levels, a homebrew feature...). Spent uses live in runtime.uses under `custom.<id>`. */
+export const CustomPoolSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(40),
+  max: z.number().int().min(0).max(999),
+  unit: z.enum(['uses', 'rounds', 'points', 'minutes']),
+});
+export type CustomPool = z.infer<typeof CustomPoolSchema>;
+export const MAX_CUSTOM_POOLS = 30;
+
+/** Casting settings for one class, for classes the rules tables don't know or house rules. null = from the rules tables. */
+export const SpellcastingOverrideSchema = z.object({
+  model: z.enum(['prepared', 'spontaneous', 'hybrid']).nullable(),
+  stat: StatKeySchema.nullable(),
+  casterLevel: z.number().int().min(0).max(40).nullable(),
+  /** Base spells per day for spell levels 0-9 (before bonus spells); null entries = can't cast that level. */
+  perDay: z.array(z.number().int().min(0).max(20).nullable()).max(MAX_SPELL_LEVEL + 1).nullable(),
+  /** Untyped bonus to save DCs and to concentration checks (traits, items...). */
+  dcBonus: z.number().int().min(-10).max(10),
+  concentrationBonus: z.number().int().min(-20).max(20),
+});
+export type SpellcastingOverride = z.infer<typeof SpellcastingOverrideSchema>;
 
 /** Sheet-side changes to one skill (kept on re-import). */
 export const SkillOverrideSchema = z.object({
@@ -100,6 +252,15 @@ export const CharacterSheetSchema = z.object({
   skills: z
     .record(z.string().trim().min(1).max(80), SkillOverrideSchema)
     .refine((r) => Object.keys(r).length <= MAX_SKILL_OVERRIDES, `At most ${MAX_SKILL_OVERRIDES} skill entries`),
+  /** Extra resource pools added on the sheet. */
+  customPools: z
+    .array(CustomPoolSchema)
+    .max(MAX_CUSTOM_POOLS)
+    .refine((arr) => new Set(arr.map((p) => p.id)).size === arr.length, 'Duplicate custom pool id'),
+  /** Per-class spellcasting settings, by class name. */
+  spellcasting: z
+    .record(z.string().trim().min(1).max(80), SpellcastingOverrideSchema)
+    .refine((r) => Object.keys(r).length <= MAX_CASTING_CLASSES, 'Too many casting classes'),
 });
 export type CharacterSheet = z.infer<typeof CharacterSheetSchema>;
 
@@ -114,6 +275,8 @@ export const EMPTY_SHEET: CharacterSheet = {
   darkvision: null,
   misc: {},
   skills: {},
+  customPools: [],
+  spellcasting: {},
 };
 
 // ------------------------------------------------------------------ inventory

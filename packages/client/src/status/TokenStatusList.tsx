@@ -68,6 +68,7 @@ function TokenStatusList({ tokens, empty }: { tokens: Token[]; empty: string }) 
                     <span key={c} className="condition-chip on" style={{ background: conditionStyle(c).color }}>
                       <span className="condition-icon">{conditionStyle(c).icon}</span>
                       {c}
+                      {t.conditionRounds[c] ? <span className="condition-rounds"> ⏱{t.conditionRounds[c]}</span> : null}
                     </span>
                   ))}
                 </span>

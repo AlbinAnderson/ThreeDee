@@ -4,9 +4,11 @@
  * Pure and deterministic, shared by client (sheet) and server (token sync).
  */
 import type { Character, ItemArmor } from '../entities/pf1e';
-import { carryingCapacity, sizedDamage, type CarryingCapacity } from './gear';
+import { carryingCapacity, sizedDamage, weaponKey, type CarryingCapacity } from './gear';
 import { activeLoadout, carriedWeight, itemsInSlot, type LoadWeight } from './inventory';
 import { sumModifiers, type Modifier, type StatLine } from './modifiers';
+import { acrobaticsRanks, activeToggles, toggleStep, type ToggleId } from './toggles';
+import { characterEffects, CMD_FROM_AC, NOT_TOUCH, type EffectSource } from './buffs';
 import {
   babFor,
   baseSaveFor,
@@ -16,6 +18,7 @@ import {
   lookupFeatEffects,
   lookupRace,
   SIZE_MOD,
+  SIZES,
   SPECIAL_SIZE_MOD,
   STAT_KEYS,
   type ClassChassis,
@@ -69,8 +72,20 @@ export interface CharacterStats {
   };
   load: { weight: LoadWeight; capacity: CarryingCapacity; level: LoadLevel };
   attacks: WeaponAttack[];
+  /** Active combat toggles (see pf1e/toggles.ts); total defense means no attacks this round. */
+  toggles: ToggleId[];
   /** Full-attack bonuses when fighting with a weapon in each hand. */
   twoWeapon: { primary: number[]; offHand: number[]; primaryName: string; offHandName: string } | null;
+  /** Active buffs and conditions (Epic 8), with reminders for what the numbers don't cover. */
+  effects: {
+    sources: EffectSource[];
+    notes: string[];
+    /** Lost Dex bonus to AC (blinded, stunned, flat-footed...). */
+    loseDexToAc: boolean;
+    /** Typed bonuses/penalties on every skill check, and on caster level. */
+    skills: Modifier[];
+    casterLevel: Modifier[];
+  };
   /** Things the user should fill in on the sheet for accurate numbers. */
   warnings: string[];
 }
@@ -137,6 +152,8 @@ export function computeCharacterStats(c: Character): CharacterStats {
   if (build.attributes.race && !race) warnings.push(`Unknown race "${build.attributes.race}": set size, speed and senses in Sheet settings.`);
   const names = abilityNames(c);
   const has = (key: string) => names.some((n) => featKey(n) === key);
+  // Buffs and conditions: typed modifiers per target (Epic 8).
+  const fx = characterEffects(c);
 
   // ---------------------------------------------------------------- abilities
   const levelUps: Partial<Record<StatKey, number>> = {};
@@ -156,10 +173,14 @@ export function computeCharacterStats(c: Character): CharacterStats {
     if (levelUps[key]) mods.push({ value: levelUps[key]!, type: 'untyped', source: 'Level-up increases' });
     if (runtime.abilityTemp[key]) mods.push({ value: runtime.abilityTemp[key]!, type: 'untyped', source: 'Temporary' });
     if (runtime.abilityDrain[key]) mods.push({ value: -runtime.abilityDrain[key]!, type: 'untyped', source: 'Drain' });
-    const line = sumModifiers(mods);
+    mods.push(...fx.mods[key]);
+    let line = sumModifiers(mods);
+    // Helpless / paralyzed: the ability counts as a score of 0 (effective modifier −5).
+    const zeroed = fx.zero.includes(key);
+    if (zeroed && line.total !== 0) line = sumModifiers([...mods, { value: -line.total, type: 'untyped', source: 'Helpless (score 0)' }]);
     const damage = Math.max(0, runtime.abilityDamage[key] ?? 0);
     // PF1e: every 2 points of ability damage apply a -1 penalty without altering the score.
-    const abilityMod = Math.floor((line.total - 10) / 2) - Math.floor(damage / 2);
+    const abilityMod = zeroed ? -5 : Math.floor((line.total - 10) / 2) - Math.floor(damage / 2);
     abilities[key] = { key, score: line.total, damage, mod: abilityMod, line };
   }
   const mod = (k: StatKey) => abilities[k].mod;
@@ -179,7 +200,13 @@ export function computeCharacterStats(c: Character): CharacterStats {
   );
 
   // Determine worn armor up front so light-armor-only feats (e.g. Fleet) know whether they apply.
-  const size: SizeName = sheet.size ?? race?.size ?? 'Medium';
+  // Enlarge/reduce effects move the size category (clamped to Fine..Colossal).
+  // PF1e: multiple magical size increases (or decreases) don't stack; take the largest of each direction.
+  const baseSize: SizeName = sheet.size ?? race?.size ?? 'Medium';
+  const maxGrow = fx.mods.sizeSteps.reduce((m, x) => (x.value > m ? x.value : m), 0);
+  const maxShrink = fx.mods.sizeSteps.reduce((m, x) => (x.value < m ? x.value : m), 0);
+  const sizeSteps = maxGrow + maxShrink;
+  const size: SizeName = SIZES[Math.max(0, Math.min(SIZES.length - 1, SIZES.indexOf(baseSize) + sizeSteps))]!;
   const worn = wornArmor(c);
   const effectiveWorn = worn.filter((w) => (w.armor.kind === 'armor' ? sheet.armorBonus !== 0 : sheet.shieldBonus !== 0));
   const armorItem = effectiveWorn
@@ -215,6 +242,43 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const misc = (k: keyof typeof sheet.misc, source = 'Misc (sheet)'): Modifier[] =>
     sheet.misc[k] ? [{ value: sheet.misc[k]!, type: 'untyped', source }] : [];
 
+  // Weapon feats chosen for a weapon: Weapon Focus / Specialization (and Greater) with their targets.
+  const weaponFeats = new Map<string, Set<string>>();
+  const addWeaponFeat = (name: string, targets: string[]) => {
+    const k = featKey(name);
+    if (!['weaponfocus', 'greaterweaponfocus', 'weaponspecialization', 'greaterweaponspecialization'].includes(k)) return;
+    let set = weaponFeats.get(k);
+    if (!set) {
+      set = new Set();
+      weaponFeats.set(k, set);
+    }
+    for (const t of targets) {
+      const wk = weaponKey(t);
+      if (wk) set.add(wk);
+    }
+  };
+  for (const a of build.abilities) addWeaponFeat(a.key, a.appliedTo);
+  for (const f of [...build.legacyFeats, ...build.virtualFeats]) {
+    const m = /\((.+)\)\s*$/.exec(f);
+    if (m) addWeaponFeat(f, m[1]!.split(','));
+  }
+  const hasWeaponFeat = (k: string, itemName: string) => {
+    const wk = weaponKey(itemName);
+    return !!wk && (weaponFeats.get(k)?.has(wk) ?? false);
+  };
+
+  // Combat toggles: dodge bonuses to AC (and CMD, which dodge bonuses also raise).
+  const toggles = activeToggles(c);
+  const step = toggleStep(bab.total);
+  const acro3 = acrobaticsRanks(c) >= 3;
+  const dodgeToggle = (value: number, source: string) => {
+    extra.ac.push({ value, type: 'dodge', source });
+    extra.cmd.push({ value, type: 'dodge', source });
+  };
+  if (toggles.has('combatExpertise')) dodgeToggle(step, 'Combat Expertise');
+  if (toggles.has('fightDefensively')) dodgeToggle(acro3 ? 3 : 2, 'Fighting defensively');
+  if (toggles.has('totalDefense')) dodgeToggle(acro3 ? 6 : 4, 'Total defense');
+
   const saves = {} as Record<SaveKey, StatLine>;
   for (const s of ['fort', 'ref', 'will'] as SaveKey[]) {
     saves[s] = sumModifiers([
@@ -225,6 +289,8 @@ export function computeCharacterStats(c: Character): CharacterStats {
       })),
       { value: mod(ABILITY_FOR_SAVE[s]), type: 'ability', source: ABILITY_FOR_SAVE[s].charAt(0) + ABILITY_FOR_SAVE[s].slice(1).toLowerCase() },
       ...extra[s],
+      ...fx.mods.saves,
+      ...fx.mods[s],
       ...misc(s),
     ]);
   }
@@ -277,14 +343,20 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const acSize: Modifier = { value: SIZE_MOD[size], type: 'size', source: size };
   const acNatural: Modifier[] = sheet.misc.natural ? [{ value: sheet.misc.natural, type: 'natural', source: 'Natural armor' }] : [];
   const acDeflection: Modifier[] = sheet.misc.deflection ? [{ value: sheet.misc.deflection, type: 'deflection', source: 'Deflection' }] : [];
-  const dodge = extra.ac.filter((m) => m.type === 'dodge');
-  const otherAc = [...extra.ac.filter((m) => m.type !== 'dodge'), ...misc('ac')];
+  // Buff AC: dodge joins the other dodge bonuses; armor/shield/natural types don't apply to touch AC.
+  const loseDex = fx.loseDexToAc;
+  const dodge = [...extra.ac, ...fx.mods.ac].filter((m) => m.type === 'dodge');
+  const otherAc = [...extra.ac.filter((m) => m.type !== 'dodge'), ...misc('ac'), ...fx.mods.ac.filter((m) => m.type !== 'dodge' && !NOT_TOUCH.has(m.type))];
+  const buffArmorAc = fx.mods.ac.filter((m) => NOT_TOUCH.has(m.type));
+  // Losing the Dex bonus to AC (blinded, stunned...) drops a positive Dex modifier and every dodge bonus.
+  const dexAcParts = loseDex ? (dexToAc < 0 ? [acDex] : []) : [acDex];
+  const dodgeParts = loseDex ? [] : dodge;
   const base10: Modifier = { value: 10, type: 'base', source: 'Base' };
 
   const ac = {
-    normal: sumModifiers([base10, acArmor, acShield, acDex, acSize, ...acNatural, ...acDeflection, ...dodge, ...otherAc]),
-    touch: sumModifiers([base10, acDex, acSize, ...acDeflection, ...dodge, ...otherAc]),
-    flatFooted: sumModifiers([base10, acArmor, acShield, ...(dexToAc < 0 ? [acDex] : []), acSize, ...acNatural, ...acDeflection, ...otherAc]),
+    normal: sumModifiers([base10, acArmor, acShield, ...dexAcParts, acSize, ...acNatural, ...acDeflection, ...dodgeParts, ...otherAc, ...buffArmorAc]),
+    touch: sumModifiers([base10, ...dexAcParts, acSize, ...acDeflection, ...dodgeParts, ...otherAc]),
+    flatFooted: sumModifiers([base10, acArmor, acShield, ...(dexToAc < 0 ? [acDex] : []), acSize, ...acNatural, ...acDeflection, ...otherAc, ...buffArmorAc]),
   };
 
   // ---------------------------------------------------------------- CMB / CMD / initiative / speed
@@ -294,10 +366,20 @@ export function computeCharacterStats(c: Character): CharacterStats {
   const cmbAbility: StatKey = useDexCmb ? 'DEX' : 'STR';
   const cmbSource = !useDexCmb ? 'Str' : isTinyOrSmaller ? `Dex (${size})` : 'Dex (Agile Maneuvers)';
   const specialSize: Modifier = { value: SPECIAL_SIZE_MOD[size], type: 'size', source: size };
+  const cmbTogglePenalties: Modifier[] = [];
+  if (toggles.has('powerAttack')) cmbTogglePenalties.push({ value: -step, type: 'untyped', source: 'Power Attack' });
+  if (toggles.has('piranhaStrike')) cmbTogglePenalties.push({ value: -step, type: 'untyped', source: 'Piranha Strike' });
+  if (toggles.has('combatExpertise')) cmbTogglePenalties.push({ value: -step, type: 'untyped', source: 'Combat Expertise' });
+  if (toggles.has('fightDefensively')) cmbTogglePenalties.push({ value: -4, type: 'untyped', source: 'Fighting defensively' });
   const cmb = sumModifiers([
     { value: bab.total, type: 'base', source: 'BAB' },
     { value: mod(cmbAbility), type: 'ability', source: cmbSource },
     specialSize,
+    ...cmbTogglePenalties,
+    // Bonuses and penalties on attack rolls from spells and conditions apply to combat maneuvers too.
+    ...fx.mods.attack,
+    ...fx.mods.attackMelee,
+    ...fx.mods.cmb,
     ...misc('cmb'),
   ]);
   const dctBab = has(FEAT_FLAGS.defensiveCombatTraining) ? Math.max(bab.total, hitDice) : bab.total;
@@ -305,13 +387,16 @@ export function computeCharacterStats(c: Character): CharacterStats {
     { value: 10, type: 'base', source: 'Base' },
     { value: dctBab, type: 'base', source: dctBab !== bab.total ? 'Hit dice (Defensive Combat Training)' : 'BAB' },
     { value: mod('STR'), type: 'ability', source: 'Str' },
-    { value: mod('DEX'), type: 'ability', source: 'Dex' },
+    ...(loseDex && mod('DEX') > 0 ? [] : [{ value: mod('DEX'), type: 'ability' as const, source: 'Dex' }]),
     specialSize,
     ...acDeflection,
-    ...extra.cmd,
+    ...extra.cmd.filter((m) => !(loseDex && m.type === 'dodge')),
+    // CMD gains the AC bonus types listed in the CMD rules, and every AC penalty.
+    ...fx.mods.ac.filter((m) => m.value < 0 || (CMD_FROM_AC.has(m.type) && !(loseDex && m.type === 'dodge'))),
+    ...fx.mods.cmd,
     ...misc('cmd'),
   ]);
-  const initiative = sumModifiers([{ value: mod('DEX'), type: 'ability', source: 'Dex' }, ...extra.initiative, ...misc('initiative')]);
+  const initiative = sumModifiers([{ value: mod('DEX'), type: 'ability', source: 'Dex' }, ...extra.initiative, ...fx.mods.initiative, ...misc('initiative')]);
 
   const baseSpeed = sheet.speed ?? race?.speed ?? 30;
   // Steady races (dwarves) aren't slowed by armor or load.
@@ -324,7 +409,7 @@ export function computeCharacterStats(c: Character): CharacterStats {
     loadLevel === 'overloaded' && sheet.speed === null
       ? { value: 5, type: 'base', source: 'Overloaded: can only stagger 5 ft' }
       : { value: armorSlows || loadSlows ? reducedSpeed : baseSpeed, type: 'base', source: why ? `Base ${baseSpeed} ft, ${why}` : 'Base' };
-  const speed = sumModifiers([speedBase, ...(loadLevel === 'overloaded' ? [] : extra.speed)]);
+  const speed = sumModifiers([speedBase, ...(loadLevel === 'overloaded' ? [] : [...extra.speed, ...fx.mods.speed])]);
 
   // ---------------------------------------------------------------- weapon attacks
   const finesse = has('weaponfinesse');
@@ -349,11 +434,44 @@ export function computeCharacterStats(c: Character): CharacterStats {
         : weapon.masterwork
           ? [{ value: 1, type: 'enhancement', source: 'Masterwork' }]
           : [];
+      // Combat toggles: attack penalties and damage bonuses.
+      const melee = mode === 'melee';
+      // PF1e Piranha Strike applies only to light melee weapons (not one-/two-handed finesse weapons).
+      const piranhaOk = melee && weapon.hands === 'light';
+      const togglePenalties: Modifier[] = [];
+      const toggleDamage: Modifier[] = [];
+      const on = (id: ToggleId) => toggles.has(id);
+      if (on('powerAttack') && melee) {
+        togglePenalties.push({ value: -step, type: 'untyped', source: 'Power Attack' });
+        const twoHanded = hand === 'bothHands' && weapon.hands !== 'light';
+        toggleDamage.push({ value: hand === 'offHand' ? step : twoHanded ? 3 * step : 2 * step, type: 'untyped', source: 'Power Attack' });
+      }
+      if (on('piranhaStrike') && piranhaOk) {
+        togglePenalties.push({ value: -step, type: 'untyped', source: 'Piranha Strike' });
+        toggleDamage.push({ value: hand === 'offHand' ? step : 2 * step, type: 'untyped', source: 'Piranha Strike' });
+      }
+      if (on('deadlyAim') && !melee) {
+        togglePenalties.push({ value: -step, type: 'untyped', source: 'Deadly Aim' });
+        toggleDamage.push({ value: 2 * step, type: 'untyped', source: 'Deadly Aim' });
+      }
+      if (on('combatExpertise') && melee) togglePenalties.push({ value: -step, type: 'untyped', source: 'Combat Expertise' });
+      if (on('fightDefensively')) togglePenalties.push({ value: -4, type: 'untyped', source: 'Fighting defensively' });
+      const featAttack: Modifier[] = [];
+      const featDamage: Modifier[] = [];
+      if (hasWeaponFeat('weaponfocus', item.name)) featAttack.push({ value: 1, type: 'untyped', source: 'Weapon Focus' });
+      if (hasWeaponFeat('greaterweaponfocus', item.name)) featAttack.push({ value: 1, type: 'untyped', source: 'Greater Weapon Focus' });
+      if (hasWeaponFeat('weaponspecialization', item.name)) featDamage.push({ value: 2, type: 'untyped', source: 'Weapon Specialization' });
+      if (hasWeaponFeat('greaterweaponspecialization', item.name)) featDamage.push({ value: 2, type: 'untyped', source: 'Greater Weapon Specialization' });
+
       const attack = sumModifiers([
         { value: bab.total, type: 'base', source: 'BAB' },
         attackAbility,
         { value: SIZE_MOD[size], type: 'size', source: size },
         ...weaponBonus,
+        ...featAttack,
+        ...togglePenalties,
+        ...fx.mods.attack,
+        ...(melee ? fx.mods.attackMelee : fx.mods.attackRanged),
       ]);
 
       // Strength to damage: x1.5 two-handed (not light weapons), x0.5 off hand; penalties always apply in full.
@@ -375,14 +493,23 @@ export function computeCharacterStats(c: Character): CharacterStats {
       const damage = sumModifiers([
         ...(strDamage ? [{ value: strDamage, type: 'ability' as const, source: strSource }] : []),
         ...(weapon.enhancement ? [{ value: weapon.enhancement, type: 'enhancement' as const, source: `+${weapon.enhancement} weapon` }] : []),
+        ...featDamage,
+        ...toggleDamage,
+        ...fx.mods.damage,
+        ...(melee ? fx.mods.damageMelee : fx.mods.damageRanged),
       ]);
+      let fullAttack = mode === 'thrown' ? [attack.total] : iteratives(bab.total, attack.total);
+      // Rapid Shot: one extra ranged attack at the highest bonus, every attack at -2.
+      if (on('rapidShot') && !melee) fullAttack = [attack.total - 2, ...fullAttack.map((n) => n - 2)];
+      // Haste: one extra attack at the highest bonus (several haste effects don't stack).
+      if (mode !== 'thrown' && fx.mods.extraAttack.some((m) => m.value > 0)) fullAttack = [fullAttack[0]!, ...fullAttack];
       attacks.push({
         itemId: item.id,
         name: item.name,
         mode,
         hand,
         attack,
-        fullAttack: mode === 'thrown' ? [attack.total] : iteratives(bab.total, attack.total),
+        fullAttack,
         dice: sizedDamage(weapon.damage, size),
         damage,
         crit: critText(weapon.critRange, weapon.critMult),
@@ -426,6 +553,8 @@ export function computeCharacterStats(c: Character): CharacterStats {
     armor: { worn: effectiveWorn.map((w) => w.name), maxDex, acp, asf, heavyArmor },
     load: { weight, capacity, level: loadLevel },
     attacks,
+    toggles: [...toggles],
+    effects: { sources: fx.sources, notes: fx.notes, loseDexToAc: fx.loseDexToAc, skills: fx.mods.skills, casterLevel: fx.mods.casterLevel },
     twoWeapon,
     warnings,
   };

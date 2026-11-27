@@ -27,10 +27,15 @@ export const CombatSchema = z.object({
   currentId: IdSchema.nullable(),
   /** Turn order, first acts first. */
   combatants: z.array(CombatantSchema).max(200),
+  /**
+   * Turns already started in the latest round reached, so round-based
+   * durations tick once per turn even if the GM steps back and forward.
+   */
+  ticks: z.object({ round: z.number().int().min(0).max(100000), ids: z.array(IdSchema).max(200) }),
 });
 export type Combat = z.infer<typeof CombatSchema>;
 
-export const EMPTY_COMBAT: Combat = { active: false, round: 0, currentId: null, combatants: [] };
+export const EMPTY_COMBAT: Combat = { active: false, round: 0, currentId: null, combatants: [], ticks: { round: 0, ids: [] } };
 
 // ---------------------------------------------------------------- area templates
 
@@ -148,11 +153,29 @@ export type Deck = z.infer<typeof DeckSchema>;
 // ---------------------------------------------------------------- chat attachments
 
 /** A rich card attached to a chat message (table result, drawn card...). */
+/** A d20 check a card offers as a button (a spell's concentration or caster level check). */
+export const ChatCardRollSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  bonus: z.number().int().min(-100).max(200),
+});
+
+/** An area a card can place on the map (a spell's burst, cone or line), in feet. */
+export const ChatCardAreaSchema = z.object({
+  kind: TemplateKindSchema,
+  feet: z.number().min(5).max(1000),
+  /** Line width, feet. */
+  widthFeet: z.number().min(5).max(100).optional(),
+  label: z.string().max(60),
+});
+export type ChatCardArea = z.infer<typeof ChatCardAreaSchema>;
+
 export const ChatCardSchema = z.object({
   title: z.string().max(120),
   subtitle: z.string().max(120).optional(),
   text: z.string().max(2000).optional(),
   imageUrl: AssetUrlSchema.nullable().optional(),
+  rolls: z.array(ChatCardRollSchema).max(4).optional(),
+  area: ChatCardAreaSchema.optional(),
 });
 export type ChatCard = z.infer<typeof ChatCardSchema>;
 

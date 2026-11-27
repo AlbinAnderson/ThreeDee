@@ -4,7 +4,7 @@ import { canControlToken, isGm } from '../actions/auth';
 import { IdSchema, TokenSchema } from '../state';
 import { blockingSegments, isPathBlocked } from '../visibility';
 import { removeCombatant } from './combat';
-import { unlinkToken } from './pf1e/characters';
+import { mirrorTokenConditions, unlinkToken } from './pf1e/characters';
 
 const CoordSchema = TokenSchema.shape.x;
 
@@ -18,6 +18,7 @@ const OwnerEditableSchema = TokenSchema.pick({
   hp: true,
   hpVisible: true,
   conditions: true,
+  conditionRounds: true,
   darkvision: true,
   light: true,
 });
@@ -45,7 +46,8 @@ export const tokenActions = {
     },
     apply(draft, { token }) {
       if (!draft.scenes[token.sceneId] || draft.tokens[token.id]) return;
-      draft.tokens[token.id] = token;
+      const cleanRounds = Object.fromEntries(Object.entries(token.conditionRounds).filter(([k]) => token.conditions.includes(k)));
+      draft.tokens[token.id] = { ...token, conditionRounds: cleanRounds };
     },
   }),
 
@@ -84,6 +86,11 @@ export const tokenActions = {
       const token = draft.tokens[id];
       if (!token) return;
       Object.assign(token, changes);
+      if (changes.conditions !== undefined || changes.conditionRounds !== undefined) {
+        // Timers only for conditions the token has; linked characters follow the markers.
+        for (const k of Object.keys(token.conditionRounds)) if (!token.conditions.includes(k)) delete token.conditionRounds[k];
+        mirrorTokenConditions(draft, id);
+      }
       // Keep the turn tracker's stored name in step (it's used if the token is later deleted).
       if (changes.name !== undefined) {
         for (const c of draft.combat.combatants) if (c.tokenId === id) c.name = token.name.trim() || 'Token';

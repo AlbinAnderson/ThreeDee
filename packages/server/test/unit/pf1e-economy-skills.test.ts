@@ -33,6 +33,7 @@ describe('unit: PF1e action economy', () => {
         { id: 'cb2', name: 'Goblin', tokenId: null, initiative: 20, modifier: 0, hidden: false },
         { id: 'cb1', name: 'Hero', tokenId: 't1', initiative: 10, modifier: 0, hidden: false },
       ],
+      ticks: { round: 1, ids: ['cb2'] },
     };
     assert.equal(turnWindow(state, 'cb2'), 1);
     assert.equal(turnWindow(state, 'cb1'), 0);

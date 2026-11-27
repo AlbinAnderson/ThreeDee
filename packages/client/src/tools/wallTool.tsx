@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { newId, wallActions, type GridSettings, type Point, type Wall } from '@vtt/shared';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useCurrentScene } from '../state/hooks';
 import { defineTool, type ToolContext } from './types';
@@ -128,9 +129,11 @@ function WallOptions() {
         <button
           type="button"
           className="small danger"
-          onClick={() =>
-            confirm(`Remove every wall and door on "${scene.name}"?`) && dispatch(wallActions.clearScene.create({ sceneId: scene.id, lights: false }))
-          }
+          onClick={async () => {
+            if (await confirmDialog({ title: 'Clear all walls?', message: `Remove every wall and door on "${scene.name}"?`, confirmLabel: 'Clear walls', danger: true })) {
+              dispatch(wallActions.clearScene.create({ sceneId: scene.id, lights: false }));
+            }
+          }}
         >
           Clear walls
         </button>

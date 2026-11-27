@@ -84,6 +84,52 @@ const migrations: Record<number, Migration> = {
       ),
     };
   },
+  // Epic 6: combat toggles and custom resource pools.
+  8: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 9,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => [
+          id,
+          { ...c, sheet: { customPools: [], ...(c.sheet as object) }, runtime: { toggles: {}, ...(c.runtime as object) } },
+        ]),
+      ),
+    };
+  },
+  // Epic 7: prepared spells (empty = the .pcg's prepared book) and per-class casting settings.
+  9: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 10,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => [
+          id,
+          { ...c, sheet: { spellcasting: {}, ...(c.sheet as object) }, runtime: { prepared: {}, ...(c.runtime as object) } },
+        ]),
+      ),
+    };
+  },
+  // Epic 8: buffs, character conditions (mirroring a linked token's) and condition timers on tokens.
+  10: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    const tokens = (raw.tokens ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 11,
+      tokens: Object.fromEntries(Object.entries(tokens).map(([id, t]) => [id, { conditionRounds: {}, ...t }])),
+      combat: { ticks: { round: 0, ids: [] }, ...(raw.combat as object) },
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => {
+          const token = typeof c.tokenId === 'string' ? tokens[c.tokenId] : undefined;
+          const conditions = Array.isArray(token?.conditions) ? token.conditions : [];
+          return [id, { ...c, runtime: { buffs: [], conditions, ...(c.runtime as object) } }];
+        }),
+      ),
+    };
+  },
 };
 
 export function migrateState(raw: unknown): GameState {

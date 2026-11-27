@@ -79,7 +79,7 @@ export const WEAPON_TABLE: [string, W][] = (
     // Exotic
     ['Kama', w('1d6', 'x2', 0, 'light')],
     ['Nunchaku', w('1d6', 'x2', 0, 'light')],
-    ['Sai', w('1d4', 'x2', 10, 'light')],
+    ['Sai', w('1d4', 'x2', 0, 'light')],
     ['Siangham', w('1d6', 'x2', 0, 'light')],
     ['Wakizashi', w('1d6', '18-20/x2', 0, 'light')],
     ['Cestus', w('1d4', '19-20/x2', 0, 'light')],
@@ -92,13 +92,14 @@ export const WEAPON_TABLE: [string, W][] = (
     ['Spiked chain', w('2d4', 'x2', 0, 'two', 'melee', { finesse: true })],
     ['Elven curve blade', w('1d10', '18-20/x2', 0, 'two', 'melee', { finesse: true })],
     ['Dwarven urgrosh', w('1d8', 'x3', 0, 'two')],
-    ['Gnome hooked hammer', w('1d6', 'x3', 0, 'two')],
+    ['Gnome hooked hammer', w('1d8', 'x3', 0, 'two')],
     ['Two-bladed sword', w('1d8', '19-20/x2', 0, 'two')],
     ['Nodachi', w('1d10', '18-20/x2', 0, 'two')],
     ['Bolas', w('1d4', 'x2', 10, 'light', 'thrown')],
     ['Shuriken', w('1d2', 'x2', 10, 'light', 'thrown')],
     ['Hand crossbow', w('1d4', '19-20/x2', 30, 'light', 'ranged')],
     ['Repeating heavy crossbow', w('1d10', '19-20/x2', 120, 'two', 'ranged')],
+    ['Repeating light crossbow', w('1d8', '19-20/x2', 80, 'two', 'ranged')],
     ['Repeating crossbow', w('1d8', '19-20/x2', 80, 'two', 'ranged')],
     ['Pistol', w('1d8', 'x4', 20, 'one', 'ranged')],
     ['Musket', w('1d12', 'x4', 40, 'two', 'ranged')],
@@ -148,7 +149,7 @@ const NON_WEAPON_PREFIX =
 /** Reorder PCGen "Sword (Short)" / "Crossbow (Light)" / "Longbow (Composite)" forms -> "Short sword", etc. */
 function pcgenWeaponAlias(name: string): string {
   return name.replace(
-    /\b(sword|crossbow|mace|flail|pick|axe|hammer|longbow|shortbow)\s*\(\s*(short|bastard|light|heavy|hand|throwing|composite|repeating heavy|repeating)\b([^)]*)\)/i,
+    /\b(sword|crossbow|mace|flail|pick|axe|hammer|longbow|shortbow)\s*\(\s*(short|bastard|light|heavy|hand|throwing|composite|repeating heavy|repeating light|repeating)\b([^)]*)\)/i,
     (_, base: string, mod: string, rest: string) => `${mod} ${base}${rest ? ` (${rest.trim()})` : ''}`,
   );
 }
@@ -162,6 +163,31 @@ export function baseGearName(name: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+}
+
+const CANONICAL_WEAPON_KEY: Record<string, string> = {
+  shortsword: 'short sword',
+  'composite longbow': 'longbow',
+  'composite shortbow': 'shortbow',
+};
+
+/**
+ * Canonical weapon key for matching weapon feats (Weapon Focus / Specialization).
+ * Resolves known weapons longest-name-first so "Punching Dagger" won't match "Dagger"
+ * and "Sword (Short)" / "Shortsword" or "Composite Longbow" / "Longbow" match cleanly.
+ */
+export function weaponKey(name: string): string {
+  const base = baseGearName(name);
+  if (!base) return '';
+  const padded = ` ${base} `;
+  const hit = WEAPON_TABLE.find(([n]) => {
+    const key = n.toLowerCase();
+    if (!padded.includes(` ${key} `)) return false;
+    if (key === 'acid' && base !== 'acid') return false;
+    return true;
+  });
+  const key = hit ? hit[0].toLowerCase() : base;
+  return CANONICAL_WEAPON_KEY[key] ?? key;
 }
 
 export function lookupWeapon(name: string): W | undefined {

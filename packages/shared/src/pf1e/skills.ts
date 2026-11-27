@@ -117,7 +117,7 @@ function featsWithTargets(c: Character): { key: string; targets: string[]; name:
   const out = c.build.abilities.map((a) => ({ key: featKey(a.key), targets: a.appliedTo.map((t) => t.trim()).filter(Boolean), name: a.key }));
   for (const f of [...c.build.legacyFeats, ...c.build.virtualFeats]) {
     const m = /\((.+)\)\s*$/.exec(f);
-    out.push({ key: featKey(f), targets: m ? [m[1]!.trim()] : [], name: f });
+    out.push({ key: featKey(f), targets: m ? m[1]!.split(',').map((t) => t.trim()).filter(Boolean) : [], name: f });
   }
   return out;
 }
@@ -239,6 +239,8 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
     if (def?.name === 'Fly' && FLY_SIZE[stats.size]) mods.push({ value: FLY_SIZE[stats.size], type: 'size', source: stats.size });
     if (def?.acp && stats.armor.acp) mods.push({ value: stats.armor.acp, type: 'untyped', source: 'Armor check penalty' });
     if (o?.misc) mods.push({ value: o.misc, type: 'untyped', source: 'Misc (sheet)' });
+    // Buffs and conditions on every skill check (Heroism, Shaken...).
+    mods.push(...stats.effects.skills);
 
     const trainedOnly = def?.trainedOnly ?? false;
     const usable = !trainedOnly || ranks > 0 || (bardic && def?.name === 'Knowledge');

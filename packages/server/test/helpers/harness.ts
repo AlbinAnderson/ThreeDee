@@ -3,6 +3,7 @@
  * Keeps Room / SqliteRoomStore setup, client inbox inspection and fixture
  * loading uniform so tests stay concise and never leak timers or temp dirs.
  */
+import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -51,6 +52,16 @@ export function createTestClient(): TestClient {
   };
 }
 
+/**
+ * Assert that none of the raw WebSocket messages sent to `client` after
+ * `sinceIdx` contain `forbidden`. Catches wire-privacy leaks that client-side
+ * `redactState` would otherwise mask in UI/snapshot tests.
+ */
+export function assertNoWireLeak(client: TestClient, sinceIdx: number, forbidden: RegExp, message?: string): void {
+  const wire = JSON.stringify(client.inbox.slice(sinceIdx));
+  assert.doesNotMatch(wire, forbidden, message ?? `Unexpected private data leaked over the wire to ${client.user?.name ?? client.id}`);
+}
+
 export function withPcgLines(pcg: string, ...lines: string[]): string {
   return `${pcg}\n${lines.join('\n')}\n`;
 }
@@ -97,3 +108,30 @@ export function createRoomFixture(initial?: GameState): RoomFixture {
   };
   return { dir, store, room, gm, alice, bob, act, cleanup };
 }
+
+/**
+ * The sample character rebuilt as a spellcaster (Epic 7): its classes and
+ * spell lines are replaced. Spell lines use real PCGen 6 syntax, e.g.
+ * `SPELLNAME:Fireball|TIMES:1|CLASS:Wizard|BOOK:Known Spells|SPELLLEVEL:3`.
+ */
+export function casterPcg(opts: {
+  classes: string[];
+  spells?: string[];
+  stats?: Partial<Record<'STR' | 'DEX' | 'CON' | 'INT' | 'WIS' | 'CHA', number>>;
+  align?: string;
+  extra?: string[];
+}): string {
+  const lines = SAMPLE_PCG.split('\n')
+    .filter((l) => !/^(CLASS:|CLASSABILITIESLEVEL:|SPELLBOOK:|SPELLLIST:|SPELLNAME:|SPELLMEM:)/.test(l))
+    .map((l) => {
+      const stat = /^STAT:([A-Z]{3})\|SCORE:\d+/.exec(l);
+      if (stat && opts.stats?.[stat[1] as 'STR']) return `STAT:${stat[1]}|SCORE:${opts.stats[stat[1] as 'STR']}`;
+      if (opts.align && l.startsWith('ALIGN:')) return `ALIGN:${opts.align}`;
+      return l;
+    });
+  return [...lines, ...opts.classes, ...(opts.spells ?? []), ...(opts.extra ?? [])].join('\n') + '\n';
+}
+
+/** A PCGen 6 spell line. */
+export const spellLine = (name: string, cls: string, level: number, book = 'Known Spells', times = 1, extra = '') =>
+  `SPELLNAME:${name}|TIMES:${times}|CLASS:${cls}|BOOK:${book}|SPELLLEVEL:${level}${extra}|SOURCE:[TYPE:CLASS|NAME:${cls}]`;

@@ -5,12 +5,73 @@
  */
 import { z } from 'zod';
 import type { Draft } from 'immer';
-import { defineAction, type AuthContext, type AuthResult } from '../actions/define';
+import { defineAction, type ActionMeta, type AuthContext, type AuthResult } from '../actions/define';
 import { canControlToken, isGm, requireGm } from '../actions/auth';
 import { rollDice, RollResultSchema } from '../dice';
 import { CombatantSchema, IdSchema, type Combat, type Combatant, type GameState, type User } from '../state';
 import { pushMessage } from './chat';
+import { mirrorTokenConditions } from './pf1e/characters';
 import { newId } from '../util';
+
+// ---------------------------------------------------------------- turn-start hooks
+
+export interface TurnStart {
+  /** Combatant whose turn just started (null if the order is empty). */
+  combatantId: string | null;
+  /** The turn order wrapped around: a new round began. */
+  newRound: boolean;
+  meta: ActionMeta;
+}
+
+/**
+ * Things that happen when a turn starts (round-based durations count down).
+ * Runs inside combat/next's reducer, so hooks must be deterministic and only
+ * use the state each client has (a client missing a hidden token or an
+ * unshared character simply skips it; the redactors hide the rest).
+ */
+export type TurnStartHook = (draft: Draft<GameState>, turn: TurnStart) => void;
+const turnStartHooks: TurnStartHook[] = [];
+export function onTurnStart(hook: TurnStartHook) {
+  turnStartHooks.push(hook);
+}
+
+/** A chat id that every client derives identically for a system notice. */
+export function noticeId(meta: ActionMeta, key: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619) >>> 0;
+  return `n-${meta.ts.toString(36)}-${h.toString(36)}`;
+}
+
+/** User ids of the GMs plus the given users, for a private notice. */
+export function noticeRecipients(state: Pick<GameState, 'users'>, userIds: (string | null | undefined)[]): string[] {
+  const gms = Object.values(state.users).filter((u) => isGm(u)).map((u) => u.id);
+  return [...new Set([...userIds.filter((x): x is string => !!x), ...gms])].filter((id) => !!state.users[id]).slice(0, 20);
+}
+
+/** Token condition timers: count down at the start of the token's turn; at 0 the condition ends. */
+onTurnStart((draft, { combatantId, meta }) => {
+  const cb = draft.combat.combatants.find((c) => c.id === combatantId);
+  const token = cb?.tokenId ? draft.tokens[cb.tokenId] : undefined;
+  if (!token) return;
+  const ended: string[] = [];
+  for (const [name, rounds] of Object.entries(token.conditionRounds)) {
+    if (rounds > 1) token.conditionRounds[name] = rounds - 1;
+    else {
+      delete token.conditionRounds[name];
+      token.conditions = token.conditions.filter((c) => c !== name);
+      ended.push(name);
+    }
+  }
+  if (!ended.length) return;
+  mirrorTokenConditions(draft, token.id);
+  pushMessage(draft.chat, {
+    id: noticeId(meta, `cond|${token.id}|${ended.join('|')}`),
+    userId: 'system',
+    ts: meta.ts,
+    text: `⏱ ${token.name.trim() || 'Token'}: ${ended.join(', ')} ended`,
+    whisper: { mode: 'whisper', to: noticeRecipients(draft, token.ownerIds) },
+  });
+});
 
 export function canControlCombatant(state: GameState, user: User, c: Combatant): boolean {
   if (isGm(user)) return true;
@@ -27,6 +88,19 @@ export function isCombatantHidden(state: GameState, c: Combatant): boolean {
 export function combatantName(state: GameState, c: Combatant): string {
   const token = c.tokenId ? state.tokens[c.tokenId] : undefined;
   return token?.name.trim() || c.name;
+}
+
+/** Run turn-start duration hooks once per combatant per round (safe against prev/next or delay). */
+function tickCurrentTurn(draft: Draft<GameState>, meta: ActionMeta, allowNewRound: boolean) {
+  const combat = draft.combat;
+  if (!combat.active) return;
+  const newRound = allowNewRound && combat.round > combat.ticks.round;
+  if (newRound) combat.ticks = { round: combat.round, ids: [] };
+  const id = combat.currentId;
+  const fresh = combat.round === combat.ticks.round && !!id && !combat.ticks.ids.includes(id);
+  if (fresh) combat.ticks.ids.push(id!);
+  if (!fresh && !newRound) return;
+  for (const hook of turnStartHooks) hook(draft, { combatantId: fresh ? id : null, newRound, meta });
 }
 
 /** Remove a combatant, passing the turn on if it was theirs and dropping its PF1e turn state. */
@@ -60,26 +134,30 @@ function sortCombat(combat: Draft<Combat>) {
   combat.combatants.sort(compareCombatants);
 }
 
-function advance(combat: Draft<Combat>, step: 1 | -1) {
+/** Move the turn; returns whether a new round began. */
+function advance(combat: Draft<Combat>, step: 1 | -1): boolean {
   const list = combat.combatants;
   if (!list.length) {
     combat.currentId = null;
-    return;
+    return false;
   }
   const idx = list.findIndex((c) => c.id === combat.currentId);
   if (idx === -1) {
     combat.currentId = list[0]!.id;
-    return;
+    return false;
   }
   let next = idx + step;
+  let newRound = false;
   if (next >= list.length) {
     next = 0;
     combat.round += 1;
+    newRound = true;
   } else if (next < 0) {
     next = list.length - 1;
     combat.round = Math.max(1, combat.round - 1);
   }
   combat.currentId = list[next]!.id;
+  return newRound;
 }
 
 const CombatantChangesSchema = CombatantSchema.pick({ name: true, initiative: true, modifier: true, hidden: true }).partial();
@@ -112,8 +190,10 @@ export const combatActions = {
 
   remove: defineAction('combat/remove', z.object({ id: IdSchema }), {
     authorize: (ctx, { id }) => requireCombatant(ctx, id),
-    apply(draft, { id }) {
+    apply(draft, { id }, meta) {
+      const wasCurrent = draft.combat.active && draft.combat.currentId === id;
       removeCombatant(draft, id);
+      if (wasCurrent && draft.combat.currentId) tickCurrentTurn(draft, meta, false);
     },
   }),
 
@@ -195,6 +275,8 @@ export const combatActions = {
       combat.active = true;
       combat.round = 1;
       combat.currentId = combat.combatants[0]?.id ?? null;
+      // Durations don't tick when combat starts; the first turn counts as already started.
+      combat.ticks = { round: 1, ids: combat.currentId ? [combat.currentId] : [] };
       draft.pf1eTurns = {};
     },
   }),
@@ -208,8 +290,13 @@ export const combatActions = {
       const current = combat.combatants.find((c) => c.id === combat.currentId);
       return (!!current && canControlCombatant(ctx.state, ctx.user, current)) || "It's not your turn";
     },
-    apply(draft) {
-      if (draft.combat.active) advance(draft.combat, 1);
+    apply(draft, _payload, meta) {
+      const combat = draft.combat;
+      if (!combat.active) return;
+      advance(combat, 1);
+      // Durations count down as turns start, once per combatant per round: stepping back
+      // with prev and forward again doesn't tick twice (nor does prev give rounds back).
+      tickCurrentTurn(draft, meta, true);
     },
   }),
 
@@ -226,17 +313,19 @@ export const combatActions = {
    */
   move: defineAction('combat/move', z.object({ id: IdSchema, beforeId: IdSchema.nullable() }), {
     authorize: (ctx, { id }) => requireCombatant(ctx, id),
-    apply(draft, { id, beforeId }) {
+    apply(draft, { id, beforeId }, meta) {
       const combat = draft.combat;
       const from = combat.combatants.findIndex((c) => c.id === id);
       if (from === -1 || id === beforeId) return;
-      if (combat.active && combat.currentId === id) {
+      const wasCurrent = combat.active && combat.currentId === id;
+      if (wasCurrent) {
         const next = combat.combatants[from + 1];
         combat.currentId = next ? next.id : (combat.combatants[0]?.id ?? null);
       }
       const [moved] = combat.combatants.splice(from, 1);
       const to = beforeId ? combat.combatants.findIndex((c) => c.id === beforeId) : -1;
       combat.combatants.splice(to === -1 ? combat.combatants.length : to, 0, moved!);
+      if (wasCurrent && combat.currentId && combat.currentId !== id) tickCurrentTurn(draft, meta, false);
     },
   }),
 
@@ -246,6 +335,7 @@ export const combatActions = {
       draft.combat.active = false;
       draft.combat.round = 0;
       draft.combat.currentId = null;
+      draft.combat.ticks = { round: 0, ids: [] };
       draft.pf1eTurns = {};
       if (clear) draft.combat.combatants = [];
     },

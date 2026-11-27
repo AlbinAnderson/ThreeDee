@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { ArrowLeft, Link2, Maximize2, Minimize2, MoreVertical, Upload, X } from 'lucide-react';
 import {
   canControlToken,
   canManageCharacter,
@@ -9,6 +10,7 @@ import {
   type Character,
 } from '@vtt/shared';
 import { CheckboxField, TextField } from '../components/fields';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { useUi } from '../state/uiStore';
@@ -16,10 +18,13 @@ import { syncLinkedToken } from './characterActions';
 import { CharacterSettings } from './CharacterSettings';
 import { CharacterSheet } from './CharacterSheet';
 import { CharacterSummary } from './CharacterSummary';
+import { AbilitiesTab } from './AbilitiesTab';
 import { InventoryTab } from './InventoryTab';
 import { SkillsTab } from './SkillsTab';
+import { SpellsTab } from './SpellsTab';
+import { EffectsTab } from './EffectsTab';
 import { openImport } from './ImportDialog';
-import { useCharactersUi } from './store';
+import { useCharactersUi, type CharacterTab } from './store';
 
 /** Characters you can see, yours first. */
 export function useVisibleCharacters(): Character[] {
@@ -39,6 +44,7 @@ function PcgFileButton({ label, targetId, className }: { label: string; targetId
   return (
     <>
       <button type="button" className={className} onClick={() => input.current?.click()}>
+        <Upload size={13} />
         {label}
       </button>
       <input
@@ -68,8 +74,6 @@ export function CharactersPanel() {
     e.preventDefault();
     setDragging(false);
     const file = [...e.dataTransfer.files].find((f) => /\.pcg$/i.test(f.name)) ?? e.dataTransfer.files[0];
-    // Always a new import: re-importing over a character is an explicit choice (its Re-import button),
-    // so dropping a different character's file while one is open can't offer to overwrite it.
     if (file) void openImport(file);
   }
 
@@ -88,15 +92,15 @@ export function CharactersPanel() {
       onDrop={onDrop}
     >
       {selected ? (
-        <CharacterView character={selected} onBack={() => useCharactersUi.setState({ selectedId: null })} />
+        <CharacterView character={selected} onBack={() => useCharactersUi.setState({ selectedId: null, poppedOut: false })} />
       ) : (
         <>
           <section>
             <div className="section-header">
               <h3>Characters</h3>
-              <PcgFileButton label="Import .pcg" className="small primary" />
+              <PcgFileButton label="Import .pcg" className="small gold" />
             </div>
-            <div className="drop-hint">Drop a PCGen .pcg file here, or use Import.</div>
+            <div className="drop-hint">Drop a PCGen .pcg file here, or click Import.</div>
             {list.length === 0 && <p className="muted">No characters yet.</p>}
             <ul className="character-list">
               {list.map((c) => (
@@ -104,10 +108,16 @@ export function CharactersPanel() {
                   <button type="button" onClick={() => useCharactersUi.setState({ selectedId: c.id })}>
                     <span className="character-name">{c.name}</span>
                     <span className="muted small-text">{classSummary(c.build)}</span>
-                    <span className="character-meta small-text">
-                      {c.ownerId ? (users[c.ownerId]?.name ?? 'Unknown player') : 'GM (NPC)'}
-                      {c.tokenId && tokens[c.tokenId] && ` · 🔗 ${tokens[c.tokenId]!.name || 'token'}`}
-                      {c.shared && ' · shared'}
+                    <span className="character-meta small-text" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <span>{c.ownerId ? (users[c.ownerId]?.name ?? 'Unknown player') : 'GM (NPC)'}</span>
+                      {c.tokenId && tokens[c.tokenId] && (
+                        <>
+                          <span>·</span>
+                          <Link2 size={11} />
+                          <span>{tokens[c.tokenId]!.name || 'token'}</span>
+                        </>
+                      )}
+                      {c.shared && <span>· shared</span>}
                     </span>
                   </button>
                 </li>
@@ -115,8 +125,7 @@ export function CharactersPanel() {
             </ul>
           </section>
           <p className="muted small-text">
-            Characters are private to their player and the GM unless shared with the party. In PCGen, use File → Save to get the .pcg
-            file.
+            Characters are private to their player and the GM unless shared. In PCGen, use File → Save to export a .pcg file.
           </p>
         </>
       )}
@@ -124,41 +133,199 @@ export function CharactersPanel() {
   );
 }
 
-type CharacterTab = 'sheet' | 'skills' | 'inventory' | 'imported' | 'settings' | 'manage';
+const PLAY_TABS: [CharacterTab, string][] = [
+  ['sheet', 'Sheet'],
+  ['skills', 'Skills'],
+  ['abilities', 'Abilities'],
+  ['spells', 'Spells'],
+  ['effects', 'Effects'],
+  ['inventory', 'Inventory'],
+];
+
+const POPOUT_RIGHT_TABS: [CharacterTab, string][] = [
+  ['skills', 'Skills'],
+  ['abilities', 'Abilities'],
+  ['spells', 'Spells'],
+  ['effects', 'Effects'],
+  ['inventory', 'Inventory'],
+];
+
+function AdminMenu({
+  activeTab,
+  manage,
+  onSelect,
+}: {
+  activeTab: CharacterTab;
+  manage: boolean;
+  onSelect: (t: CharacterTab) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', onDocClick);
+    return () => window.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  const items: [CharacterTab, string][] = [
+    ...(manage ? ([['settings', 'Sheet settings'], ['manage', 'Manage & token']] as [CharacterTab, string][]) : []),
+    ['imported', 'Imported .pcg data'],
+  ];
+  const isAdminActive = activeTab === 'settings' || activeTab === 'manage' || activeTab === 'imported';
+
+  return (
+    <div className="admin-menu-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`icon-button${isAdminActive ? ' active' : ''}`}
+        title="Settings, Manage & Imported data"
+        aria-label="Character options"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <MoreVertical size={15} />
+      </button>
+      {open && (
+        <div className="admin-menu" role="menu">
+          {items.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="menuitem"
+              className={activeTab === id ? 'active' : ''}
+              onClick={() => {
+                onSelect(id);
+                setOpen(false);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CharacterView({ character: c, onBack }: { character: Character; onBack: () => void }) {
   const self = useSelf();
   const manage = canManageCharacter(self, c);
-  const [tab, setTab] = useState<CharacterTab>('sheet');
+  const tab = useCharactersUi((s) => s.tab);
+  const poppedOut = useCharactersUi((s) => s.poppedOut);
+  const setTab = (next: CharacterTab) => useCharactersUi.setState({ tab: next });
   const activeTab: CharacterTab = !manage && (tab === 'settings' || tab === 'manage') ? 'sheet' : tab;
-  const tabs: [CharacterTab, string][] = [
-    ['sheet', 'Sheet'],
-    ['skills', 'Skills'],
-    ['inventory', 'Inventory'],
-    ['imported', 'Imported'],
-    ...(manage ? ([['settings', 'Settings'], ['manage', 'Manage']] as [CharacterTab, string][]) : []),
-  ];
 
   return (
     <section>
-      <button type="button" className="link-button" onClick={onBack}>
-        ← All characters
-      </button>
-      <h2 className="character-title">{c.name}</h2>
-      <div className="segmented sheet-tabs">
-        {tabs.map(([id, label]) => (
-          <button key={id} type="button" className={activeTab === id ? 'active' : ''} onClick={() => setTab(id)}>
+      <div className="character-header">
+        <div className="character-header-left">
+          <button type="button" className="link-button" onClick={onBack}>
+            <ArrowLeft size={12} /> All characters
+          </button>
+          <h2 className="character-title" title={c.name}>
+            {c.name}
+          </h2>
+        </div>
+        <div className="character-header-actions">
+          <button
+            type="button"
+            className="icon-button"
+            title={poppedOut ? 'Dock back to sidebar' : 'Expand wide 2-column sheet'}
+            aria-label={poppedOut ? 'Dock sheet' : 'Expand sheet'}
+            onClick={() => useCharactersUi.setState({ poppedOut: !poppedOut, tab: tab === 'sheet' ? 'skills' : tab })}
+          >
+            {poppedOut ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+          <AdminMenu activeTab={activeTab} manage={manage} onSelect={setTab} />
+        </div>
+      </div>
+
+      <div className="segmented sheet-tabs" role="tablist">
+        {PLAY_TABS.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'active' : ''} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}
       </div>
-      {activeTab === 'sheet' && <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} />}
+
+      {activeTab === 'sheet' && (
+        <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} onOpenEffects={() => setTab('effects')} />
+      )}
       {activeTab === 'skills' && <SkillsTab character={c} />}
+      {activeTab === 'abilities' && <AbilitiesTab character={c} />}
+      {activeTab === 'spells' && <SpellsTab character={c} />}
+      {activeTab === 'effects' && <EffectsTab character={c} />}
       {activeTab === 'inventory' && <InventoryTab character={c} />}
       {activeTab === 'imported' && <CharacterSummary build={c.build} />}
       {activeTab === 'settings' && manage && <CharacterSettings character={c} />}
       {activeTab === 'manage' && manage && <ManageCharacter character={c} onBack={onBack} />}
     </section>
+  );
+}
+
+/** Wide 2-column pop-out Character Sheet overlay: core stats pinned left, active tab on the right. */
+export function CharacterPopout() {
+  const list = useVisibleCharacters();
+  const self = useSelf();
+  const selectedId = useCharactersUi((s) => s.selectedId);
+  const poppedOut = useCharactersUi((s) => s.poppedOut);
+  const tab = useCharactersUi((s) => s.tab);
+  const c = poppedOut ? list.find((x) => x.id === selectedId) : undefined;
+
+  if (!c) return null;
+  const manage = canManageCharacter(self, c);
+  const setTab = (next: CharacterTab) => useCharactersUi.setState({ tab: next });
+  const close = () => useCharactersUi.setState({ poppedOut: false });
+  const rawRight: CharacterTab = tab === 'sheet' ? 'skills' : tab;
+  const rightTab: CharacterTab = !manage && (rawRight === 'settings' || rawRight === 'manage') ? 'skills' : rawRight;
+
+  return (
+    <div className="sheet-popout-backdrop" onClick={close}>
+      <div className="sheet-popout" role="dialog" aria-modal="true" aria-label={`${c.name} character sheet`} onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-popout-header">
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
+            <strong style={{ fontSize: 16 }}>{c.name}</strong>
+            <span className="muted small-text">{classSummary(c.build)}</span>
+          </div>
+          <div className="character-header-actions">
+            <AdminMenu activeTab={rightTab} manage={manage} onSelect={setTab} />
+            <button type="button" className="icon-button" title="Close expanded sheet (Esc)" aria-label="Close" onClick={close}>
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="sheet-popout-body">
+          <div className="sheet-popout-left">
+            <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} onOpenEffects={() => setTab('effects')} />
+          </div>
+          <div className="sheet-popout-right">
+            <div className="sheet-popout-tabs">
+              <div className="segmented sheet-tabs" role="tablist">
+                {POPOUT_RIGHT_TABS.map(([id, label]) => (
+                  <button key={id} type="button" role="tab" aria-selected={rightTab === id} className={rightTab === id ? 'active' : ''} onClick={() => setTab(id)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="sheet-popout-pane">
+              {rightTab === 'skills' && <SkillsTab character={c} />}
+              {rightTab === 'abilities' && <AbilitiesTab character={c} />}
+              {rightTab === 'spells' && <SpellsTab character={c} />}
+              {rightTab === 'effects' && <EffectsTab character={c} />}
+              {rightTab === 'inventory' && <InventoryTab character={c} />}
+              {rightTab === 'imported' && <CharacterSummary build={c.build} />}
+              {rightTab === 'settings' && manage && <CharacterSettings character={c} />}
+              {rightTab === 'manage' && manage && <ManageCharacter character={c} onBack={() => useCharactersUi.setState({ selectedId: null, poppedOut: false })} />}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -190,6 +357,7 @@ function ManageCharacter({ character: c, onBack }: { character: Character; onBac
       useUi.getState().setViewedScene(linked.sceneId);
     }
     useUi.getState().setSelection([linked.id]);
+    useCharactersUi.setState({ poppedOut: false });
   }
 
   return (
@@ -238,7 +406,7 @@ function ManageCharacter({ character: c, onBack }: { character: Character; onBac
         </select>
       </div>
       <p className="muted small-text">
-        Linking copies max HP, name, size, darkvision and the initiative modifier to the token. While linked, the token holds the live HP.
+        Linking copies max HP, name, size, darkvision and initiative to the token. While linked, the token holds live HP.
       </p>
       {linked && (
         <div className="button-row">
@@ -252,7 +420,7 @@ function ManageCharacter({ character: c, onBack }: { character: Character; onBac
             {gm && linkedOnOtherScene ? `Jump to token (${scenes[linked.sceneId]?.name ?? 'other scene'})` : 'Select token on map'}
           </button>
           <button type="button" className="small" onClick={() => syncLinkedToken(c)}>
-            ↻ Sync token now
+            Sync token now
           </button>
         </div>
       )}
@@ -266,8 +434,10 @@ function ManageCharacter({ character: c, onBack }: { character: Character; onBac
         <button
           type="button"
           className="small danger"
-          onClick={() => {
-            if (confirm(`Delete ${c.name}? Its token stays on the map.`) && dispatch(characterActions.remove.create({ id: c.id }))) onBack();
+          onClick={async () => {
+            if (await confirmDialog({ title: `Delete ${c.name}?`, message: 'Its token stays on the map, but the imported character sheet will be removed.', confirmLabel: 'Delete', danger: true })) {
+              if (dispatch(characterActions.remove.create({ id: c.id }))) onBack();
+            }
           }}
         >
           Delete

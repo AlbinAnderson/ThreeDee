@@ -117,7 +117,69 @@ export function ConditionsEditor({ token }: { token: Token }) {
           Add
         </button>
       </form>
+      <ConditionTimers conditions={token.conditions} rounds={token.conditionRounds} onChange={(conditionRounds) => update({ conditionRounds })} />
     </div>
+  );
+}
+
+/**
+ * Optional round countdowns for active conditions: they tick down at the
+ * start of the token's turn in combat and the condition ends at 0.
+ */
+export function ConditionTimers({
+  conditions,
+  rounds,
+  onChange,
+}: {
+  conditions: string[];
+  rounds: Record<string, number>;
+  onChange: (next: Record<string, number>) => void;
+}) {
+  if (!conditions.length) return null;
+  const set = (name: string, text: string) => {
+    const n = Math.round(Number(text));
+    const next = { ...rounds };
+    if (!text.trim() || !Number.isFinite(n) || n < 1) delete next[name];
+    else next[name] = Math.min(10000, n);
+    onChange(next);
+  };
+  return (
+    <div className="condition-timers">
+      <span className="muted small-text">Rounds left (counts down on this token's turn; blank = until removed):</span>
+      {conditions.map((name) => (
+        <label key={name} className="condition-timer">
+          <span>{name}</span>
+          <TimerInput value={rounds[name] ?? null} onCommit={(t) => set(name, t)} label={`${name} rounds left`} />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/** A small rounds box that commits on blur / Enter. */
+export function TimerInput({ value, onCommit, label }: { value: number | null; onCommit: (text: string) => void; label: string }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value));
+  const [prev, setPrev] = useState(value);
+  if (prev !== value) {
+    setPrev(value);
+    setDraft(value === null ? '' : String(value));
+  }
+  const commit = () => {
+    if (draft !== (value === null ? '' : String(value))) onCommit(draft);
+  };
+  return (
+    <input
+      type="number"
+      className="timer-input"
+      min={1}
+      max={10000}
+      placeholder="∞"
+      aria-label={label}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+    />
   );
 }
 
