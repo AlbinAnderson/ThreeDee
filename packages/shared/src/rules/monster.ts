@@ -9,7 +9,7 @@
  * and skills land exactly on the stat block (buffs and conditions still apply
  * on top, so the sheet and Actions panel keep working).
  */
-import { EMPTY_BIO, EMPTY_RUNTIME, EMPTY_SHEET, type Character, type CharacterSheet, type StatAttack } from '../entities/pf1e';
+import { EMPTY_BIO, EMPTY_RULES_DATA, EMPTY_RUNTIME, EMPTY_SHEET, type Character, type CharacterSheet, type StatAttack } from '../entities/pf1e';
 import { emptyPcgenBuild } from '../pcgen/parsePcg';
 import { computeCharacterStats } from '../pf1e/engine';
 import { computeSkills, skillDef } from '../pf1e/skills';
@@ -100,6 +100,7 @@ export function monsterToCharacter(m: MonsterDraft, opts: { id: string; now: num
       description: summary(m),
       notes: m.specialAbilities ? [{ id: 'n1', parentId: null, title: 'Special abilities', body: m.specialAbilities.slice(0, 8000) }] : [],
     },
+    rulesData: structuredClone(EMPTY_RULES_DATA),
     createdAt: opts.now,
     updatedAt: opts.now,
   };

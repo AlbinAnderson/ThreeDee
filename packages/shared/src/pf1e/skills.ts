@@ -5,8 +5,9 @@
  */
 import type { Character, SkillOverride } from '../entities/pf1e';
 import type { CharacterStats } from './engine';
+import { equippedItemBonuses } from './inventory';
 import { sumModifiers, type Modifier, type StatLine } from './modifiers';
-import { featKey, lookupRace, normalizeName, type SizeName, type StatKey } from './rules';
+import { featKey, lookupRace, normalizeName, raceDataFromSnapshot, type SizeName, type StatKey } from './rules';
 
 export interface SkillDef {
   name: string;
@@ -92,6 +93,9 @@ const PAIR_FEATS: Record<string, [string, string]> = {
   stealthy: ['Escape Artist', 'Stealth'],
 };
 
+/** Normalized skill-feat keys already computed dynamically by `skills.ts`. */
+export const MODELED_SKILL_FEAT_KEYS: readonly string[] = [...Object.keys(PAIR_FEATS), 'skillfocus'];
+
 const classLevel = (c: Character, ...keys: string[]) =>
   c.build.classes.filter((k) => keys.includes(normalizeName(k.name))).reduce((sum, k) => sum + k.level, 0);
 const halfLevel = (lvl: number) => Math.max(1, Math.floor(lvl / 2));
@@ -163,10 +167,33 @@ function canonicalSkillName(raw: string): string {
 
 /** Every skill row: core skills, the ten Knowledges, sub-skills from the file or added on the sheet. */
 export function computeSkills(c: Character, stats: CharacterStats): SkillSummary {
-  const race = lookupRace(c.build.attributes.race);
+  const race = lookupRace(c.build.attributes.race) ?? raceDataFromSnapshot(c.rulesData.race);
   const racialByLower = new Map<string, { name: string; bonus: number }>();
   if (race?.skills) {
     for (const [k, v] of Object.entries(race.skills)) racialByLower.set(k.toLowerCase(), { name: k, bonus: v });
+  }
+
+  // Class skills from snapshotted PCGen class records (fallback when .pcg lacks CLASSSKILL:Y on a skill).
+  const snapshotClassSkills = new Set<string>();
+  for (const cls of c.build.classes) {
+    const snap = c.rulesData.classes[normalizeName(cls.name)];
+    if (!snap) continue;
+    for (const sk of snap.classSkills) snapshotClassSkills.add(sk.toLowerCase());
+  }
+
+  // Passive skill bonuses from snapshotted PCGen feats/traits and currently equipped magic items (Epic 13).
+  const passiveSkillMods = new Map<string, Modifier[]>();
+  const addPassiveSkill = (skill: string, mod: Modifier) => {
+    const k = canonicalSkillName(skill).toLowerCase();
+    const list = passiveSkillMods.get(k) ?? [];
+    list.push(mod);
+    passiveSkillMods.set(k, list);
+  };
+  for (const b of c.rulesData.bonuses) {
+    if (b.target === 'skill' && b.skill) addPassiveSkill(b.skill, { value: b.value, type: b.type, source: b.source });
+  }
+  for (const { item, bonus } of equippedItemBonuses(c)) {
+    if (bonus.target === 'skill' && bonus.skill) addPassiveSkill(bonus.skill, { value: bonus.value, type: bonus.type, source: item.name });
   }
 
   const canonical = (raw: string) => {
@@ -213,7 +240,8 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
     const file = fileRanks.get(name);
     const o = overrides[name] ?? overrideByLower.get(name.toLowerCase());
     const ranks = o?.ranks ?? file?.ranks ?? 0;
-    const classSkill = o?.classSkill ?? file?.classSkill ?? false;
+    const fromClassSnapshot = snapshotClassSkills.has(name.toLowerCase()) || (def ? snapshotClassSkills.has(def.name.toLowerCase()) : false);
+    const classSkill = o?.classSkill ?? (file !== undefined ? file.classSkill : fromClassSnapshot);
     const ability = def?.ability ?? null;
     const mods: Modifier[] = [];
     if (ranks) mods.push({ value: ranks, type: 'base', source: 'Ranks' });
@@ -239,6 +267,9 @@ export function computeSkills(c: Character, stats: CharacterStats): SkillSummary
     if (def?.name === 'Fly' && FLY_SIZE[stats.size]) mods.push({ value: FLY_SIZE[stats.size], type: 'size', source: stats.size });
     if (def?.acp && stats.armor.acp) mods.push({ value: stats.armor.acp, type: 'untyped', source: 'Armor check penalty' });
     if (o?.misc) mods.push({ value: o.misc, type: 'untyped', source: 'Misc (sheet)' });
+    // Passive static bonuses from rules-pack traits/feats and equipped items (Epic 13).
+    const passiveHere = passiveSkillMods.get(name.toLowerCase()) ?? (def ? passiveSkillMods.get(def.name.toLowerCase()) : undefined);
+    if (passiveHere) mods.push(...passiveHere);
     // Buffs and conditions on every skill check (Heroism, Shaken...).
     mods.push(...stats.effects.skills);
 

@@ -3,7 +3,7 @@
  * the active loadout, and what counts toward load. Pure; shared by the
  * engine, the actions and the UI.
  */
-import type { Coins, Inventory, InventoryItem, InventorySlot, Loadout } from '../entities/pf1e';
+import type { Character, Coins, Inventory, InventoryItem, InventorySlot, Loadout, RulesBonus } from '../entities/pf1e';
 import type { PcgenCharacter, PcgenEquipmentItem } from '../pcgen/schema';
 import { coinsFromGp, COINS_PER_POUND, detectGear } from './gear';
 
@@ -30,6 +30,39 @@ export const SLOT_LABELS: Record<InventorySlot, string> = {
 };
 
 export const HAND_SLOTS: InventorySlot[] = ['primary', 'offHand', 'bothHands'];
+
+/**
+ * Passive static bonuses from currently equipped items in the active loadout
+ * (Epic 13.3). Unequipped (`carried` / `notCarried`) or stowed items contribute
+ * nothing, and armor/shield/weapon enhancement duplicates are filtered out.
+ */
+export function equippedItemBonuses(c: Character): { item: InventoryItem; bonus: RulesBonus; id: string }[] {
+  const loadout = activeLoadout(c.inventory);
+  const out: { item: InventoryItem; bonus: RulesBonus; id: string }[] = [];
+  for (const item of c.inventory.items) {
+    if (!item.bonuses.length || item.containerId !== null) continue;
+    const slot = loadout.slots[item.id] ?? 'carried';
+    if (slot === 'carried' || slot === 'notCarried') continue;
+    item.bonuses.forEach((bonus, idx) => {
+      if (item.armor && bonus.target === 'ac' && (bonus.type === 'armor' || bonus.type === 'shield' || bonus.type === 'enhancement')) return;
+      if (
+        item.weapon &&
+        bonus.type === 'enhancement' &&
+        (bonus.target === 'ac' ||
+          bonus.target === 'attack' ||
+          bonus.target === 'attackMelee' ||
+          bonus.target === 'attackRanged' ||
+          bonus.target === 'damage' ||
+          bonus.target === 'damageMelee' ||
+          bonus.target === 'damageRanged')
+      ) {
+        return;
+      }
+      out.push({ item, bonus, id: `${item.id}:${idx}` });
+    });
+  }
+  return out;
+}
 
 /** PCGen equip-set location -> slot. Unknown locations count as carried. */
 export function slotFromPcgLocation(location: string): InventorySlot {
@@ -75,6 +108,7 @@ export function makeItem(fields: Partial<InventoryItem> & Pick<InventoryItem, 'i
     imageUrl: null,
     tradeGood: false,
     ruleKey: null,
+    bonuses: [],
     ...fields,
   };
 }

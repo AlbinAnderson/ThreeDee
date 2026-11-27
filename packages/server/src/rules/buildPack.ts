@@ -10,17 +10,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  KNOWLEDGES,
   RULES_KINDS,
+  skillDef,
+  STAT_KEYS,
+  type ClassRecord,
   type DeityRecord,
   type EquipmentRecord,
   type EquipmodRecord,
   type FeatRecord,
+  type RaceRecord,
+  type RulesBonus,
   type RulesBook,
   type RulesKind,
   type RulesManifest,
   type RulesRecord,
   type RulesSource,
+  type SaveKey,
+  type SizeName,
   type SpellRecord,
+  type StatKey,
 } from '@vtt/shared';
 
 interface PccFileRef {
@@ -49,7 +58,251 @@ const PCC_KIND_TAG: Record<string, RulesKind> = {
   ABILITY: 'ability',
   DEITY: 'deity',
   DOMAIN: 'domain',
+  CLASS: 'class',
+  RACE: 'race',
 };
+
+const SIZE_CODE: Record<string, SizeName> = {
+  F: 'Fine',
+  D: 'Diminutive',
+  T: 'Tiny',
+  S: 'Small',
+  M: 'Medium',
+  L: 'Large',
+  H: 'Huge',
+  G: 'Gargantuan',
+  C: 'Colossal',
+};
+
+type StaticBonusType = RulesBonus['type'];
+
+const PCGEN_BONUS_TYPE: Record<string, StaticBonusType> = {
+  alchemical: 'alchemical',
+  armor: 'armor',
+  circumstance: 'circumstance',
+  competence: 'competence',
+  deflection: 'deflection',
+  dodge: 'dodge',
+  enhancement: 'enhancement',
+  inherent: 'inherent',
+  insight: 'insight',
+  luck: 'luck',
+  morale: 'morale',
+  natural: 'natural',
+  naturalarmor: 'natural',
+  // PF1e: Amulet of Natural Armor / Barkskin give an enhancement bonus to natural armor (same slot as Barkskin).
+  naturalarmorenhancement: 'enhancement',
+  profane: 'profane',
+  racial: 'racial',
+  resistance: 'resistance',
+  sacred: 'sacred',
+  shield: 'shield',
+  size: 'size',
+  trait: 'trait',
+};
+
+const CLOAK_SAVE_VAR: Record<string, SaveKey> = {
+  fortitudesave_resistancebonus: 'fort',
+  reflexsave_resistancebonus: 'ref',
+  willsave_resistancebonus: 'will',
+};
+
+function parseBonusType(rest: string[]): StaticBonusType | null {
+  let sawTypeTag = false;
+  for (const seg of rest) {
+    if (!/^TYPE=/i.test(seg.trim())) continue;
+    sawTypeTag = true;
+    const raw = seg.trim().slice(5);
+    for (const part of raw.split(/[.,]/)) {
+      const k = part.trim().toLowerCase().replace(/[^a-z]/g, '');
+      if (!k || k === 'replace' || k === 'stack' || k === 'nonstack') continue;
+      if (k in PCGEN_BONUS_TYPE) return PCGEN_BONUS_TYPE[k]!;
+    }
+  }
+  // If TYPE= was specified with only unrecognized types (e.g. ArmorEnhancement, ShieldEnhancement),
+  // return null so the bonus is rejected instead of falling through to stacking 'untyped'.
+  return sawTypeTag ? null : 'untyped';
+}
+
+/**
+ * Parse unconditional, literal-integer static `BONUS:` tags from PCGen `.lst`
+ * tokens (Epic 13.2). Rejects any bonus with `PRE*` guards, formulas, decimals,
+ * `%CHOICE`, `LIST`, unmapped `TYPE=`, or unwhitelisted variables so there are zero false positives.
+ */
+export function parseStaticBonuses(tokens: string[], kind: RulesKind, types: string[] = []): RulesBonus[] {
+  // Equipment or race records gated by a standalone tab-level PRExxx (e.g. Dwarven-only magic items)
+  // have conditional bonuses that don't apply universally.
+  if ((kind === 'equipment' || kind === 'race') && tokens.some((t) => /^!?PRE[A-Z]/i.test(t.trim()))) return [];
+
+  const out: RulesBonus[] = [];
+  const seen = new Set<string>();
+  const isArmorOrShield = kind === 'equipment' && types.some((t) => /^(armor|shield)$/i.test(t));
+  const isWeapon = kind === 'equipment' && types.some((t) => /^weapon$/i.test(t));
+  const push = (b: RulesBonus) => {
+    const sig = `${b.target}|${b.skill ?? ''}|${b.value}|${b.type}`;
+    if (seen.has(sig) || out.length >= 20) return;
+    seen.add(sig);
+    out.push(b);
+  };
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i]!;
+    if (!/^BONUS:/i.test(tok)) continue;
+    // Skip if the immediately following tab token is a standalone PRE* guard.
+    if (i + 1 < tokens.length && /^!?PRE[A-Z]/i.test(tokens[i + 1]!.trim())) continue;
+    const parts = tok.split('|');
+    if (parts.length < 3) continue;
+    const category = parts[0]!.slice(6).trim().toUpperCase();
+    const targetRaw = parts[1]!.trim();
+    const valRaw = parts[2]!.trim();
+    const rest = parts.slice(3);
+
+    // Reject any conditional bonus (PRE*, !PRE* anywhere in trailing segments or target).
+    if (rest.some((s) => /^!?PRE/i.test(s.trim()))) continue;
+    if (/^!?PRE/i.test(targetRaw)) continue;
+    // Strict signed integer literal only (accepts -2, rejects decimals, formulas, variables, LIST, %CHOICE).
+    if (!/^[+-]?\d+$/.test(valRaw)) continue;
+    const value = Number(valRaw);
+    if (!Number.isInteger(value) || value === 0 || value < -50 || value > 50) continue;
+
+    const type = parseBonusType(rest);
+    if (type === null) continue;
+
+    if (category === 'STAT') {
+      const targets = targetRaw.split(',').map((s) => s.trim().toUpperCase());
+      if (targets.some((t) => t === 'LIST' || t.includes('%'))) continue;
+      for (const t of targets) {
+        if ((STAT_KEYS as string[]).includes(t)) push({ target: t as StatKey, value, type });
+      }
+    } else if (category === 'SAVE' || category === 'CHECKS') {
+      const targets = targetRaw.split(',').map((s) => s.trim());
+      if (targets.some((t) => /^BASE\./i.test(t) || /^(LIST|ALL\.|%)/i.test(t))) continue;
+      for (const t of targets) {
+        const l = t.toLowerCase();
+        if (l === 'fortitude' || l === 'fort') push({ target: 'fort', value, type });
+        else if (l === 'reflex' || l === 'ref') push({ target: 'ref', value, type });
+        else if (l === 'will') push({ target: 'will', value, type });
+        else if (l === 'all') push({ target: 'saves', value, type });
+      }
+    } else if (category === 'VAR') {
+      const vars = targetRaw.split(',').map((s) => s.trim().toLowerCase());
+      if (!vars.length || !vars.every((v) => v in CLOAK_SAVE_VAR)) continue;
+      const saveType: StaticBonusType = type === 'untyped' ? 'resistance' : type;
+      const mapped = [...new Set(vars.map((v) => CLOAK_SAVE_VAR[v]!))];
+      if (mapped.length === 3) push({ target: 'saves', value, type: saveType });
+      else for (const s of mapped) push({ target: s, value, type: saveType });
+    } else if (category === 'COMBAT') {
+      const t = targetRaw.toUpperCase();
+      if (t === 'AC') {
+        // Armor/shield items already carry their bonus/enhancement in `item.armor`; weapons carry theirs in `item.weapon`.
+        if (isArmorOrShield && (type === 'armor' || type === 'shield' || type === 'enhancement')) continue;
+        if (isWeapon && type === 'enhancement') continue;
+        push({ target: 'ac', value, type });
+      } else if (t === 'INITIATIVE') {
+        push({ target: 'initiative', value, type });
+      } else if (t === 'TOHIT' || t === 'TOHIT.MELEE' || t === 'TOHIT.RANGED') {
+        if (isWeapon && type === 'enhancement') continue;
+        const target = t === 'TOHIT.MELEE' ? 'attackMelee' : t === 'TOHIT.RANGED' ? 'attackRanged' : 'attack';
+        push({ target, value, type });
+      } else if (t === 'DAMAGE' || t === 'DAMAGE.MELEE' || t === 'DAMAGE.RANGED') {
+        if (isWeapon && type === 'enhancement') continue;
+        const target = t === 'DAMAGE.MELEE' ? 'damageMelee' : t === 'DAMAGE.RANGED' ? 'damageRanged' : 'damage';
+        push({ target, value, type });
+      }
+    } else if (category === 'SKILL') {
+      const targets = targetRaw.split(',').map((s) => s.trim());
+      for (const rawSkill of targets) {
+        if (!rawSkill || /^(TYPE=|STAT\.|LIST|%CHOICE|ALL\b)/i.test(rawSkill)) continue;
+        if (!skillDef(rawSkill)) continue;
+        push({ target: 'skill', skill: rawSkill.slice(0, 60), value, type });
+      }
+    } else if (category === 'MOVEADD') {
+      if (/^TYPE[=.]Walk$/i.test(targetRaw)) push({ target: 'speed', value, type });
+    } else if (category === 'HP') {
+      if (targetRaw.toUpperCase() === 'CURRENTMAX') push({ target: 'hp', value, type });
+    }
+  }
+  return out;
+}
+
+function parseCskills(raw: string, base: string[] = []): string[] {
+  let out = [...base];
+  for (const part of raw.split('|')) {
+    const s = part.trim();
+    if (!s) continue;
+    if (s.toUpperCase() === '.CLEAR') {
+      out = [];
+      continue;
+    }
+    if (/^(LIST|%CHOICE|ALL)$/i.test(s)) continue;
+    if (/^TYPE=Knowledge$/i.test(s)) {
+      for (const k of KNOWLEDGES) {
+        const name = `Knowledge (${k})`;
+        if (!out.includes(name)) out.push(name);
+      }
+      continue;
+    }
+    const fam = /^TYPE=(Craft|Perform|Profession)$/i.exec(s);
+    if (fam) {
+      const name = fam[1]!.charAt(0).toUpperCase() + fam[1]!.slice(1).toLowerCase();
+      if (!out.includes(name)) out.push(name);
+      continue;
+    }
+    if (/^TYPE=/i.test(s)) continue;
+    if (skillDef(s) && !out.includes(s)) out.push(s.slice(0, 60));
+  }
+  return out.slice(0, 40);
+}
+
+function parseVision(raw: string): { darkvision: number; lowLight: boolean } {
+  let darkvision = 0;
+  let lowLight = false;
+  for (const seg of raw.split('|')) {
+    const dv = /Darkvision\s*\(\s*(\d+)\s*'?\s*\)/i.exec(seg);
+    if (dv) darkvision = Math.max(darkvision, Math.min(600, Number(dv[1])));
+    if (/Low-Light\s+Vision/i.test(seg)) lowLight = true;
+  }
+  return { darkvision, lowLight };
+}
+
+function parseClassProgressions(cls: ClassRecord, tokens: string[]) {
+  let babFromBaseAb: 'full' | 'threeQuarter' | 'half' | null = null;
+  let babFromVar: 'full' | 'threeQuarter' | 'half' | null = null;
+  for (const tok of tokens) {
+    if (/^BONUS:COMBAT\|BASEAB\|/i.test(tok)) {
+      const expr = (tok.split('|')[2] ?? '').replace(/\s+/g, '');
+      if (/\*3\/4|\*3\)\/4|\*0\.75/i.test(expr)) babFromBaseAb = 'threeQuarter';
+      else if (/\/2\b|\*0\.5/i.test(expr)) babFromBaseAb = 'half';
+      else if (/^(?:classlevel\([^)]*\)|CL)$/i.test(expr)) babFromBaseAb = 'full';
+    } else if (/^BONUS:VAR\|ClassBAB(Full|Moderate|Poor|Low)\|/i.test(tok)) {
+      const m = /^BONUS:VAR\|ClassBAB(Full|Moderate|Poor|Low)\|/i.exec(tok);
+      const kind = m?.[1]?.toLowerCase();
+      if (kind === 'full') babFromVar = 'full';
+      else if (kind === 'moderate') babFromVar = 'threeQuarter';
+      else if (kind === 'poor' || kind === 'low') babFromVar = 'half';
+    } else if (/^BONUS:SAVE\|/i.test(tok)) {
+      const parts = tok.split('|');
+      const targets = (parts[1] ?? '').split(',');
+      const expr = parts[2] ?? '';
+      const isGood = /\/2(?:\+2|\b)/.test(expr);
+      if (!isGood) continue;
+      for (const t of targets) {
+        const m = /^BASE\.(Fortitude|Reflex|Will)$/i.exec(t.trim());
+        if (!m) continue;
+        const k: SaveKey = m[1]!.toLowerCase().startsWith('f') ? 'fort' : m[1]!.toLowerCase().startsWith('r') ? 'ref' : 'will';
+        if (!cls.goodSaves.includes(k)) cls.goodSaves.push(k);
+      }
+    } else if (/^BONUS:VAR\|ClassSaveGood_(Fortitude|Reflex|Will)\|/i.test(tok)) {
+      const m = /^BONUS:VAR\|ClassSaveGood_(Fortitude|Reflex|Will)\|/i.exec(tok);
+      if (!m) continue;
+      const k: SaveKey = m[1]!.toLowerCase().startsWith('f') ? 'fort' : m[1]!.toLowerCase().startsWith('r') ? 'ref' : 'will';
+      if (!cls.goodSaves.includes(k)) cls.goodSaves.push(k);
+    }
+  }
+  // Prefer authoritative BONUS:COMBAT|BASEAB over fractional ClassBAB* vars (PCGen has a known Dragon Disciple typo in ClassBABFull).
+  if (babFromBaseAb) cls.bab = babFromBaseAb;
+  else if (!cls.bab && babFromVar) cls.bab = babFromVar;
+}
 
 function cleanDesc(raw: string): string {
   // Strip trailing formula args after `|` in DESC:foo|%1|VAR and collapse placeholders.
@@ -265,6 +518,11 @@ interface DescParts {
   short: string[];
 }
 const descParts = new WeakMap<RulesRecord, DescParts>();
+/** Side-channel metadata captured on ability records for post-pass class/race enrichment (never serialized). */
+const abilityCskills = new WeakMap<RulesRecord, string[]>();
+const abilityVision = new WeakMap<RulesRecord, { darkvision: number; lowLight: boolean }>();
+const abilityHasAnyPlusTwo = new WeakMap<RulesRecord, boolean>();
+const abilitySize = new WeakMap<RulesRecord, SizeName>();
 
 function addDesc(parts: DescParts, raw: string) {
   if (raw.trim().toUpperCase() === '.CLEAR') {
@@ -288,10 +546,31 @@ function joinDesc(parts: DescParts): string {
 }
 
 function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defaultSource: RulesSource, isMod = false): RulesRecord {
-  const next = { ...rec, source: { ...rec.source }, types: [...rec.types] } as RulesRecord;
+  const next = {
+    ...rec,
+    source: { ...rec.source },
+    types: [...rec.types],
+    ...(rec.bonuses ? { bonuses: [...rec.bonuses] } : {}),
+  } as RulesRecord;
   const prevDesc = descParts.get(rec);
   const desc: DescParts = prevDesc ? { normal: [...prevDesc.normal], full: [...prevDesc.full], short: [...prevDesc.short] } : { normal: rec.desc ? [rec.desc] : [], full: [], short: [] };
   descParts.set(next, desc);
+  const prevCskills = abilityCskills.get(rec);
+  if (prevCskills) abilityCskills.set(next, [...prevCskills]);
+  const prevVision = abilityVision.get(rec);
+  if (prevVision) abilityVision.set(next, { ...prevVision });
+  if (abilityHasAnyPlusTwo.get(rec)) abilityHasAnyPlusTwo.set(next, true);
+  const prevSize = abilitySize.get(rec);
+  if (prevSize) abilitySize.set(next, prevSize);
+  if (next.kind === 'class') {
+    const c = next as ClassRecord;
+    c.goodSaves = [...c.goodSaves];
+    c.classSkills = [...c.classSkills];
+  } else if (next.kind === 'race') {
+    const r = next as RaceRecord;
+    r.abilityMods = { ...r.abilityMods };
+    r.skillBonuses = { ...r.skillBonuses };
+  }
   const prereqToks: string[] = [];
 
   for (const tok of tokens) {
@@ -379,6 +658,20 @@ function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defau
       const f = next as FeatRecord;
       if (tag === 'CATEGORY') f.category = val.trim().slice(0, 60) || f.category;
       else if (tag === 'BENEFIT') f.benefit = cleanDesc(val);
+      else if (tag === 'CSKILL') abilityCskills.set(next, parseCskills(val, abilityCskills.get(next) ?? []));
+      else if (tag === 'VISION') {
+        const v = parseVision(val);
+        const cur = abilityVision.get(next) ?? { darkvision: 0, lowLight: false };
+        abilityVision.set(next, { darkvision: Math.max(cur.darkvision, v.darkvision), lowLight: cur.lowLight || v.lowLight });
+      } else if (tag === 'BONUS' && (/^STAT\|%LIST\|2/i.test(val) || /^ABILITYPOOL\|Ability Bonus\|1/i.test(val))) {
+        abilityHasAnyPlusTwo.set(next, true);
+      } else if (tag === 'CHOOSE' && /^STAT\|/i.test(val)) {
+        abilityHasAnyPlusTwo.set(next, true);
+      } else if (tag === 'TEMPLATE') {
+        const m = /\bSIZE_([FDTSMLHGC])\b/i.exec(val);
+        const sz = m ? SIZE_CODE[m[1]!.toUpperCase()] : undefined;
+        if (sz) abilitySize.set(next, sz);
+      }
     } else if (next.kind === 'deity') {
       const d = next as DeityRecord;
       if (tag === 'ALIGN') d.alignment = val.trim().slice(0, 10) || null;
@@ -387,6 +680,70 @@ function applyFields(_kind: RulesKind, rec: RulesRecord, tokens: string[], defau
         d.domains = [...new Set([...d.domains, ...ds])].slice(0, 20);
       } else if (tag === 'DEITYWEAP') d.favoredWeapon = val.split('|')[0]!.trim().slice(0, 80) || null;
       else if (tag === 'SYMBOL') d.symbol = val.trim().slice(0, 120) || null;
+    } else if (next.kind === 'class') {
+      const cl = next as ClassRecord;
+      if (tag === 'HD') {
+        const hd = numOrNull(val);
+        if (hd !== null && hd >= 4 && hd <= 12) cl.hd = Math.floor(hd);
+      } else if (tag === 'STARTSKILLPTS') {
+        const pts = numOrNull(val);
+        if (pts !== null && pts >= 0 && pts <= 20) cl.skillRanks = Math.floor(pts);
+      } else if (tag === 'CSKILL') {
+        cl.classSkills = parseCskills(val, cl.classSkills);
+      } else if (tag === 'SPELLSTAT') {
+        const st = val.trim().toUpperCase();
+        if ((STAT_KEYS as string[]).includes(st)) cl.spellStat = st as StatKey;
+      } else if (tag === 'MEMORIZE') {
+        const m = val.trim().toUpperCase();
+        if (m === 'YES') cl.memorize = true;
+        else if (m === 'NO') cl.memorize = false;
+      } else if (tag === 'SPELLTYPE' || (tag === 'FACT' && /^SpellType\|/i.test(val))) {
+        const st = (tag === 'FACT' ? val.split('|')[1] ?? '' : val).trim().toLowerCase();
+        if (st === 'arcane' || st === 'divine' || st === 'psychic') cl.spellType = st;
+      }
+    } else if (next.kind === 'race') {
+      const r = next as RaceRecord;
+      if (tag === 'SIZE') {
+        const sz = SIZE_CODE[val.trim().toUpperCase()];
+        if (sz) r.size = sz;
+      } else if (tag === 'FACT' && /^BaseSize\|/i.test(val)) {
+        const sz = SIZE_CODE[(val.split('|')[1] ?? '').trim().toUpperCase()];
+        if (sz) r.size = sz;
+      } else if (tag === 'MOVE') {
+        const m = /Walk\s*,\s*(\d+)/i.exec(val);
+        if (m) r.speed = Math.max(0, Math.min(200, Number(m[1])));
+      } else if (tag === 'VISION') {
+        const v = parseVision(val);
+        r.darkvision = Math.max(r.darkvision, v.darkvision);
+        r.lowLight = r.lowLight || v.lowLight;
+      }
+    }
+  }
+
+  if (next.kind === 'class') {
+    const cl = next as ClassRecord;
+    if (cl.types.some((t) => /^prestige$/i.test(t))) cl.prestige = true;
+    parseClassProgressions(cl, tokens);
+  }
+  if (next.kind === 'equipment' || next.kind === 'feat' || next.kind === 'ability' || next.kind === 'race') {
+    const parsedBonuses = parseStaticBonuses(tokens, next.kind, next.types);
+    if (next.kind === 'race') {
+      const r = next as RaceRecord;
+      for (const b of parsedBonuses) {
+        if ((STAT_KEYS as string[]).includes(b.target)) r.abilityMods[b.target as StatKey] = (r.abilityMods[b.target as StatKey] ?? 0) + b.value;
+        else if (b.target === 'skill' && b.skill && Object.keys(r.skillBonuses).length < 30) r.skillBonuses[b.skill] = b.value;
+      }
+    } else if (parsedBonuses.length) {
+      const merged = [...(next.bonuses ?? [])];
+      const seen = new Set(merged.map((b) => `${b.target}|${b.skill ?? ''}|${b.value}|${b.type}`));
+      for (const b of parsedBonuses) {
+        const sig = `${b.target}|${b.skill ?? ''}|${b.value}|${b.type}`;
+        if (!seen.has(sig) && merged.length < 20) {
+          seen.add(sig);
+          merged.push(b);
+        }
+      }
+      if (merged.length) next.bonuses = merged;
     }
   }
 
@@ -458,6 +815,33 @@ function emptyRecord(kind: RulesKind, name: string, source: RulesSource): RulesR
       return { ...base, kind: 'deity', alignment: null, domains: [], favoredWeapon: null, symbol: null };
     case 'domain':
       return { ...base, kind: 'domain' };
+    case 'class':
+      return {
+        ...base,
+        kind: 'class',
+        hd: null,
+        bab: null,
+        goodSaves: [],
+        prestige: false,
+        skillRanks: null,
+        classSkills: [],
+        spellStat: null,
+        spellType: null,
+        memorize: null,
+      };
+    case 'race':
+      return {
+        ...base,
+        kind: 'race',
+        size: null,
+        speed: null,
+        abilityMods: {},
+        anyPlusTwo: false,
+        steady: false,
+        darkvision: 0,
+        lowLight: false,
+        skillBonuses: {},
+      };
   }
 }
 
@@ -536,6 +920,8 @@ export function parseLstContent(
 ) {
   let fileSource: RulesSource = { ...bookSource };
   const canModify = opts.canModify ?? (() => true);
+  /** Classes in PCGen repeat `CLASS:<Name>` across multiple lines in the same file; track keys opened in this file so subsequent lines merge into them. */
+  const classOpenedInFile = new Set<string>();
   const directive = (d: Omit<DeferredDirective, 'kind' | 'fileSource' | 'canModify'>) => {
     const full: DeferredDirective = { ...d, kind, fileSource: { ...fileSource }, canModify };
     if (opts.deferred) opts.deferred.push(full);
@@ -562,8 +948,15 @@ export function parseLstContent(
       continue;
     }
 
-    const head = tokens[0]!;
+    let head = tokens[0]!;
     const rest = tokens.slice(1);
+
+    if (kind === 'class') {
+      // Level progression lines (`1\tCAST:...`, `2\tABILITY:...`) and SUBCLASS/SUBSTITUTION lines are skipped.
+      if (/^\d+$/.test(head) || /^(SUBCLASS|SUBCLASSLEVEL|SUBSTITUTIONCLASS|SUBSTITUTIONLEVEL):/i.test(head)) continue;
+      if (/^CLASS:/i.test(head)) head = head.slice(6).trim();
+      else continue;
+    }
 
     if (head.endsWith('.FORGET')) {
       directive({ op: 'forget', target: head.slice(0, -'.FORGET'.length).trim(), rest });
@@ -587,9 +980,20 @@ export function parseLstContent(
       continue;
     }
 
+    if (kind === 'class' && classOpenedInFile.has(head)) {
+      const existing = records.get(head);
+      if (existing) {
+        const merged = applyFields(kind, existing, rest, fileSource);
+        records.set(merged.key, merged);
+        byName.set(merged.name.toLowerCase(), merged.key);
+      }
+      continue;
+    }
+
     const rec = applyFields(kind, emptyRecord(kind, head, fileSource), rest, fileSource);
     if (records.has(rec.key)) continue;
     records.set(rec.key, rec);
+    if (kind === 'class') classOpenedInFile.add(rec.key);
     if (!byName.has(rec.name.toLowerCase())) byName.set(rec.name.toLowerCase(), rec.key);
   }
 }
@@ -731,6 +1135,63 @@ export function buildRulesPack(pcgenDir: string, outDir: string): BuildPackResul
     if (fr.category.toUpperCase() === 'FEAT') {
       stores.ability.delete(k);
       stores.feat.set(k, { ...fr, kind: 'feat' });
+    }
+  }
+
+  // Post-pass 1: PCGen 6 Core classes store CSKILL on `Class Skills ~ <ClassName>` internal ability records.
+  for (const rec of stores.class.values()) {
+    const cl = rec as ClassRecord;
+    if (cl.classSkills.length > 0) continue;
+    const csAbility = stores.ability.get(`Class Skills ~ ${cl.name}`) ?? stores.ability.get(`Class Skills ~ ${cl.key}`);
+    const cs = csAbility ? abilityCskills.get(csAbility) : undefined;
+    if (cs?.length) cl.classSkills = cs.slice(0, 40);
+  }
+
+  // Post-pass 2: PCGen 6 `core_essentials` races store ability mods, vision, steady movement, and racial skill
+  // defaults in sibling `<Race> ~ ...` ability records. Merge those cleanly onto each RaceRecord.
+  const raceDefaultSkills = new Map<string, Record<string, number>>();
+  for (const rec of stores.ability.values()) {
+    if (!rec.bonuses?.length) continue;
+    const defType = rec.types.find((t) => / Racial Default$/i.test(t));
+    if (!defType) continue;
+    const raceKey = defType.replace(/\s+Racial Default$/i, '').trim().toLowerCase();
+    const map = raceDefaultSkills.get(raceKey) ?? {};
+    for (const b of rec.bonuses) {
+      if (b.target === 'skill' && b.skill && b.type === 'racial' && Object.keys(map).length < 30) {
+        map[b.skill] = b.value;
+      }
+    }
+    if (Object.keys(map).length) raceDefaultSkills.set(raceKey, map);
+  }
+  for (const rec of stores.race.values()) {
+    const r = rec as RaceRecord;
+    const scoreAb = stores.ability.get(`${r.name} ~ Ability Scores`) ?? stores.ability.get(`${r.key} ~ Ability Scores`);
+    if (scoreAb) {
+      if (Object.keys(r.abilityMods).length === 0 && scoreAb.bonuses?.length) {
+        for (const b of scoreAb.bonuses) {
+          if ((STAT_KEYS as string[]).includes(b.target)) r.abilityMods[b.target as StatKey] = b.value;
+        }
+      }
+      if (abilityHasAnyPlusTwo.get(scoreAb) || (Object.keys(r.abilityMods).length === 0 && /\+2\s+(?:bonus\s+)?to\s+one\s+ability/i.test(scoreAb.desc))) {
+        r.anyPlusTwo = true;
+      }
+    }
+    const sizeAb = stores.ability.get(`${r.name} ~ Size`) ?? stores.ability.get(`${r.key} ~ Size`);
+    const abSz = sizeAb ? abilitySize.get(sizeAb) : undefined;
+    if (abSz) r.size = abSz;
+    const visAb = stores.ability.get(`${r.name} ~ Vision`) ?? stores.ability.get(`${r.key} ~ Vision`);
+    const vis = visAb ? abilityVision.get(visAb) : undefined;
+    if (vis) {
+      r.darkvision = Math.max(r.darkvision, vis.darkvision);
+      r.lowLight = r.lowLight || vis.lowLight;
+    }
+    const speedAb = stores.ability.get(`${r.name} ~ Speed`) ?? stores.ability.get(`${r.name} ~ Slow and Steady`);
+    if (speedAb && /never modified by armor or encumbrance/i.test(speedAb.desc)) r.steady = true;
+    const defSkills = raceDefaultSkills.get(r.name.toLowerCase());
+    if (defSkills) {
+      for (const [sk, val] of Object.entries(defSkills)) {
+        if (!(sk in r.skillBonuses) && Object.keys(r.skillBonuses).length < 30) r.skillBonuses[sk] = val;
+      }
     }
   }
 

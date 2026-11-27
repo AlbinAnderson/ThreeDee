@@ -3,6 +3,7 @@
  * races, sizes, armor, and feats/traits with flat numeric effects.
  * Anything missing can be filled in from the character sheet's settings.
  */
+import type { RaceSnapshot } from '../entities/pf1e';
 import type { BonusType } from './modifiers';
 
 export type StatKey = 'STR' | 'DEX' | 'CON' | 'INT' | 'WIS' | 'CHA';
@@ -234,6 +235,21 @@ export function lookupRace(name: string | null): RaceData | undefined {
   return RACES[key] ?? RACES[key.replace(/^(core|featured|uncommon)/, '')];
 }
 
+/** Convert a server-snapshotted PCGen RaceSnapshot into RaceData (fallback when not in hardcoded RACES). */
+export function raceDataFromSnapshot(r: RaceSnapshot | null | undefined): RaceData | undefined {
+  if (!r) return undefined;
+  return {
+    stats: r.abilityMods,
+    anyPlusTwo: r.anyPlusTwo,
+    size: r.size,
+    speed: r.speed,
+    steady: r.steady,
+    darkvision: r.darkvision,
+    lowLight: r.lowLight,
+    ...(Object.keys(r.skillBonuses).length ? { skills: r.skillBonuses } : {}),
+  };
+}
+
 // ------------------------------------------------------------------ armor
 
 export interface ArmorData {
@@ -356,6 +372,9 @@ const FEAT_EFFECTS: Record<string, FeatEffect[]> = {
   resilient: [{ target: 'fort', value: 1, type: 'trait' }],
   indomitablefaith: [{ target: 'will', value: 1, type: 'trait' }],
 };
+
+/** Normalized feat/trait keys already computed dynamically by `engine.ts` (used to avoid double-counting rules-pack bonuses). */
+export const MODELED_FEAT_KEYS: readonly string[] = Object.keys(FEAT_EFFECTS);
 
 /** Feats that change which ability or formula is used. */
 export const FEAT_FLAGS = {

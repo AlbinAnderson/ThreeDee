@@ -29,7 +29,7 @@ export * from './entities/pf1e';
 export * from './entities/rules';
 
 /** Bump when the shape changes, and add a step in migrations.ts. */
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 // ---------------------------------------------------------------- users
 

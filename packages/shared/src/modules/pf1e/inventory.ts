@@ -36,7 +36,7 @@ const ItemModsSchema = z.object({
   enhancement: z.number().int().min(0).max(5).default(0),
 });
 
-const ItemChangesSchema = InventoryItemSchema.omit({ id: true, containerId: true, lootId: true }).partial();
+const ItemChangesSchema = InventoryItemSchema.omit({ id: true, containerId: true, lootId: true, bonuses: true }).partial();
 const LoadoutNameSchema = z.string().trim().min(1).max(60);
 
 function requireCharacter(ctx: AuthContext, characterId: string): AuthResult {
@@ -133,6 +133,7 @@ export const inventoryActions = {
       if (inv.items.length >= MAX_INVENTORY_ITEMS) return 'Inventory is full';
       if (inv.items.some((i) => i.id === item.id)) return 'Item already exists';
       if (item.lootId) return 'Use Take from loot for party loot';
+      if (item.bonuses.length > 0) return 'Item bonuses come from the rules catalog';
       return requireContainer(inv, null, item.containerId);
     },
     audience: (viewer, { characterId }, { state }) => seesCharacter(viewer, characterId, state),

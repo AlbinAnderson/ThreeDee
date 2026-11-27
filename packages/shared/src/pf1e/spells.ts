@@ -323,8 +323,9 @@ export function spellDcLevel(info: CasterInfo, name: string, slotLevel: number, 
   return Math.max(0, slotLevel - metamagicLevels(metamagic));
 }
 
-export function spellDc(c: Character, info: CasterInfo, name: string, dcLevel: number): number {
-  return info.dcBase + dcLevel + spellFocusBonus(c, spellSchool(name));
+export function spellDc(c: Character, info: CasterInfo, name: string, dcLevel: number, schoolOverride?: string | null): number {
+  const school = schoolOverride ?? spellSchool(name) ?? c.rulesData.spellSchools[normalizeName(name)] ?? null;
+  return info.dcBase + dcLevel + spellFocusBonus(c, school);
 }
 
 /** Spell slot pools of spontaneous and hybrid casters, for pf1e/adjustUse. */
@@ -449,7 +450,7 @@ export interface SpellCard {
 export function spellCard(c: Character, plan: CastPlan, who = c.name, rules?: RulesProvider): SpellCard {
   const { info } = plan;
   const ref = resolveSpellRef(plan.spellName, rules);
-  const dc = spellDc(c, info, plan.spellName, plan.dcLevel);
+  const dc = spellDc(c, info, plan.spellName, plan.dcLevel, ref?.school);
   const raised = plan.slotLevel !== plan.dcLevel && !plan.convertedFrom;
   const subtitle = [
     `${info.className} ${ordinal(plan.slotLevel)}${raised ? ` slot (${ordinal(plan.dcLevel)}-level spell)` : ''}`,
