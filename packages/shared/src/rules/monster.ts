@@ -12,9 +12,8 @@
 import { EMPTY_BIO, EMPTY_RUNTIME, EMPTY_SHEET, type Character, type CharacterSheet, type StatAttack } from '../entities/pf1e';
 import { emptyPcgenBuild } from '../pcgen/parsePcg';
 import { computeCharacterStats } from '../pf1e/engine';
-import { SIZE_CELLS } from '../pf1e/tokenSync';
 import { computeSkills, skillDef } from '../pf1e/skills';
-import { STAT_KEYS } from '../pf1e/rules';
+import { SIZE_CELLS, STAT_KEYS } from '../pf1e/rules';
 import { createToken, type Token } from '../state';
 import type { MonsterDraft } from './aonParse';
 

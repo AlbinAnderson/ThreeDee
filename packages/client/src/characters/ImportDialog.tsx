@@ -2,19 +2,23 @@
  * Import (or re-import) a PCGen .pcg file: parse in the browser, preview,
  * then save. Re-import shows what changed and what is kept.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   buildHasDmNotes,
   buildName,
   characterActions,
+  checkCampaigns,
   createCharacterFromPcg,
+  describeSourceWarning,
   diffCharacterBuild,
   isGm,
   newId,
   parsePcg,
   splitDmNotes,
   type BuildChange,
+  type RulesBook,
 } from '@vtt/shared';
+import { request } from '../net/rpc';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -70,9 +74,17 @@ function ImportDialogBody({ state }: { state: ImportState }) {
   const self = useSelf();
   const gm = isGm(self);
   const users = useGame((s) => s.users);
+  const allowedSources = useGame((s) => s.rules.allowedSources);
   const isReimport = !!state.targetId;
   const target = useGame((s) => (state.targetId ? s.characters[state.targetId] : undefined));
   const targetMissing = isReimport && !target;
+  const [books, setBooks] = useState<RulesBook[]>([]);
+  useEffect(() => {
+    request('rules.books', {})
+      .then(setBooks)
+      .catch(() => setBooks([]));
+  }, []);
+  const sourceWarnings = useMemo(() => checkCampaigns(state.build.system.campaigns, books, allowedSources), [state.build.system.campaigns, books, allowedSources]);
   const players = useMemo(() => Object.values(users).filter((u) => u.role !== 'gm'), [users]);
   const [ownerId, setOwnerId] = useState<string | null>(gm ? null : self.id);
   const [replaceInventory, setReplaceInventory] = useState(false);
@@ -162,6 +174,16 @@ function ImportDialogBody({ state }: { state: ImportState }) {
             ) : (
               <span>You</span>
             )}
+          </div>
+        )}
+
+        {!targetMissing && sourceWarnings.length > 0 && (
+          <div className="import-warnings">
+            {sourceWarnings.map((w) => (
+              <div key={w.campaign} className="warn-text small-text">
+                ⚠ {describeSourceWarning(w)}
+              </div>
+            ))}
           </div>
         )}
 

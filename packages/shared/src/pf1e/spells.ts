@@ -26,7 +26,6 @@ import {
   isHeighten,
   isMetamagicFeat,
   lookupCasterClass,
-  lookupSpell,
   metamagicAdjust,
   spellSchool,
   type CasterClass,

@@ -11,7 +11,8 @@
  */
 import { z } from 'zod';
 import type { Draft } from 'immer';
-import { defineAction, type AuthContext, type AuthResult } from '../../actions/define';
+import { ActionRejection, defineAction, type AuthContext, type AuthResult } from '../../actions/define';
+import { isGm } from '../../actions/auth';
 import {
   CoinsSchema,
   InventoryItemSchema,
@@ -22,10 +23,18 @@ import {
   type InventoryItem,
   type InventorySlot,
 } from '../../entities/pf1e';
-import { detectGear } from '../../pf1e/gear';
+import { detectGear, payFromPurse } from '../../pf1e/gear';
 import { makeItem, wouldCycle } from '../../pf1e/inventory';
+import { addToPurse, itemFromRecord, MATERIALS, NO_MODS, priceCp, sellValueCp, type ItemMods } from '../../rules/pricing';
+import { isSourceAllowed } from '../../rules/sources';
 import { IdSchema, LootItemSchema, type GameState, type User } from '../../state';
 import { canManageCharacter, canSeeCharacter } from './characters';
+
+const ItemModsSchema = z.object({
+  masterwork: z.boolean().default(false),
+  material: z.enum(MATERIALS).default('none'),
+  enhancement: z.number().int().min(0).max(5).default(0),
+});
 
 const ItemChangesSchema = InventoryItemSchema.omit({ id: true, containerId: true, lootId: true }).partial();
 const LoadoutNameSchema = z.string().trim().min(1).max(60);
@@ -450,6 +459,147 @@ export const inventoryActions = {
         if (!inv || !item) return;
         item.quantity = Math.max(0, item.quantity - quantity);
         if (item.quantity === 0) removeItem(inv, itemId);
+      },
+    },
+  ),
+
+  // ---------------------------------------------------------------- shopping (Epic 11)
+
+  /**
+   * Buy an item from the rules catalog (or a custom rule) into a character's
+   * inventory, paying from the character's purse with automatic change.
+   * Server-computed in `prepare()` so prices and allowed books cannot be faked.
+   */
+  buyItem: defineAction(
+    'inventory/buyItem',
+    z.object({
+      characterId: IdSchema,
+      itemId: IdSchema,
+      quantity: z.number().int().min(1).max(10000),
+      /** Rules-pack equipment KEY. */
+      ruleKey: z.string().min(1).max(160).optional(),
+      /** Custom room rule id (when buying an AoN/homebrew item). */
+      customRuleId: IdSchema.optional(),
+      mods: ItemModsSchema.optional(),
+      /** Filled in by the server; ignored from clients. */
+      item: InventoryItemSchema.optional(),
+      nextCoins: CoinsSchema.optional(),
+      totalCp: z.number().int().min(0).optional(),
+    }),
+    {
+      optimistic: false,
+      authorize(ctx, { characterId, itemId, ruleKey, customRuleId }) {
+        const ok = requireCharacter(ctx, characterId);
+        if (ok !== true) return ok;
+        if (!ruleKey && !customRuleId) return 'Choose a catalog item to buy';
+        const inv = ctx.state.characters[characterId]!.inventory;
+        if (inv.items.length >= MAX_INVENTORY_ITEMS) return 'Inventory is full';
+        if (inv.items.some((i) => i.id === itemId)) return 'Item already exists';
+        if (customRuleId) {
+          const cr = ctx.state.customRules[customRuleId];
+          if (!cr || cr.kind !== 'equipment') return 'Custom item not found';
+          if (cr.gmOnly && !isGm(ctx.user)) return 'Custom item not found';
+          if (cr.cost === null) return `${cr.name} has no price`;
+        }
+        return true;
+      },
+      prepare(ctx, p) {
+        const inv = ctx.state.characters[p.characterId]!.inventory;
+        let built: InventoryItem;
+        if (p.customRuleId) {
+          const cr = ctx.state.customRules[p.customRuleId]!;
+          const detected = detectGear(cr.name);
+          built = makeItem({
+            id: p.itemId,
+            name: cr.name.slice(0, 120),
+            quantity: p.quantity,
+            weight: cr.weight ?? 0,
+            value: cr.cost ?? 0,
+            notes: cr.text.slice(0, 4000),
+            weapon: cr.weapon ?? detected.weapon,
+            armor: cr.armor ?? detected.armor,
+            light: detected.light,
+            container: detected.container,
+            charges: detected.charges,
+            ruleKey: `custom:${cr.id}`.slice(0, 120),
+          });
+        } else {
+          const rec = ctx.rules?.get('equipment', p.ruleKey!);
+          if (!rec) throw new ActionRejection('Item not found in the server rules pack');
+          if (!isGm(ctx.user) && !isSourceAllowed(ctx.state.rules.allowedSources, rec.source.campaign)) {
+            throw new ActionRejection(`${rec.name} is from "${rec.source.long}", which isn't allowed in this campaign`);
+          }
+          const mods: ItemMods = p.mods ? { masterwork: p.mods.masterwork, material: p.mods.material, enhancement: p.mods.enhancement } : NO_MODS;
+          const res = itemFromRecord(rec, p.itemId, mods, p.quantity);
+          if (typeof res === 'string') throw new ActionRejection(res);
+          built = res;
+        }
+        const totalCp = priceCp(built.value, p.quantity);
+        const nextCoins = payFromPurse(inv.coins, totalCp);
+        if (!nextCoins) throw new ActionRejection(`Not enough coin (needs ${Math.round(totalCp) / 100} gp)`);
+        return {
+          characterId: p.characterId,
+          itemId: p.itemId,
+          quantity: p.quantity,
+          ...(p.ruleKey ? { ruleKey: p.ruleKey } : {}),
+          ...(p.customRuleId ? { customRuleId: p.customRuleId } : {}),
+          ...(p.mods ? { mods: p.mods } : {}),
+          item: built,
+          nextCoins,
+          totalCp,
+        };
+      },
+      audience: (viewer, { characterId }, { state }) => seesCharacter(viewer, characterId, state),
+      apply(draft, { characterId, item, nextCoins }, meta) {
+        if (!item || !nextCoins) return;
+        const inv = inventoryOf(draft, characterId, meta.ts);
+        if (!inv || inv.items.some((i) => i.id === item.id)) return;
+        inv.items.push(item);
+        inv.coins = nextCoins;
+      },
+    },
+  ),
+
+  /**
+   * Sell some or all of an inventory item at half value (full value for gems,
+   * art objects and trade goods), crediting the character's purse atomically.
+   */
+  sellItem: defineAction(
+    'inventory/sellItem',
+    z.object({
+      characterId: IdSchema,
+      itemId: IdSchema,
+      quantity: z.number().int().min(1).max(1_000_000),
+      /** Filled in by the server; ignored from clients. */
+      nextCoins: CoinsSchema.optional(),
+      payoutCp: z.number().int().min(0).optional(),
+    }),
+    {
+      optimistic: false,
+      authorize(ctx, { characterId, itemId, quantity }) {
+        const ok = requireItem(ctx, characterId, itemId);
+        if (ok !== true) return ok;
+        const item = ctx.state.characters[characterId]!.inventory.items.find((i) => i.id === itemId)!;
+        if (isUnidentifiedLoot(ctx.state, item)) return 'Identify this item before selling it';
+        if (item.quantity <= 0) return 'None left to sell';
+        if (quantity > item.quantity) return `Only ${item.quantity} in the inventory`;
+        return true;
+      },
+      prepare(ctx, { characterId, itemId, quantity }) {
+        const inv = ctx.state.characters[characterId]!.inventory;
+        const item = inv.items.find((i) => i.id === itemId)!;
+        const payoutCp = sellValueCp(item, quantity);
+        return { characterId, itemId, quantity, payoutCp, nextCoins: addToPurse(inv.coins, payoutCp) };
+      },
+      audience: (viewer, { characterId }, { state }) => seesCharacter(viewer, characterId, state),
+      apply(draft, { characterId, itemId, quantity, nextCoins }, meta) {
+        if (!nextCoins) return;
+        const inv = inventoryOf(draft, characterId, meta.ts);
+        const item = inv?.items.find((i) => i.id === itemId);
+        if (!inv || !item) return;
+        item.quantity = Math.max(0, item.quantity - quantity);
+        if (item.quantity === 0) removeItem(inv, itemId);
+        inv.coins = nextCoins;
       },
     },
   ),

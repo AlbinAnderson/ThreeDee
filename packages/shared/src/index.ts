@@ -29,3 +29,4 @@ export * from './pf1e/spells';
 export * from './pf1e/buffs';
 export * from './pf1e/companions';
 export * from './pf1e/bio';
+export * from './rules';
