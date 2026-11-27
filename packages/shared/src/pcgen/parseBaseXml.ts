@@ -95,10 +95,14 @@ export function parseXml(input: string, limits: Partial<XmlLimits> = {}): XmlEle
     } else if (src.startsWith('<!', lt)) {
       // DOCTYPE (possibly with an internal subset): skipped, never interpreted.
       let depth = 0;
+      let quote: string | null = null;
       let j = lt + 2;
       for (; j < src.length; j++) {
-        const ch = src[j];
-        if (ch === '[') depth++;
+        const ch = src[j]!;
+        if (quote) {
+          if (ch === quote) quote = null;
+        } else if (ch === '"' || ch === "'") quote = ch;
+        else if (ch === '[') depth++;
         else if (ch === ']') depth--;
         else if (ch === '>' && depth <= 0) break;
       }
@@ -109,7 +113,13 @@ export function parseXml(input: string, limits: Partial<XmlLimits> = {}): XmlEle
       if (end === -1) throw new XmlParseError('Unterminated closing tag');
       const name = src.slice(lt + 2, end).trim();
       // Tolerate mismatches: close up to the matching open element, or ignore a stray close tag.
-      const at = stack.map((e) => e.name).lastIndexOf(name);
+      let at = -1;
+      for (let k = stack.length - 1; k > 0; k--) {
+        if (stack[k]!.name === name) {
+          at = k;
+          break;
+        }
+      }
       if (at > 0) stack.length = at;
       i = end + 1;
     } else {

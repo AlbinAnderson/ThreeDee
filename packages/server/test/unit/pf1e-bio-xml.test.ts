@@ -201,7 +201,7 @@ describe('[Epic 10] unit: PCGen base.xml parser', () => {
 
   test('no entity expansion, no XXE: DOCTYPE and custom entities are never interpreted', () => {
     const bomb = `<?xml version="1.0"?>
-<!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;"><!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<!DOCTYPE lolz [<!ENTITY lol "lol]><evil/>"><!ENTITY lol2 "&lol;&lol;&lol;&lol;"><!ENTITY xxe SYSTEM "file:///etc/passwd">]>
 <character><basics><name>&lol2;&xxe;</name></basics></character>`;
     assert.equal(parseBaseXml(bomb).name, '&lol2;&xxe;');
     assert.equal(decodeXmlEntities('&#60;&#x3E;&amp;&bogus;&#0;&#xD800;'), '<>&&bogus;&#0;&#xD800;');

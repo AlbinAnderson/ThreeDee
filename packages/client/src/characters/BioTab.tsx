@@ -201,7 +201,7 @@ function PortraitCard({ character: c, manage }: { character: Character; manage: 
 }
 
 function ExportSection({ character: c, gm }: { character: Character; gm: boolean }) {
-  const [summary, setSummary] = useState<{ fileName: string; data: PcgenXmlSummary } | null>(null);
+  const [summary, setSummary] = useState<{ key: number; fileName: string; data: PcgenXmlSummary } | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   function downloadJson() {
@@ -213,7 +213,7 @@ function ExportSection({ character: c, gm }: { character: Character; gm: boolean
   async function openXml(file: File) {
     if (file.size > MAX_XML_BYTES) return notify(`${file.name} is too large`);
     try {
-      setSummary({ fileName: file.name, data: parseBaseXml(await file.text()) });
+      setSummary({ key: Date.now(), fileName: file.name, data: parseBaseXml(await file.text()) });
     } catch (e) {
       notify(`Could not read ${file.name}: ${(e as Error).message}`);
     }
@@ -241,7 +241,7 @@ function ExportSection({ character: c, gm }: { character: Character; gm: boolean
           }}
         />
       </div>
-      {summary && <XmlCompare character={c} fileName={summary.fileName} summary={summary.data} onClose={() => setSummary(null)} />}
+      {summary && <XmlCompare key={summary.key} character={c} fileName={summary.fileName} summary={summary.data} onClose={() => setSummary(null)} />}
     </section>
   );
 }

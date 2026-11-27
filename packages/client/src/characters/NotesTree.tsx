@@ -8,6 +8,7 @@ import {
   MAX_CHARACTER_NOTES,
   newId,
   NOTE_BODY_MAX,
+  NOTE_MAX_LENGTH,
   NOTE_TITLE_MAX,
   noteDescendants,
   notesActions,
@@ -28,6 +29,7 @@ async function addNote(c: Character, parentId: string | null) {
 function copyToNotepad(c: Character, rootId?: string) {
   const text = formatNotesText(c.bio.notes, rootId, `— ${c.name} —`);
   if (!text.trim()) return notify('Nothing to copy');
+  if (text.length > NOTE_MAX_LENGTH) return notify(`Too long to copy into Notepad (max ${NOTE_MAX_LENGTH} characters)`);
   if (dispatch(notesActions.append.create({ text }))) notify('Copied to your Notepad', 'info');
 }
 
@@ -69,11 +71,15 @@ function NoteItem({ node, character: c, manage }: { node: NoteNode; character: C
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
+  const [parentId, setParentId] = useState<string>(note.parentId ?? '');
   const hasKids = node.children.length > 0;
+  const blockedParents = editing ? noteDescendants(c.bio.notes, note.id) : null;
+  const parentChoices = editing ? c.bio.notes.filter((n) => n.id !== note.id && !blockedParents!.has(n.id)) : [];
 
   function startEdit() {
     setTitle(note.title);
     setBody(note.body);
+    setParentId(note.parentId ?? '');
     setEditing(true);
     setOpen(true);
   }
@@ -81,9 +87,11 @@ function NoteItem({ node, character: c, manage }: { node: NoteNode; character: C
   function save() {
     const t = title.trim().slice(0, NOTE_TITLE_MAX);
     if (!t) return notify('A note needs a title');
-    const changes: { title?: string; body?: string } = {};
+    const nextParent = parentId || null;
+    const changes: { title?: string; body?: string; parentId?: string | null } = {};
     if (t !== note.title) changes.title = t;
     if (body !== note.body) changes.body = body.slice(0, NOTE_BODY_MAX);
+    if (nextParent !== note.parentId) changes.parentId = nextParent;
     if (Object.keys(changes).length === 0 || dispatch(characterBioActions.updateNote.create({ id: c.id, noteId: note.id, changes }))) setEditing(false);
   }
 
@@ -128,6 +136,14 @@ function NoteItem({ node, character: c, manage }: { node: NoteNode; character: C
       {editing ? (
         <div className="note-edit">
           <input value={title} maxLength={NOTE_TITLE_MAX} aria-label="Note title" onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
+          <select value={parentId} aria-label="Parent note" onChange={(e) => setParentId(e.target.value)}>
+            <option value="">Top-level note</option>
+            {parentChoices.map((p) => (
+              <option key={p.id} value={p.id}>
+                Under: {p.title}
+              </option>
+            ))}
+          </select>
           <textarea value={body} rows={5} maxLength={NOTE_BODY_MAX} aria-label="Note text" onChange={(e) => setBody(e.target.value)} />
           <div className="button-row">
             <button type="button" className="small" onClick={() => setEditing(false)}>
