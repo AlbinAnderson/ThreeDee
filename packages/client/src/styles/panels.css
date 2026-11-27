@@ -1,0 +1,901 @@
+/* Sidebar panels: Chat, Combat, Actions, Status, Players, Loot, Handouts, Audio, Tables, History */
+
+/* ---------------------------------------------------------- chat */
+
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 12px 10px;
+}
+
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.chat-line {
+  margin-bottom: 10px;
+}
+
+.chat-line.private {
+  border-left: 2px solid var(--gold);
+  padding-left: 8px;
+  background: rgba(228, 172, 68, 0.04);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.chat-meta {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.chat-author {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.chat-time {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.chat-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+}
+
+.roll-card {
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.roll-label {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.roll-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.roll-breakdown {
+  flex: 1;
+  min-width: 0;
+}
+
+.roll-expr {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.roll-terms {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.die.dropped {
+  text-decoration: line-through;
+  opacity: 0.45;
+}
+
+.die.max {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.die.min {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.roll-total {
+  font-size: 24px;
+  font-weight: 800;
+  min-width: 44px;
+  text-align: center;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-mode {
+  display: flex;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-mode select {
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.quick-dice {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+
+.quick-dice button {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.quick-dice button:hover:not(:disabled) {
+  color: var(--gold);
+  border-color: rgba(228, 172, 68, 0.5);
+}
+
+.chat-input {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border-left-color: var(--gold);
+}
+
+.chat-card-image {
+  width: 64px;
+  max-height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius);
+}
+
+.chat-card-actions {
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------- lists */
+
+.player-list,
+.scene-list,
+.token-list,
+.combat-list,
+.status-list,
+.loot-list,
+.handout-list,
+.snapshot-list,
+.macro-list,
+.track-list,
+.drawn-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.player-list button,
+.token-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: none;
+  border-color: transparent;
+  justify-content: flex-start;
+}
+
+.player-list li.selected button,
+.token-list li.selected button {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+
+.player-list li.offline {
+  opacity: 0.5;
+}
+
+.player-name {
+  flex: 1;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.online .status-dot {
+  background: var(--ok);
+}
+
+.scene-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+}
+
+.scene-list li.viewing {
+  background: var(--panel-2);
+}
+
+.scene-name {
+  flex: 1;
+  justify-content: flex-start;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  text-align: left;
+}
+
+/* ---------------------------------------------------------- player page */
+
+.player-page h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.notes-text {
+  min-height: 260px;
+  font-size: 13px;
+}
+
+.notes-status {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.notes-readonly,
+.identified-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* ---------------------------------------------------------- loot */
+
+.loot-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.loot-toolbar button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.loot-list li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  background: var(--panel-2);
+}
+
+.loot-list li.open {
+  border-color: var(--accent);
+}
+
+.loot-row {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.loot-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.loot-thumb.empty {
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.loot-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.loot-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loot-sub {
+  font-size: 12px;
+}
+
+.loot-editor {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.loot-image {
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: var(--radius);
+  display: block;
+}
+
+.gm-box {
+  border: 1px dashed var(--warn);
+  border-radius: var(--radius);
+  padding: 8px 8px 0;
+  margin-bottom: 8px;
+}
+
+.identified-box {
+  margin-bottom: 8px;
+}
+
+/* ---------------------------------------------------------- history */
+
+.snapshot-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.snapshot-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.snapshot-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- combat */
+
+.combat-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 5px;
+  background: var(--panel-2);
+}
+
+.combat-row.current {
+  border-color: var(--gold);
+  background: linear-gradient(90deg, var(--gold-soft), var(--panel-2) 55%);
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+
+.combat-row.hidden-entry {
+  opacity: 0.65;
+}
+
+.combat-main {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.combat-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combat-fields {
+  display: flex;
+  gap: 4px;
+  grid-row: span 2;
+}
+
+.combat-fields .field {
+  width: 58px;
+  margin: 0;
+}
+
+.combat-fields .field label {
+  font-size: 10px;
+}
+
+.combat-init {
+  font-size: 18px;
+  font-weight: 700;
+  min-width: 36px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.combat-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.combat-actions .icon-button {
+  font-size: 13px;
+  padding: 2px 5px;
+}
+
+/* ---------------------------------------------------------- status / hp / conditions */
+
+.hp-bar-html {
+  height: 7px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.hp-bar-html > div {
+  height: 100%;
+  transition: width 180ms ease;
+}
+
+.hp-quick {
+  align-items: center;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.hp-quick input {
+  width: 72px;
+  flex: 1 1 64px;
+}
+
+.condition-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.condition-chip {
+  padding: 2px 7px;
+  font-size: 11px;
+  border-radius: 999px;
+  gap: 3px;
+}
+
+.condition-chip.on {
+  color: #fff;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.condition-icon {
+  font-size: 10px;
+}
+
+.status-list li button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  background: var(--panel-2);
+  margin-bottom: 5px;
+  text-align: left;
+}
+
+.status-list li.selected button {
+  border-color: var(--accent);
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-hp {
+  font-variant-numeric: tabular-nums;
+}
+
+.temp-hp {
+  color: #60b8ff;
+}
+
+.status-list .hp-bar-html {
+  display: block;
+  height: 6px;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------- handouts / macros / audio / decks */
+
+.handout-image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto 12px;
+  border-radius: var(--radius);
+}
+
+.handout-text {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  max-width: 70ch;
+}
+
+.handout-list li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  background: var(--panel-2);
+}
+
+.handout-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+}
+
+.handout-open {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  background: none;
+  border: none;
+  padding: 2px;
+}
+
+.handout-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.macro-list {
+  margin-bottom: 6px;
+}
+
+.macro-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.macro-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macro-formula {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.macro-form input:first-child {
+  flex: 1.2;
+}
+
+.inline-control.volume input[type='range'] {
+  width: 160px;
+}
+
+.track-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+}
+
+.track-list li.playing {
+  background: rgba(70, 195, 104, 0.12);
+}
+
+.track-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-list input[type='range'] {
+  width: 70px;
+  padding: 0;
+}
+
+.icon-button.on {
+  color: var(--ok);
+}
+
+.deck {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 6px 8px;
+  margin-bottom: 8px;
+}
+
+.deck .button-row {
+  margin: 4px 0;
+}
+
+.drawn-cards {
+  margin: 4px 0;
+}
+
+.drawn-cards li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.card-thumb {
+  width: 28px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.card-thumb.back {
+  display: grid;
+  place-items: center;
+  background: #3b2a5c;
+  font-size: 22px;
+}
+
+/* ---------------------------------------------------------- PF1e actions */
+
+.turn-box {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.turn-status {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.turn-pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.pip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(70, 195, 104, 0.16);
+  color: #7ee39b;
+  border: 1px solid rgba(70, 195, 104, 0.45);
+}
+
+.pip.pip-btn {
+  cursor: help;
+}
+
+.pip.pip-btn:hover {
+  border-color: var(--gold);
+  background: rgba(70, 195, 104, 0.24);
+}
+
+.pip.used {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--border);
+  text-decoration: line-through;
+}
+
+.resource-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.resource-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.resource-bar {
+  flex-basis: 100%;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.resource-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+}
+
+.actions-search {
+  margin: 4px 0 8px;
+}
+
+.action-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.action-list li {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.action-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--ease), background var(--ease);
+}
+
+.action-card:hover {
+  border-color: var(--border-strong);
+  background: var(--panel-3);
+}
+
+.action-main {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: 4px 6px;
+  text-align: left;
+  background: transparent;
+  border: none;
+}
+
+.action-main:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+}
+
+.action-list li.blocked .action-main {
+  opacity: 0.45;
+}
+
+.action-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-meta {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.cost-badge,
+.aoo-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge-btn {
+  cursor: help;
+}
+
+.badge-btn:hover {
+  background: var(--panel);
+  border-color: var(--gold);
+}
+
+.cost-standard {
+  color: #74c0fc;
+}
+
+.cost-move {
+  color: #8ce99a;
+}
+
+.cost-fullRound {
+  color: #ffa94d;
+}
+
+.cost-swift,
+.cost-immediate {
+  color: #e599f7;
+}
+
+.aoo-yes {
+  color: #ff8787;
+}
+
+.aoo-no {
+  color: #8ce99a;
+}
+
+.aoo-varies,
+.aoo-ranged {
+  color: #ffd43b;
+}

@@ -1,8 +1,29 @@
 import { create } from 'zustand';
-import type { PcgenCharacter } from '@vtt/shared';
+import type { AbilityCategory, PcgenCharacter } from '@vtt/shared';
 
-/** Which character is open in the Characters panel. */
-export const useCharactersUi = create<{ selectedId: string | null }>(() => ({ selectedId: null }));
+export type CharacterTab = 'sheet' | 'skills' | 'abilities' | 'spells' | 'effects' | 'inventory' | 'imported' | 'settings' | 'manage';
+export type SkillFilter = 'all' | 'trained' | 'usable' | 'favorites';
+
+interface CharactersUiState {
+  selectedId: string | null;
+  tab: CharacterTab;
+  poppedOut: boolean;
+  skillsQuery: string;
+  skillsFilter: SkillFilter;
+  abilitiesQuery: string;
+  abilitiesCategory: AbilityCategory | 'all';
+}
+
+/** Persistent UI state for the Characters panel so switching sidebar panels never resets your tab/filters. */
+export const useCharactersUi = create<CharactersUiState>(() => ({
+  selectedId: null,
+  tab: 'sheet',
+  poppedOut: false,
+  skillsQuery: '',
+  skillsFilter: 'all',
+  abilitiesQuery: '',
+  abilitiesCategory: 'all',
+}));
 
 export interface ImportState {
   openId: string;
@@ -16,6 +37,14 @@ export interface ImportState {
 export const useImportDialog = create<{ current: ImportState | null }>(() => ({ current: null }));
 
 export function resetCharactersUi() {
-  useCharactersUi.setState({ selectedId: null });
+  useCharactersUi.setState({
+    selectedId: null,
+    tab: 'sheet',
+    poppedOut: false,
+    skillsQuery: '',
+    skillsFilter: 'all',
+    abilitiesQuery: '',
+    abilitiesCategory: 'all',
+  });
   useImportDialog.setState({ current: null });
 }

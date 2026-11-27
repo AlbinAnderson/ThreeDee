@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Compass, Dices } from 'lucide-react';
 import {
   chatActions,
   formatTermNotation,
@@ -10,6 +11,7 @@ import {
   type User,
 } from '@vtt/shared';
 import { dispatch } from '../state/dispatch';
+import { confirmDialog } from '../state/dialogs';
 import { useGameStore } from '../state/gameStore';
 import { useGame, useIsGm, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -131,7 +133,11 @@ export function ChatPanel() {
         <button
           type="button"
           className="link-button"
-          onClick={() => confirm('Clear the chat log for everyone?') && dispatch(chatActions.clear.create({}))}
+          onClick={async () => {
+            if (await confirmDialog({ title: 'Clear chat log?', message: 'Clear the chat log for everyone in the room?', confirmLabel: 'Clear chat', danger: true })) {
+              dispatch(chatActions.clear.create({}));
+            }
+          }}
         >
           Clear chat
         </button>
@@ -226,13 +232,13 @@ function CardAttachment({ card, authorId }: { card: ChatCard; authorId: string }
                 className="small rollable"
                 onClick={() => rollToChat(`1d20${r.bonus >= 0 ? '+' : ''}${r.bonus}`, `${card.title} — ${r.label}`.slice(0, 100))}
               >
-                🎲 {r.label} {r.bonus >= 0 ? '+' : ''}
+                <Dices size={12} /> {r.label} {r.bonus >= 0 ? '+' : ''}
                 {r.bonus}
               </button>
             ))}
             {card.area && (
               <button type="button" className="small" title="Switch to the template tool with this area" onClick={() => armTemplate(card.area!)}>
-                📐 {card.area.label}
+                <Compass size={12} /> {card.area.label}
               </button>
             )}
           </div>

@@ -5,6 +5,7 @@
  * announces the action, so the panel doubles as a rules reference.
  */
 import { useMemo, useState } from 'react';
+import { Dices, Moon, Play } from 'lucide-react';
 import {
   canControlCombatant,
   canManageCharacter,
@@ -23,6 +24,7 @@ import {
   SIZE_MOD,
   signed,
   toggleAttackPenalty,
+  type ActionCost,
   type ActionGroup,
   type Character,
   type EffectiveTurn,
@@ -31,6 +33,8 @@ import {
 import { create } from 'zustand';
 import { rollCheck } from '../characters/characterActions';
 import { CombatToggles } from '../characters/CombatToggles';
+import { InfoTip } from '../components/InfoTip';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { useUi } from '../state/uiStore';
@@ -80,11 +84,48 @@ const GROUPS: [ActionGroup, string][] = [
   ['other', 'Free, swift, immediate & non-actions'],
 ];
 
-const PROVOKES_BADGE: Record<Pf1Action['provokes'], [string, string]> = {
-  yes: ['AoO', 'Provokes attacks of opportunity'],
-  no: ['safe', 'Doesn’t provoke'],
-  varies: ['AoO?', 'May provoke (see notes)'],
-  ranged: ['AoO*', 'Provokes when ranged (or unarmed without Improved Unarmed Strike)'],
+const PROVOKES_BADGE: Record<Pf1Action['provokes'], [string, string, string]> = {
+  yes: [
+    'AoO',
+    'Provokes Attacks of Opportunity',
+    'Enemies who threaten your square can immediately make an Attack of Opportunity against you (unless prevented by a feat such as Improved Trip or casting defensively).',
+  ],
+  no: ['safe', 'Safe (no AoO)', 'Does not provoke Attacks of Opportunity from threatening enemies.'],
+  varies: [
+    'AoO?',
+    'May provoke (AoO?)',
+    'Whether this provokes depends on the specific option used — check the action notes (e.g., scrolls & spell-like abilities provoke; wands & Su/Ex abilities do not).',
+  ],
+  ranged: [
+    'AoO*',
+    'Provokes if ranged or unarmed (AoO*)',
+    'Making a ranged attack or an unarmed strike (without Improved Unarmed Strike) provokes Attacks of Opportunity. Armed melee attacks do not provoke.',
+  ],
+};
+
+const COST_GLOSSARY: Record<ActionCost, [string, string]> = {
+  standard: ['Standard action', '1 per turn. Attack, cast most spells, or use an active ability. Can also be traded down for a second Move action.'],
+  move: ['Move action', '1 per turn (or 2 by trading your Standard action). Move up to your speed, stand up, draw a weapon, or retrieve an item.'],
+  fullRound: [
+    'Full-round action',
+    'Consumes both your Standard and Move actions for the turn. You can still take a 5-foot step (if you did not otherwise move), a Swift action, and Free actions.',
+  ],
+  swift: [
+    'Swift action',
+    '1 per turn, on your turn only. Very fast ability (e.g., Smite, Judgment, Quickened spell). Using an off-turn Immediate action consumes your next turn’s Swift action.',
+  ],
+  immediate: [
+    'Immediate action',
+    '1 per round, usable even outside your turn (not while flat-footed). Uses your Swift action if taken on your turn, or your next turn’s Swift action if taken off-turn.',
+  ],
+  free: ['Free action', 'Takes almost no time; you can perform one or more per turn alongside other actions (subject to GM limits). Normally on your turn only.'],
+  fiveFoot: ['5-foot step', 'Move 5 feet without provoking Attacks of Opportunity. Once per turn, and only if you do not move any other distance during the same turn.'],
+  aoo: [
+    'Attack of Opportunity',
+    'A single extra melee attack triggered when a foe in your threatened area lowers their guard. Normally 1/round (1 + Dex mod with Combat Reflexes); none while flat-footed.',
+  ],
+  none: ['No action', 'Automatic or part of another action — does not consume any of your turn’s action slots.'],
+  other: ['Out of combat / Varies', 'Takes longer than 1 round (e.g. 1 minute or 1 hour) or varies by specific ability; check the action notes.'],
 };
 
 export function ActionsPanel() {
@@ -147,18 +188,17 @@ export function ActionsPanel() {
 
       {stats && (
         <div className="button-row">
-          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Melee attack', genericMelee)}>
-            🎲 Melee {signed(genericMelee)}
+          <button type="button" className="small rollable tnum" onClick={() => rollCheck(actor.character!, 'Melee attack', genericMelee)}>
+            <Dices size={12} /> Melee {signed(genericMelee)}
           </button>
-          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Ranged attack', genericRanged)}>
-            🎲 Ranged {signed(genericRanged)}
+          <button type="button" className="small rollable tnum" onClick={() => rollCheck(actor.character!, 'Ranged attack', genericRanged)}>
+            <Dices size={12} /> Ranged {signed(genericRanged)}
           </button>
-          <button type="button" className="small" onClick={() => rollCheck(actor.character!, 'Combat maneuver (CMB)', stats.cmb.total)}>
-            🎲 CMB {signed(stats.cmb.total)}
+          <button type="button" className="small rollable tnum" onClick={() => rollCheck(actor.character!, 'Combat maneuver (CMB)', stats.cmb.total)}>
+            <Dices size={12} /> CMB {signed(stats.cmb.total)}
           </button>
         </div>
       )}
-      {stats && <p className="muted small-text">Generic attack bonus (BAB + ability + size + toggles); action 🎲 buttons use your wielded weapon when one is equipped.</p>}
       {stats && actor.character && <CombatToggles character={actor.character} stats={stats} />}
 
       {pools.length > 0 && (
@@ -170,9 +210,13 @@ export function ActionsPanel() {
                 type="button"
                 className="small"
                 title="Restore all daily uses (after 8 hours of rest)"
-                onClick={() => confirm('Restore all daily uses?') && dispatch(pf1eTurnActions.resetUses.create({ characterId: actor.character!.id }))}
+                onClick={async () => {
+                  if (await confirmDialog({ title: 'Rest 8 hours?', message: 'Restore all daily uses, spell slots, and prepared spells?', confirmLabel: 'Rest' })) {
+                    dispatch(pf1eTurnActions.resetUses.create({ characterId: actor.character!.id }));
+                  }
+                }}
               >
-                Rest
+                <Moon size={12} /> Rest
               </button>
             )}
           </div>
@@ -250,12 +294,6 @@ function TurnPips({ econ, combatantId }: { econ: EffectiveTurn; combatantId: str
   const aooBlocked = econ.flatFooted && !econ.combatReflexes;
   const aooLeft = aooBlocked ? 0 : Math.max(0, econ.aooMax - t.aoo);
   const offTurnImmUsed = !econ.isTurn && t.immediateLock !== null && t.immediateLock > t.window;
-  const pips: [string, boolean, string][] = [
-    ['Standard', t.standard || t.fullRound, 'Standard action'],
-    ['Move', t.move || t.fullRound, 'Move action (a standard can become a second move)'],
-    ['Swift', t.swift, 'Swift action (an immediate action uses it)'],
-    ['5-ft', t.fiveFoot || t.moved, '5-foot step (not if you moved)'],
-  ];
   return (
     <div className="turn-box">
       <div className="turn-status">
@@ -263,22 +301,40 @@ function TurnPips({ econ, combatantId }: { econ: EffectiveTurn; combatantId: str
         {econ.flatFooted && <span className="badge warn">flat-footed</span>}
       </div>
       <div className="turn-pips">
-        {pips.map(([label, used, title]) => (
-          <span key={label} className={`pip${used ? ' used' : ''}`} title={`${title}: ${used ? 'used' : 'available'}`}>
-            {label}
-          </span>
-        ))}
+        {(
+          [
+            ['Standard', t.standard || t.fullRound, 'standard'],
+            ['Move', t.move || t.fullRound, 'move'],
+            ['Swift', t.swift, 'swift'],
+            ['5-ft', t.fiveFoot || t.moved, 'fiveFoot'],
+          ] as [string, boolean, ActionCost][]
+        ).map(([label, used, costKey]) => {
+          const [gTitle, gBody] = COST_GLOSSARY[costKey];
+          return (
+            <InfoTip key={label} title={`${gTitle} (${used ? 'used' : 'available'})`} body={gBody} hint="Click to pin" clickToPin>
+              <button type="button" className={`pip pip-btn${used ? ' used' : ''}`}>
+                {label}
+              </button>
+            </InfoTip>
+          );
+        })}
         {offTurnImmUsed && (
-          <span className="pip used" title="Off-turn immediate action used (uses up your next turn’s swift action)">
-            Immediate
-          </span>
+          <InfoTip title="Immediate action (used off-turn)" body={COST_GLOSSARY.immediate[1]} hint="Click to pin" clickToPin>
+            <button type="button" className="pip pip-btn used">
+              Immediate
+            </button>
+          </InfoTip>
         )}
-        <span
-          className={`pip${aooLeft <= 0 ? ' used' : ''}`}
-          title={aooBlocked ? 'Flat-footed creatures can’t make attacks of opportunity' : 'Attacks of opportunity this round'}
+        <InfoTip
+          title={`Attacks of Opportunity (${aooLeft}/${econ.aooMax})`}
+          body={aooBlocked ? 'Flat-footed creatures cannot make Attacks of Opportunity (unless they have Combat Reflexes).' : COST_GLOSSARY.aoo[1]}
+          hint="Click to pin"
+          clickToPin
         >
-          AoO {aooLeft}/{econ.aooMax}
-        </span>
+          <button type="button" className={`pip pip-btn${aooLeft <= 0 ? ' used' : ''}`}>
+            AoO {aooLeft}/{econ.aooMax}
+          </button>
+        </InfoTip>
       </div>
       <div className="button-row">
         <button type="button" className="small" title="Undo: get your whole turn back" onClick={() => dispatch(pf1eTurnActions.resetTurn.create({ combatantId }))}>
@@ -323,33 +379,43 @@ function ActionList({
         const remaining = uses ? Math.max(0, uses.max - uses.used) : 0;
         const out = uses ? uses.used + cost > uses.max : false;
         const blocked = spend !== true ? spend : out ? (remaining > 0 ? `Needs ${cost} (only ${remaining} left)` : 'None left today') : null;
-        const [badge, badgeTitle] = PROVOKES_BADGE[a.provokes];
-        const tooltip = `${a.notes}${blocked ? `\n\nCan’t now: ${blocked}` : ''}`;
+        const [badge, badgeTitle, badgeBody] = PROVOKES_BADGE[a.provokes];
+        const [costTitle, costBody] = COST_GLOSSARY[a.cost];
+        const tipBody = `${a.notes}${blocked ? `\n\nBlocked: ${blocked}` : ''}`;
         return (
-          <li key={a.id} className={blocked ? 'blocked' : ''} title={tooltip}>
-            <button
-              type="button"
-              className="action-main"
-              disabled={!onAct || !!blocked}
-              title={tooltip}
-              onClick={() => onAct?.(a)}
-            >
-              <span className="action-name">{a.name}</span>
+          <li key={a.id} className={blocked ? 'blocked' : ''}>
+            <div className="action-card">
+              <InfoTip title={a.name} body={tipBody} hint={blocked ? undefined : 'Click to take action'}>
+                <button
+                  type="button"
+                  className="action-main"
+                  disabled={!onAct || !!blocked}
+                  onClick={() => onAct?.(a)}
+                >
+                  <span className="action-name">{a.name}</span>
+                </button>
+              </InfoTip>
               <span className="action-meta">
-                <span className={`cost-badge cost-${a.cost}`}>{a.costLabel ?? COST_LABEL[a.cost]}</span>
-                <span className={`aoo-badge aoo-${a.provokes}`} title={badgeTitle}>
-                  {badge}
-                </span>
+                <InfoTip title={a.costLabel ? `${costTitle} (${a.costLabel})` : costTitle} body={costBody} hint="Click badge to pin" clickToPin>
+                  <button type="button" className={`cost-badge badge-btn cost-${a.cost}`} aria-label={`Explain ${a.costLabel ?? COST_LABEL[a.cost]}`}>
+                    {a.costLabel ?? COST_LABEL[a.cost]}
+                  </button>
+                </InfoTip>
+                <InfoTip title={badgeTitle} body={badgeBody} hint="Click badge to pin" clickToPin>
+                  <button type="button" className={`aoo-badge badge-btn aoo-${a.provokes}`} aria-label={`Explain ${badge}`}>
+                    {badge}
+                  </button>
+                </InfoTip>
                 {uses && (
-                  <span className="muted small-text">
+                  <span className="muted small-text tnum">
                     {remaining}/{uses.max}
                   </span>
                 )}
               </span>
-            </button>
+            </div>
             {a.roll && onRoll && (
-              <button type="button" className="icon-button" title="Roll it" onClick={() => onRoll(a)}>
-                🎲
+              <button type="button" className="icon-button" title="Roll attack / CMB" onClick={() => onRoll(a)}>
+                <Dices size={14} />
               </button>
             )}
           </li>
@@ -387,13 +453,13 @@ export function TurnBar() {
       </button>
       <button
         type="button"
-        className="small primary"
+        className="small gold"
         onClick={() => {
           useActionsUi.setState({ actorKey: null });
           dispatch(combatActions.next.create({}));
         }}
       >
-        End turn ▶
+        End turn <Play size={11} />
       </button>
     </div>
   );

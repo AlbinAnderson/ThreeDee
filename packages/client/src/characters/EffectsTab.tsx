@@ -6,6 +6,7 @@
  * breakdown.
  */
 import { useMemo, useState } from 'react';
+import { Pencil, X } from 'lucide-react';
 import {
   buffActions,
   BUFF_PRESETS,
@@ -153,10 +154,10 @@ function Buffs({ character: c, manage }: { character: Character; manage: boolean
               {manage && (
                 <>
                   <button type="button" className="small icon-button" aria-label={`Edit ${b.name}`} onClick={() => setEditing(editing === b.id ? null : b.id)}>
-                    ✎
+                    <Pencil size={13} />
                   </button>
                   <button type="button" className="small icon-button" aria-label={`Remove ${b.name}`} onClick={() => dispatch(buffActions.remove.create({ characterId: c.id, buffId: b.id }))}>
-                    ×
+                    <X size={13} />
                   </button>
                 </>
               )}

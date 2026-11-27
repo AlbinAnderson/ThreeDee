@@ -1,10 +1,10 @@
 /**
  * Spells (Epic 7): per casting class, caster level / concentration / DCs,
  * slots and prepared spells by level, Cast (spell card in chat, optional area
- * template), spontaneous Cure/Inflict/Summon Nature's Ally conversion,
- * Rest & prepare, and casting settings for classes the rules don't know.
+ * template), spontaneous conversion, Rest & prepare, and casting settings.
  */
 import { useMemo, useState } from 'react';
+import { Compass, Moon, Settings, X } from 'lucide-react';
 import {
   canManageCharacter,
   characterSheetActions,
@@ -41,6 +41,8 @@ import {
   type StatKey,
 } from '@vtt/shared';
 import { NumberField, OptionalNumberField, SelectField, TextField } from '../components/fields';
+import { InfoTip } from '../components/InfoTip';
+import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -67,26 +69,26 @@ export function SpellsTab({ character: c }: { character: Character }) {
             type="button"
             className="small"
             title="Restore spell slots, un-cast prepared spells and restore every resource (8 hours of rest)"
-            onClick={() => confirm('Rest 8 hours? Restores spell slots, prepared spells and every resource.') && dispatch(pf1eTurnActions.resetUses.create({ characterId: c.id }))}
+            onClick={async () => {
+              if (await confirmDialog({ title: 'Rest 8 hours?', message: 'Restore all spell slots, prepared spells, and daily resources?', confirmLabel: 'Rest' })) {
+                dispatch(pf1eTurnActions.resetUses.create({ characterId: c.id }));
+              }
+            }}
           >
-            Rest (8 hr)
+            <Moon size={12} /> Rest (8 hr)
           </button>
         )}
       </div>
       {casters.length === 0 && <p className="muted">No spellcasting classes. {manage ? 'A class the rules don’t know can be set up below.' : ''}</p>}
       {manage && casters.length > 0 && (
         <label className="inline-control small-text">
-          <input type="checkbox" checked={placeArea} onChange={(e) => setPlaceArea(e.target.checked)} /> Place the area template after casting a spell with an area
+          <input type="checkbox" checked={placeArea} onChange={(e) => setPlaceArea(e.target.checked)} /> Auto-arm area template after casting
         </label>
       )}
       {casters.map((info) => (
         <CasterSection key={info.className} character={c} info={info} manage={manage} placeArea={placeArea} asf={stats.armor.asf} />
       ))}
       {manage && <AddCasterClass character={c} casters={casters} />}
-      <p className="muted small-text">
-        Spell details (school, save, SR, area) come from a built-in list of common spells; other spells show their DC only. Spell Focus applies when the school
-        is known.
-      </p>
     </div>
   );
 }
@@ -113,29 +115,31 @@ function CasterSection({ character: c, info, manage, placeArea, asf }: { charact
         <h3>
           {info.className} {info.classLevel} <span className="badge subtle">{MODEL_LABEL[info.model]}</span>
         </h3>
-        {manage && info.model !== 'spontaneous' && (
-          <button type="button" className={`small${panel === 'prepare' ? ' active' : ''}`} onClick={() => setPanel(panel === 'prepare' ? 'none' : 'prepare')}>
-            Prepare…
-          </button>
-        )}
-        {manage && (
-          <button
-            type="button"
-            className={`small icon-button${panel === 'settings' ? ' active' : ''}`}
-            title="Casting settings"
-            aria-label={`${info.className} casting settings`}
-            onClick={() => setPanel(panel === 'settings' ? 'none' : 'settings')}
-          >
-            ⚙
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {manage && info.model !== 'spontaneous' && (
+            <button type="button" className={`small${panel === 'prepare' ? ' active' : ''}`} onClick={() => setPanel(panel === 'prepare' ? 'none' : 'prepare')}>
+              Prepare…
+            </button>
+          )}
+          {manage && (
+            <button
+              type="button"
+              className={`small icon-button${panel === 'settings' ? ' active' : ''}`}
+              title="Casting settings"
+              aria-label={`${info.className} casting settings`}
+              onClick={() => setPanel(panel === 'settings' ? 'none' : 'settings')}
+            >
+              <Settings size={14} />
+            </button>
+          )}
+        </div>
       </div>
-      <div className="caster-stats small-text">
+      <div className="caster-stats small-text tnum">
         <span title={`Caster level${info.def?.clOffset ? ` (class level ${info.def.clOffset})` : ''}`}>CL {info.casterLevel}</span>
         <button type="button" className="small rollable" title="Concentration check (caster level + casting ability)" onClick={() => rollCheck(c, `${info.className} concentration`, info.concentration)}>
           Concentration {signed(info.concentration)}
         </button>
-        <span title="Save DC = 10 + spell level + casting ability (+ Spell Focus)">DC {info.dcBase} + level</span>
+        <span title="Save DC = 10 + spell level + casting ability (+ Spell Focus)">DC {info.dcBase} + lvl</span>
         <span>
           {info.stat} {info.abilityScore} ({signed(info.abilityMod)})
         </span>
@@ -167,9 +171,9 @@ function CasterSection({ character: c, info, manage, placeArea, asf }: { charact
       )}
 
       {info.model !== 'spontaneous' && info.preparedFromFile && info.prepared.length > 0 && (
-        <p className="muted small-text">Prepared spells from the .pcg file{info.books[0] ? ` (${info.books[0].name})` : ''}. Use Prepare… to change them.</p>
+        <p className="muted small-text">Prepared from .pcg{info.books[0] ? ` (${info.books[0].name})` : ''}. Click Prepare… to customize.</p>
       )}
-      {info.model !== 'spontaneous' && info.prepared.length === 0 && <p className="muted small-text">Nothing prepared yet{manage ? ': use Prepare…' : ''}.</p>}
+      {info.model !== 'spontaneous' && info.prepared.length === 0 && <p className="muted small-text">Nothing prepared yet{manage ? ': click Prepare…' : ''}.</p>}
 
       {info.levels.length === 0 && <p className="muted small-text">No spells per day at this level yet.</p>}
       <ul className="spell-levels">
@@ -213,21 +217,31 @@ function SpellName({ c, info, name, slotLevel, metamagic }: { c: Character; info
   const ref = lookupSpell(name);
   const dcLevel = spellDcLevel(info, name, slotLevel, metamagic);
   const dc = spellDc(c, info, name, dcLevel);
-  const title = ref ? `${ref.school}\nSave: ${ref.save} (DC ${dc}) · SR: ${ref.sr}${ref.area ? `\nArea: ${ref.area.label}` : ''}\n${ref.text}` : `DC ${dc}`;
+  const body = ref
+    ? [
+        ref.school,
+        `Save: ${ref.save}${/^none/i.test(ref.save) ? '' : ` (DC ${dc})`} · SR: ${ref.sr}`,
+        ref.area ? `Area: ${ref.area.label}` : null,
+        ref.text,
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : `Save DC ${dc} (if a save applies)`;
   return (
-    <span className="spell-name" title={title}>
-      {name}
-      {metamagic.map((m) => (
-        <span key={m} className="badge subtle">
-          {m.replace(/ Spell$/, '')}
-        </span>
-      ))}
-      {ref?.area && <span className="muted small-text"> 📐</span>}
-    </span>
+    <InfoTip title={name} body={body}>
+      <span className="spell-name">
+        {name}
+        {metamagic.map((m) => (
+          <span key={m} className="badge subtle">
+            {m.replace(/ Spell$/, '')}
+          </span>
+        ))}
+        {ref?.area && <Compass size={12} className="muted" />}
+      </span>
+    </InfoTip>
   );
 }
 
-/** Spontaneous and hybrid casters: slots for the level, and the spells known / prepared at it. */
 function SlotLevel({
   character: c,
   info,
@@ -253,7 +267,7 @@ function SlotLevel({
           <span className="muted small-text">at will</span>
         ) : (
           <>
-            <span className={`small-text${left === 0 ? ' warn-text' : ''}`} title={li.bonus ? `${li.base} from the class table + ${li.bonus} bonus from ${info.stat}` : undefined}>
+            <span className={`small-text tnum${left === 0 ? ' warn-text' : ''}`} title={li.bonus ? `${li.base} from the class table + ${li.bonus} bonus from ${info.stat}` : undefined}>
               {left}/{li.perDay} slots
             </span>
             <Pips total={li.perDay} left={left} />
@@ -279,7 +293,7 @@ function SlotLevel({
             <li key={`${s.name}|${s.level}`}>
               <SpellName c={c} info={info} name={s.name} slotLevel={s.level} metamagic={[]} />
               {manage && (
-                <button type="button" className="small" disabled={typeof plan === 'string'} title={typeof plan === 'string' ? plan : 'Cast: post the spell card to chat'} onClick={() => onCast(req)}>
+                <button type="button" className="small rollable" disabled={typeof plan === 'string'} title={typeof plan === 'string' ? plan : 'Cast: post the spell card to chat'} onClick={() => onCast(req)}>
                   Cast{slot !== null && slot !== s.level ? ` (${ordinal(slot)})` : ''}
                 </button>
               )}
@@ -292,7 +306,6 @@ function SlotLevel({
   );
 }
 
-/** Prepared casters: each prepared casting, checked off when cast. */
 function PreparedLevel({
   character: c,
   info,
@@ -315,11 +328,11 @@ function PreparedLevel({
     <>
       <LevelHead li={li}>
         {li.atWill ? (
-          <span className="muted small-text">
+          <span className="muted small-text tnum">
             at will · {normal.length}/{li.prepareLimit} prepared
           </span>
         ) : (
-          <span className="small-text">
+          <span className="small-text tnum">
             {left}/{spells.length} left · {normal.length}/{li.prepareLimit} slots{li.extra ? ` + ${li.extra} ${info.bonusSlot}` : ''}
           </span>
         )}
@@ -342,7 +355,7 @@ function PreparedLevel({
               <SpellName c={c} info={info} name={p.name} slotLevel={p.level} metamagic={p.metamagic} />
               {p.slot === 'bonus' && <span className="badge">{info.bonusSlot}</span>}
               {manage && (
-                <button type="button" className="small" disabled={p.cast && !atWill} onClick={() => onCast({ preparedId: p.id })} title="Cast: post the spell card to chat">
+                <button type="button" className="small rollable" disabled={p.cast && !atWill} onClick={() => onCast({ preparedId: p.id })} title="Cast: post the spell card to chat">
                   Cast
                 </button>
               )}
@@ -396,7 +409,6 @@ function KnownList({ info }: { info: CasterInfo }) {
 
 const toEntries = (list: PreparedSpell[]): PrepareEntry[] => list.map(({ id, name, level, metamagic, slot }) => ({ id, name, level, metamagic: [...metamagic], slot }));
 
-/** Fill the normal slots first and overflow into the domain/school slot, as PCGen doesn't mark which is which. */
 function fitSlots(info: CasterInfo, list: PrepareEntry[]): PrepareEntry[] {
   const used = new Map<string, number>();
   return list.map((p) => {
@@ -483,11 +495,11 @@ function PreparePanel({ character: c, info, onDone }: { character: Character; in
           <div key={li.level} className="prepare-level">
             <div className="spell-level-head">
               <span className="spell-level-name">{li.level === 0 ? 'Cantrips' : ordinal(li.level)}</span>
-              <span className={`small-text${normal > li.prepareLimit ? ' warn-text' : ''}`}>
+              <span className={`small-text tnum${normal > li.prepareLimit ? ' warn-text' : ''}`}>
                 {normal}/{li.prepareLimit}
               </span>
               {li.extra > 0 && (
-                <span className={`small-text${bonus > li.extra ? ' warn-text' : ''}`}>
+                <span className={`small-text tnum${bonus > li.extra ? ' warn-text' : ''}`}>
                   + {bonus}/{li.extra} {info.bonusSlot}
                 </span>
               )}
@@ -531,7 +543,7 @@ function PreparePanel({ character: c, info, onDone }: { character: Character; in
                     </button>
                   )}
                   <button type="button" className="small icon-button" aria-label={`Remove ${p.name}`} onClick={() => setDraft(draft.filter((x) => x.id !== p.id))}>
-                    ×
+                    <X size={13} />
                   </button>
                 </li>
               ))}
@@ -599,14 +611,13 @@ function PreparePanel({ character: c, info, onDone }: { character: Character; in
       )}
       {check !== true && <p className="warn-text small-text">{check}</p>}
       <div className="button-row">
-        <button type="button" className="primary small" disabled={check !== true} onClick={save}>
+        <button type="button" className="gold small" disabled={check !== true} onClick={save}>
           Save prepared spells
         </button>
         <button type="button" className="small" onClick={onDone}>
           Cancel
         </button>
       </div>
-      <p className="muted small-text">Saving starts the day: every prepared spell is ready to cast. Rest (8 hr) also restores what you cast without changing the list.</p>
     </div>
   );
 }

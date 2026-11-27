@@ -1,0 +1,1114 @@
+/* Character list, sheet, wide pop-out modal, Skills, Abilities, Spells, Effects & Inventory */
+
+.characters-panel.drop-target {
+  outline: 2px dashed var(--gold);
+  outline-offset: -6px;
+  background: var(--gold-soft);
+}
+
+.drop-hint {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.character-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.character-list button {
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  text-align: left;
+}
+
+.character-list button:hover {
+  border-color: var(--gold);
+}
+
+.character-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.character-meta {
+  color: var(--muted);
+}
+
+.character-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.character-header-left {
+  min-width: 0;
+}
+
+.character-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* Admin dropdown menu for Imported / Settings / Manage */
+.admin-menu-wrap {
+  position: relative;
+}
+
+.admin-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-menu button {
+  justify-content: flex-start;
+  background: transparent;
+  border: none;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.admin-menu button:hover,
+.admin-menu button.active {
+  background: var(--panel-3);
+  color: var(--gold);
+}
+
+/* 6 clean play tabs */
+.sheet-tabs {
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.sheet-tabs button {
+  flex: 1 0 auto;
+  height: 27px;
+  font-size: 12px;
+  padding: 0 7px;
+}
+
+/* Wide pop-out 2-column Character Sheet */
+.sheet-popout-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 9, 12, 0.72);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 60;
+}
+
+.sheet-popout {
+  width: min(1100px, 96vw);
+  height: min(860px, 92vh);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-top: 2px solid var(--gold);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sheet-popout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.sheet-popout-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+}
+
+.sheet-popout-left {
+  overflow-y: auto;
+  padding: 14px 16px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.sheet-popout-right {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sheet-popout-tabs {
+  padding: 10px 16px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.sheet-popout-tabs .sheet-tabs {
+  margin-bottom: 8px;
+}
+
+.sheet-popout-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+@media (max-width: 820px) {
+  .sheet-popout-body {
+    grid-template-columns: 1fr;
+  }
+  .sheet-popout-left {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------- core sheet */
+
+.sheet-identity {
+  margin-bottom: 8px;
+}
+
+.sheet-warnings {
+  border: 1px solid rgba(224, 163, 58, 0.55);
+  background: rgba(224, 163, 58, 0.08);
+  border-radius: var(--radius);
+  padding: 7px 9px;
+  font-size: 12px;
+  color: var(--warn);
+  margin-bottom: 8px;
+}
+
+.sheet-hp {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.sheet-hp-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-hp-current {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.sheet-hp .hp-bar-html {
+  margin: 5px 0 8px;
+}
+
+.sync-hint {
+  margin: -4px 0 10px;
+  width: 100%;
+}
+
+.sheet-abilities {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.sheet-ability {
+  flex-direction: column;
+  gap: 0;
+  padding: 5px 0;
+  border-color: rgba(115, 152, 255, 0.35);
+  background: var(--panel-2);
+}
+
+.sheet-ability:hover {
+  border-color: var(--accent);
+}
+
+.sheet-ability.damaged {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.sheet-ability-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.sheet-ability-mod {
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-ability-score {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.sheet-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 5px 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: help;
+}
+
+.sheet-stat.rollable {
+  cursor: pointer;
+}
+
+.sheet-stat-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.sheet-stat-value {
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-classes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sheet-classes li {
+  padding: 2px 0;
+}
+
+.sheet-adjust {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.sheet-adjust th {
+  font-weight: 500;
+  color: var(--muted);
+  text-align: left;
+}
+
+.sheet-adjust input {
+  width: 100%;
+  padding: 2px 4px;
+}
+
+.sheet-settings section {
+  margin: 12px 0;
+}
+
+.class-chassis {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px 0;
+  margin-bottom: 6px;
+}
+
+.class-chassis.missing {
+  border-color: var(--warn);
+}
+
+.misc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 8px;
+}
+
+.sheet-attacks h3 {
+  margin: 10px 0 4px;
+}
+
+.sheet-attacks ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sheet-attacks li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sheet-attacks li > .muted {
+  white-space: nowrap;
+}
+
+.sheet-attack-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- summary & import diff */
+
+.char-summary {
+  margin-top: 8px;
+}
+
+.char-identity {
+  margin-bottom: 8px;
+}
+
+.char-stats {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.char-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 0;
+}
+
+.char-stat-name {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.char-stat-score {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.char-stat-mod {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.char-chips {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.char-chips li {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+
+.warning-list {
+  color: var(--warn);
+  margin: 0;
+  padding-left: 18px;
+}
+
+.import-modal {
+  width: min(640px, 92vw);
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.reimport-diff {
+  margin-bottom: 8px;
+}
+
+.diff-section ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.diff-added {
+  color: var(--ok);
+}
+
+.diff-removed {
+  color: var(--danger);
+}
+
+.diff-changed {
+  color: var(--warn);
+}
+
+/* ---------------------------------------------------------- inventory */
+
+.inventory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inv-loadouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.inv-loadouts select {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.inv-load .hp-bar-html {
+  margin: 4px 0;
+}
+
+.inv-coins {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.inv-list,
+.inv-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.inv-list > li,
+.inv-children > li {
+  border-bottom: 1px solid var(--border);
+}
+
+.inv-list li.open {
+  background: var(--panel-2);
+}
+
+.inv-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 4px 0;
+  min-height: 30px;
+}
+
+.inv-row.not-carried .inv-name {
+  opacity: 0.55;
+}
+
+.inv-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 130px;
+  min-width: 0;
+  text-align: left;
+  justify-content: flex-start;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inv-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.inv-stepper button {
+  padding: 0 6px;
+  min-width: 22px;
+}
+
+.inv-slot {
+  width: 104px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+.inv-where {
+  width: 96px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inv-weight {
+  margin-left: auto;
+  flex: 0 0 auto;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-row button {
+  white-space: nowrap;
+}
+
+.inv-give-qty {
+  width: 64px;
+}
+
+.inv-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ---------------------------------------------------------- skills */
+
+.skills {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skills .loot-toolbar input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.skill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.skill-list > li {
+  border-bottom: 1px solid var(--border);
+}
+
+.skill-list > li.open {
+  background: var(--panel-2);
+}
+
+.skill-list > li.unusable .skill-name {
+  opacity: 0.5;
+}
+
+.skill-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+}
+
+.skill-row button {
+  white-space: nowrap;
+}
+
+.skill-fav {
+  background: none;
+  border: none;
+  padding: 0 3px;
+  color: var(--muted);
+}
+
+.skill-fav.on {
+  color: var(--gold);
+}
+
+.skill-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-name .badge {
+  margin-left: 4px;
+}
+
+.skill-ability {
+  width: 28px;
+  text-align: center;
+}
+
+.skill-ranks {
+  width: 18px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-total {
+  min-width: 42px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 6px 10px 24px;
+}
+
+.skill-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.skill-add select {
+  flex: 0 0 110px;
+  min-width: 0;
+}
+
+.skill-add input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.skill-add button {
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- abilities & toggles */
+
+.abilities {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.combat-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.toggle-chip.active {
+  background: var(--gold-soft);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.pool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pool-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pool-head button {
+  min-width: 24px;
+  padding: 0 6px;
+}
+
+.pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.pip-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.pip-dot.spent {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+
+.pool-add {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.pool-add input:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pool-add input[type='number'] {
+  flex: 0 0 56px;
+  width: 56px;
+  min-width: 56px;
+}
+
+.pool-add select {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.pool-add button {
+  white-space: nowrap;
+}
+
+.ability-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.ability-group {
+  margin-bottom: 8px;
+}
+
+.ability-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ability-list > li {
+  border-bottom: 1px solid var(--border);
+}
+
+.ability-list > li.open {
+  background: var(--panel-2);
+}
+
+.ability-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 5px 2px;
+}
+
+.ability-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ability-group-name {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ability-detail {
+  padding: 4px 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+/* ---------------------------------------------------------- spells */
+
+.caster {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.caster h3 .badge {
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.caster-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  margin: 4px 0 8px;
+}
+
+.spell-levels,
+.spell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.spell-levels > li {
+  margin-bottom: 8px;
+}
+
+.spell-level-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 3px 0;
+}
+
+.spell-level-head select {
+  width: auto;
+  margin-left: auto;
+}
+
+.spell-level-head .push-right {
+  margin-left: auto;
+}
+
+.spell-level-name {
+  font-weight: 700;
+  min-width: 56px;
+  color: var(--gold);
+}
+
+.pips.inline {
+  display: inline-flex;
+  margin-top: 0;
+}
+
+.spell-list > li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0 3px 8px;
+}
+
+.spell-list > li.spent .spell-name {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+.spell-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.known-spells {
+  margin-top: 6px;
+}
+
+.known-spells > div {
+  padding: 2px 0 2px 8px;
+}
+
+.prepare-panel,
+.casting-settings {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 8px;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prepare-metamagic {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.prepare-metamagic input,
+.prepare-metamagic select {
+  width: auto;
+  flex: 1 1 100px;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------- effects */
+
+.effects {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.condition-chip.cosmetic {
+  opacity: 0.72;
+}
+
+.condition-timers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.condition-timers > span {
+  flex-basis: 100%;
+}
+
+.condition-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+input.timer-input {
+  width: 56px;
+  min-width: 56px;
+  flex: 0 0 56px;
+}
+
+.condition-rounds {
+  font-size: 0.85em;
+}
+
+.buff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.buff-list > li {
+  border-bottom: 1px solid var(--border);
+  padding: 3px 0 5px;
+}
+
+.buff-list > li:not(.on) .buff-name {
+  opacity: 0.55;
+}
+
+.buff-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.buff-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.buff-add,
+.buff-effect-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.buff-add select,
+.buff-effect-row select {
+  width: auto;
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.buff-effect-row input[type='number'] {
+  width: 56px;
+  flex: 0 0 56px;
+}
+
+.buff-editor {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 8px;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.effect-notes {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.active-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
