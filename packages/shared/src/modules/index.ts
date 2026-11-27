@@ -18,6 +18,7 @@ import { notesActions, redactNotes } from './notes';
 import { characterActions, characterSheetActions, redactCharacters } from './pf1e/characters';
 import { inventoryActions } from './pf1e/inventory';
 import { buffActions } from './pf1e/buffs';
+import { companionActions } from './pf1e/companions';
 import { spellActions } from './pf1e/spells';
 import { pf1eTurnActions, redactPf1eTurns } from './pf1e/turns';
 import { sceneActions } from './scenes';
@@ -52,6 +53,7 @@ export const gameModules = {
   inventory: { actions: inventoryActions },
   spells: { actions: spellActions },
   buffs: { actions: buffActions },
+  companions: { actions: companionActions },
 } satisfies Record<string, GameModule>;
 
 type Modules = typeof gameModules;
@@ -59,12 +61,13 @@ type Modules = typeof gameModules;
 /** Union of every action the game understands. */
 export type GameAction = { [K in keyof Modules]: ModuleActions<Modules[K]['actions']> }[keyof Modules];
 
-export { audioActions, buffActions, spellActions, characterActions, characterSheetActions, pf1eTurnActions, inventoryActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
+export { audioActions, buffActions, companionActions, spellActions, characterActions, characterSheetActions, pf1eTurnActions, inventoryActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
 export { canDeleteDrawing } from './drawings';
 export { canSeeMessage, chatAudience, pushMessage, validateWhisper } from './chat';
 export { canControlCombatant, combatantName, compareCombatants, isCombatantHidden, onTurnStart, type TurnStart, type TurnStartHook } from './combat';
 export { canDeleteTemplate, templateCells, templateContains } from './templates';
 export { canSeeHandout } from './handouts';
 export { canManageCharacter, canSeeCharacter } from './pf1e/characters';
+export { manifestPlacement } from './pf1e/companions';
 export { characterPools, characterResources, type ResourcePool } from './pf1e/turns';
 export { formatGpValue, isUnidentifiedLoot, parseGpValue } from './pf1e/inventory';

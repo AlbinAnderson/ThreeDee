@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ArrowLeft, Link2, Maximize2, Minimize2, MoreVertical, Upload, X } from 'lucide-react';
+import { ArrowLeft, Link2, Maximize2, Minimize2, MoreVertical, PawPrint, Upload, X } from 'lucide-react';
 import {
   canControlToken,
   canManageCharacter,
   characterActions,
   classSummary,
+  COMPANION_TYPE_LABEL,
+  HARBOR_LABEL,
   isGm,
   tokenActions,
   type Character,
@@ -13,6 +15,7 @@ import { CheckboxField, TextField } from '../components/fields';
 import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
+import { useGameStore } from '../state/gameStore';
 import { useUi } from '../state/uiStore';
 import { syncLinkedToken } from './characterActions';
 import { CharacterSettings } from './CharacterSettings';
@@ -23,8 +26,33 @@ import { InventoryTab } from './InventoryTab';
 import { SkillsTab } from './SkillsTab';
 import { SpellsTab } from './SpellsTab';
 import { EffectsTab } from './EffectsTab';
+import { CompanionStrip, CompanionsTab } from './CompanionsTab';
 import { openImport } from './ImportDialog';
 import { useCharactersUi, type CharacterTab } from './store';
+
+/**
+ * Characters grouped under their masters (companions right after their master,
+ * indented by depth). A companion whose master you can't see is listed at the top level.
+ */
+export function groupByMaster(list: Character[]): { character: Character; depth: number }[] {
+  const ids = new Set(list.map((c) => c.id));
+  const children = new Map<string, Character[]>();
+  for (const c of list) {
+    const m = c.companion?.masterId;
+    if (m && ids.has(m)) children.set(m, [...(children.get(m) ?? []), c]);
+  }
+  const out: { character: Character; depth: number }[] = [];
+  const seen = new Set<string>();
+  const walk = (c: Character, depth: number) => {
+    if (seen.has(c.id)) return;
+    seen.add(c.id);
+    out.push({ character: c, depth });
+    for (const k of children.get(c.id) ?? []) walk(k, depth + 1);
+  };
+  for (const c of list) if (!c.companion || !ids.has(c.companion.masterId)) walk(c, 0);
+  for (const c of list) walk(c, 0); // anything left over (shouldn't happen: cycles are refused)
+  return out;
+}
 
 /** Characters you can see, yours first. */
 export function useVisibleCharacters(): Character[] {
@@ -103,10 +131,15 @@ export function CharactersPanel() {
             <div className="drop-hint">Drop a PCGen .pcg file here, or click Import.</div>
             {list.length === 0 && <p className="muted">No characters yet.</p>}
             <ul className="character-list">
-              {list.map((c) => (
-                <li key={c.id}>
+              {groupByMaster(list).map(({ character: c, depth }) => (
+                <li key={c.id} className={depth > 0 ? 'companion-item' : undefined} style={depth > 0 ? { paddingLeft: Math.min(depth, 3) * 14 } : undefined}>
                   <button type="button" onClick={() => useCharactersUi.setState({ selectedId: c.id })}>
-                    <span className="character-name">{c.name}</span>
+                    <span className="character-name">
+                      {c.companion && <PawPrint size={12} style={{ marginRight: 4, verticalAlign: -1 }} />}
+                      {c.name}
+                      {c.companion && <span className="badge subtle" style={{ marginLeft: 6 }}>{COMPANION_TYPE_LABEL[c.companion.type]}</span>}
+                      {c.companion?.harbored && <span className="badge warn" style={{ marginLeft: 4 }}>{HARBOR_LABEL[c.companion.type]}</span>}
+                    </span>
                     <span className="muted small-text">{classSummary(c.build)}</span>
                     <span className="character-meta small-text" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                       <span>{c.ownerId ? (users[c.ownerId]?.name ?? 'Unknown player') : 'GM (NPC)'}</span>
@@ -140,7 +173,11 @@ const PLAY_TABS: [CharacterTab, string][] = [
   ['spells', 'Spells'],
   ['effects', 'Effects'],
   ['inventory', 'Inventory'],
+  ['companions', 'Companions'],
 ];
+
+/** Tabs shown as an icon only (the sidebar is narrow). */
+const ICON_TABS: Partial<Record<CharacterTab, typeof PawPrint>> = { companions: PawPrint };
 
 const POPOUT_RIGHT_TABS: [CharacterTab, string][] = [
   ['skills', 'Skills'],
@@ -148,7 +185,29 @@ const POPOUT_RIGHT_TABS: [CharacterTab, string][] = [
   ['spells', 'Spells'],
   ['effects', 'Effects'],
   ['inventory', 'Inventory'],
+  ['companions', 'Companions'],
 ];
+
+/** Quick switch between the characters you can see (companions under their masters). */
+function CharacterSwitcher({ current }: { current: Character }) {
+  const list = useVisibleCharacters();
+  if (list.length < 2) return null;
+  return (
+    <select
+      className="character-switcher"
+      value={current.id}
+      aria-label="Switch character"
+      title="Switch character"
+      onChange={(e) => useCharactersUi.setState({ selectedId: e.target.value })}
+    >
+      {groupByMaster(list).map(({ character: c, depth }) => (
+        <option key={c.id} value={c.id}>
+          {`${'\u00a0\u00a0'.repeat(Math.min(depth, 3))}${depth > 0 ? '↳ ' : ''}${c.name}`}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function AdminMenu({
   activeTab,
@@ -231,6 +290,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
           </h2>
         </div>
         <div className="character-header-actions">
+          <CharacterSwitcher current={c} />
           <button
             type="button"
             className="icon-button"
@@ -244,12 +304,17 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
         </div>
       </div>
 
+      <CompanionStrip character={c} />
+
       <div className="segmented sheet-tabs" role="tablist">
-        {PLAY_TABS.map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'active' : ''} onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
+        {PLAY_TABS.map(([id, label]) => {
+          const Icon = ICON_TABS[id];
+          return (
+            <button key={id} type="button" role="tab" aria-selected={activeTab === id} aria-label={label} title={Icon ? label : undefined} className={activeTab === id ? 'active' : ''} onClick={() => setTab(id)}>
+              {Icon ? <Icon size={13} /> : label}
+            </button>
+          );
+        })}
       </div>
 
       {activeTab === 'sheet' && (
@@ -260,6 +325,7 @@ function CharacterView({ character: c, onBack }: { character: Character; onBack:
       {activeTab === 'spells' && <SpellsTab character={c} />}
       {activeTab === 'effects' && <EffectsTab character={c} />}
       {activeTab === 'inventory' && <InventoryTab character={c} />}
+      {activeTab === 'companions' && <CompanionsTab character={c} />}
       {activeTab === 'imported' && <CharacterSummary build={c.build} />}
       {activeTab === 'settings' && manage && <CharacterSettings character={c} />}
       {activeTab === 'manage' && manage && <ManageCharacter character={c} onBack={onBack} />}
@@ -300,6 +366,7 @@ export function CharacterPopout() {
         </div>
         <div className="sheet-popout-body">
           <div className="sheet-popout-left">
+            <CompanionStrip character={c} />
             <CharacterSheet character={c} onOpenSettings={() => setTab('settings')} onOpenEffects={() => setTab('effects')} />
           </div>
           <div className="sheet-popout-right">
@@ -318,6 +385,7 @@ export function CharacterPopout() {
               {rightTab === 'spells' && <SpellsTab character={c} />}
               {rightTab === 'effects' && <EffectsTab character={c} />}
               {rightTab === 'inventory' && <InventoryTab character={c} />}
+              {rightTab === 'companions' && <CompanionsTab character={c} />}
               {rightTab === 'imported' && <CharacterSummary build={c.build} />}
               {rightTab === 'settings' && manage && <CharacterSettings character={c} />}
               {rightTab === 'manage' && manage && <ManageCharacter character={c} onBack={() => useCharactersUi.setState({ selectedId: null, poppedOut: false })} />}
@@ -375,8 +443,20 @@ function ManageCharacter({ character: c, onBack }: { character: Character; onBac
         {gm ? (
           <select
             value={c.ownerId ?? ''}
-            onChange={(e) => {
+            onChange={async (e) => {
               const ownerId = e.target.value || null;
+              const characters = Object.values(useGameStore.getState().view?.characters ?? {});
+              const master = c.companion ? characters.find((m) => m.id === c.companion!.masterId) : undefined;
+              const broken = [...(master && master.ownerId !== ownerId ? [master] : []), ...characters.filter((x) => x.companion?.masterId === c.id && x.ownerId !== ownerId)];
+              if (
+                broken.length > 0 &&
+                !(await confirmDialog({
+                  title: 'Unlink companions?',
+                  message: `A companion is played by its master's player, so this unlinks ${c.name} from ${broken.map((x) => x.name).join(', ')}. Hand those over too to keep them together.`,
+                  confirmLabel: 'Change player',
+                }))
+              )
+                return;
               if (dispatch(characterActions.setOwner.create({ id: c.id, ownerId })) && ownerId && linked && !linked.ownerIds.includes(ownerId) && linked.ownerIds.length < 50) {
                 dispatch(tokenActions.update.create({ id: linked.id, changes: { ownerIds: [...linked.ownerIds, ownerId] } }));
               }

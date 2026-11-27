@@ -53,6 +53,42 @@ function putFull(draft: Draft<GameState>, id: string, full: Character | undefine
   if (full) draft.characters[id] = full;
 }
 
+/** Characters linked to `id` as its master or companions (Epic 9). */
+function linkedTo(state: GameState, id: string): Character[] {
+  const c = state.characters[id];
+  const master = c?.companion ? state.characters[c.companion.masterId] : undefined;
+  return [...(master ? [master] : []), ...Object.values(state.characters).filter((o) => o.companion?.masterId === id)];
+}
+
+/** Also deliver to anyone who sees a character whose companion link the change may drop. */
+function beforeOrAfterOrLinked(viewer: User, id: string, full: Character | undefined, state: GameState) {
+  return beforeOrAfter(viewer, id, full, state) || linkedTo(state, id).some((o) => canSeeCharacter(viewer, o));
+}
+
+/**
+ * A companion belongs to its master's player: drop links between `id` and
+ * characters with a different owner (after setOwner), or all its companions'
+ * links (when it is deleted).
+ */
+function dropBrokenLinks(draft: Draft<GameState>, id: string, ts: number, deleted = false, newOwnerId?: string | null) {
+  const c = draft.characters[id];
+  if (c?.companion) {
+    const master = draft.characters[c.companion.masterId];
+    if (!master || master.ownerId !== c.ownerId) {
+      c.companion = null;
+      c.updatedAt = ts;
+    }
+  }
+  const targetOwner = newOwnerId !== undefined ? newOwnerId : c?.ownerId;
+  for (const o of Object.values(draft.characters)) {
+    if (o.companion?.masterId !== id) continue;
+    if (deleted || targetOwner === undefined || o.ownerId !== targetOwner) {
+      o.companion = null;
+      o.updatedAt = ts;
+    }
+  }
+}
+
 const CharacterChangesSchema = CharacterSchema.pick({ name: true, shared: true }).partial();
 
 /** Token fields a character sync may set. */
@@ -91,6 +127,7 @@ export const characterActions = {
       if (c.inventory.items.some((i) => i.lootId !== null)) return 'Imported items cannot reference party loot';
       if (!c.inventory.loadouts.some((l) => l.id === c.inventory.activeLoadoutId)) return 'Invalid active loadout';
       if (Object.keys(c.runtime.prepared).length > 0) return 'Prepare spells after importing';
+      if (c.companion !== null) return 'Link companions after importing';
       return true;
     },
     prepare(ctx, { character }) {
@@ -133,8 +170,10 @@ export const characterActions = {
 
   remove: defineAction('character/delete', z.object({ id: IdSchema }), {
     authorize: (ctx, { id }) => requireManage(ctx, id),
-    audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
-    apply(draft, { id }) {
+    // Viewers of its companions also need to drop their links.
+    audience: (viewer, { id }, { state }) => beforeOrAfterOrLinked(viewer, id, undefined, state),
+    apply(draft, { id }, meta) {
+      dropBrokenLinks(draft, id, meta.ts, true);
       delete draft.characters[id];
     },
   }),
@@ -156,14 +195,17 @@ export const characterActions = {
         const full = ownerId !== null && !before.shared && before.ownerId !== ownerId ? { ...before, ownerId, updatedAt: Date.now() } : undefined;
         return { id, ownerId, full };
       },
-      audience: (viewer, { id, full }, { state }) => beforeOrAfter(viewer, id, full, state),
+      // Viewers of linked characters get it too (links to a different owner are dropped), but only allowed viewers get the full character.
+      audience: (viewer, { id, full }, { state }) => beforeOrAfterOrLinked(viewer, id, full, state),
+      redactPayload: (viewer, p) => (p.full && !canSeeCharacter(viewer, p.full) ? { id: p.id, ownerId: p.ownerId } : p),
       apply(draft, { id, ownerId, full }, meta) {
-        if (full) return putFull(draft, id, full);
+        if (full) putFull(draft, id, full);
         const c = draft.characters[id];
         if (c) {
           c.ownerId = ownerId;
           c.updatedAt = meta.ts;
         }
+        dropBrokenLinks(draft, id, meta.ts, false, ownerId);
       },
     },
   ),
@@ -188,6 +230,7 @@ export const characterActions = {
       authorize(ctx, { id, tokenId }) {
         const ok = requireManage(ctx, id);
         if (ok !== true || tokenId === null) return ok;
+        if (ctx.state.characters[id]!.companion?.harbored) return 'Manifest the companion before linking a token';
         const token = ctx.state.tokens[tokenId];
         if (!token) return 'Token not found';
         if (!canControlToken(ctx.user, token)) return "You don't control that token";
