@@ -1,6 +1,8 @@
 import { randomInt } from 'node:crypto';
 import {
+  ActionRejection,
   applyAction,
+  NO_RULES,
   getActionDef,
   parseAction,
   redactState,
@@ -10,6 +12,7 @@ import {
   type EphemeralEvent,
   type GameAction,
   type GameState,
+  type RulesProvider,
   type ServerMessage,
   type SnapshotInfo,
   type SnapshotReason,
@@ -45,6 +48,8 @@ export class Room {
     private state: GameState,
     private readonly store: RoomStore,
     private readonly snapshotPolicy: SnapshotPolicy = config.snapshotPolicy,
+    /** The server's rules pack (Epic 11), handed to action prepare() for prices and spell cards. */
+    private readonly rules: () => RulesProvider = () => NO_RULES,
   ) {}
 
   get currentState(): GameState {
@@ -91,8 +96,9 @@ export class Room {
     try {
       const auth = def.authorize({ state: this.state, user }, payload);
       if (auth !== true) return reject(auth);
-      if (def.prepare) payload = def.prepare({ state: this.state, user, random: randomInt }, payload);
+      if (def.prepare) payload = def.prepare({ state: this.state, user, random: randomInt, rules: this.rules() }, payload);
     } catch (e) {
+      if (e instanceof ActionRejection) return reject(e.message);
       console.error(`[room ${this.id}] error preparing ${def.type}`, e);
       return reject('Server error');
     }

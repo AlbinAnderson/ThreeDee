@@ -163,3 +163,30 @@ kbd {
     opacity: 1;
   }
 }
+
+
+/* ---- Epic 11: Rules Compendium, Rules Cards, Catalog & Treasure ---- */
+.rules-modal { width: min(760px, 94vw); max-height: 84vh; display: flex; flex-direction: column; gap: 10px; }
+.rules-card-modal { width: min(520px, 92vw); max-height: 82vh; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.rules-modal-body { overflow-y: auto; flex: 1; min-height: 220px; }
+.rules-pane { display: flex; flex-direction: column; gap: 8px; }
+.rules-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); padding-bottom: 6px; flex-wrap: wrap; }
+.rules-tabs button { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 10px; }
+.rules-tabs button.active { background: var(--accent-soft); border-color: var(--gold); color: var(--gold); }
+.rules-hit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; }
+.rules-hit-btn { width: 100%; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.rules-hit-btn:hover, .rules-hit-btn.active { border-color: var(--gold); background: var(--surface-3); }
+.rules-hit-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rules-books-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; }
+.rules-catalog-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+@media (max-width: 680px) { .rules-catalog-split { grid-template-columns: 1fr; } }
+.rules-draft-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.rules-mods { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.rules-saved-row { display: flex; align-items: center; gap: 6px; }
+.rules-body { display: flex; flex-direction: column; gap: 5px; line-height: 1.45; }
+.rules-kv { display: flex; flex-wrap: wrap; gap: 10px; }
+.rules-desc { white-space: pre-wrap; margin: 6px 0 0; color: var(--text); }
+.rules-citation { font-style: italic; }
+.button-link { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; padding: 5px 10px; border-radius: var(--radius-sm); border: 1px solid var(--gold); color: var(--gold); background: var(--accent-soft); }
+.button-link:hover { filter: brightness(1.1); }
+.treasure-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; margin-bottom: 8px; }

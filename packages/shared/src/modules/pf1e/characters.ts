@@ -14,20 +14,44 @@ import { PcgenCharacterSchema } from '../../pcgen/schema';
 import { buildHasDmNotes } from '../../pf1e/bio';
 import { mergeReimport } from '../../pf1e/characters';
 import { computeCharacterStats } from '../../pf1e/engine';
+import { seedInventory } from '../../pf1e/inventory';
 import { tokenSyncFor } from '../../pf1e/tokenSync';
+import { applyRecordToItem } from '../../rules/pricing';
+import type { RulesProvider } from '../../rules/types';
 import {
   CharacterRuntimeSchema,
   CharacterSchema,
   CharacterSheetSchema,
   IdSchema,
+  InventorySchema,
   MAX_CHARACTERS_PER_ROOM,
   TokenSchema,
   type Character,
   type GameState,
+  type Inventory,
   type User,
 } from '../../state';
 
 const MAX_TOKEN_OWNERS = 50;
+
+/** Enrich PCGen-imported items with exact rules-pack equipment records (matched by BASEITEM/KEY/name). */
+function enrichInventoryFromRules(inv: Inventory, build: Character['build'], rules?: RulesProvider): Inventory {
+  if (!rules) return inv;
+  let changed = false;
+  const items = inv.items.map((item, idx) => {
+    const eq = build.equipment[idx];
+    const keys = [eq?.customization?.baseItem, eq?.name, item.name].filter((k): k is string => !!k);
+    let rec = undefined;
+    for (const k of keys) {
+      rec = rules.get('equipment', k) ?? rules.byName('equipment', k);
+      if (rec) break;
+    }
+    if (!rec) return item;
+    changed = true;
+    return applyRecordToItem(item, rec);
+  });
+  return changed ? { ...inv, items } : inv;
+}
 
 export function canSeeCharacter(user: User, c: Character): boolean {
   return isGm(user) || c.ownerId === user.id || c.shared;
@@ -150,6 +174,7 @@ export const characterActions = {
       return {
         character: {
           ...character,
+          inventory: enrichInventoryFromRules(character.inventory, character.build, ctx.rules),
           source: { ...character.source, importedBy: ctx.user.id, importedAt: now },
           createdAt: now,
           updatedAt: now,
@@ -308,6 +333,8 @@ export const characterActions = {
       replaceInventory: z.boolean().optional(),
       /** Reseed the bio text, notes and chronicle from the file (portrait and GM notes are kept). */
       replaceBio: z.boolean().optional(),
+      /** Filled in by the server when replaceInventory uses the rules pack. */
+      enrichedInventory: InventorySchema.optional(),
     }),
     {
       authorize(ctx, { id, build }) {
@@ -315,10 +342,26 @@ export const characterActions = {
         if (ok !== true) return ok;
         return !buildHasDmNotes(build) || 'GM notes must be moved out of the imported build';
       },
+      prepare(ctx, p) {
+        if (!p.replaceInventory || !ctx.rules) return { id: p.id, build: p.build, fileName: p.fileName, replaceInventory: p.replaceInventory, replaceBio: p.replaceBio };
+        const seeded = seedInventory(p.build);
+        const enriched = enrichInventoryFromRules(seeded, p.build, ctx.rules);
+        return {
+          id: p.id,
+          build: p.build,
+          fileName: p.fileName,
+          replaceInventory: p.replaceInventory,
+          replaceBio: p.replaceBio,
+          ...(enriched !== seeded ? { enrichedInventory: enriched } : {}),
+        };
+      },
       audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
-      apply(draft, { id, build, fileName, replaceInventory, replaceBio }, meta) {
+      apply(draft, { id, build, fileName, replaceInventory, replaceBio, enrichedInventory }, meta) {
         const c = draft.characters[id];
-        if (c) Object.assign(c, mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts, replaceInventory, replaceBio }));
+        if (!c) return;
+        const merged = mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts, replaceInventory, replaceBio });
+        if (replaceInventory && enrichedInventory) merged.inventory = enrichedInventory;
+        Object.assign(c, merged);
       },
     },
   ),

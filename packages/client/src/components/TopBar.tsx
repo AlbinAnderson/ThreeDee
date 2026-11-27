@@ -1,5 +1,6 @@
-import { Dices, EyeOff, Globe, Keyboard, Lock, LogOut, PanelRightClose, PanelRightOpen, Swords } from 'lucide-react';
+import { BookOpen, Dices, EyeOff, Globe, Keyboard, Lock, LogOut, PanelRightClose, PanelRightOpen, Swords } from 'lucide-react';
 import { canControlCombatant, combatantName } from '@vtt/shared';
+import { useRulesUi } from '../rules/store';
 import { useCurrentScene, useGame, useIsGm, useSelf } from '../state/hooks';
 import { leaveRoom, useSession } from '../state/session';
 import { useUi } from '../state/uiStore';
@@ -76,6 +77,16 @@ export function TopBar() {
         >
           {chatMode.mode === 'public' ? <Globe size={12} /> : chatMode.mode === 'gm' ? <Lock size={12} /> : <EyeOff size={12} />}
           <span>{chatLabel}</span>
+        </button>
+
+        <button
+          type="button"
+          className="icon-button"
+          title="PF1e Rules & Compendium"
+          aria-label="PF1e Rules & Compendium"
+          onClick={() => useRulesUi.getState().openCompendium()}
+        >
+          <BookOpen size={15} />
         </button>
 
         <button

@@ -27,6 +27,10 @@ export const paths = {
   db: path.join(config.dataDir, 'vtt.db'),
   assets: path.join(config.dataDir, 'assets'),
   backups: path.join(config.dataDir, 'backups'),
+  /** Built PF1e rules pack JSON (Epic 11, never committed to git). */
+  rules: path.join(config.dataDir, 'rules'),
+  /** Disk cache of single-page Archives of Nethys fetches (Epic 11). */
+  aonCache: path.join(config.dataDir, 'aon-cache'),
   /** Where the pre-SQLite JSON store kept rooms (imported on startup). */
   legacyRooms: path.join(config.dataDir, 'rooms'),
 };

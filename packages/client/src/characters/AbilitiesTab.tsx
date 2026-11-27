@@ -3,7 +3,7 @@
  * browser of feats, traits, class features, racial traits and proficiencies.
  */
 import { useMemo, useState } from 'react';
-import { Moon, X } from 'lucide-react';
+import { BookOpen, Moon, X } from 'lucide-react';
 import {
   ABILITY_CATEGORIES,
   canManageCharacter,
@@ -24,6 +24,7 @@ import { dispatch } from '../state/dispatch';
 import { useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { currentWhisper } from '../state/uiStore';
+import { openRulesCard } from '../rules/store';
 import { useCharactersUi } from './store';
 
 const NATURE_LABEL: Record<string, [string, string]> = {
@@ -249,9 +250,25 @@ function AbilityRow({ character: c, entry: a, open, onToggle }: { character: Cha
       {open && (
         <div className="ability-detail">
           <div className="identified-text">{a.description || <span className="muted">No description in the file.</span>}</div>
-          <button type="button" className="small" onClick={post} title="Post this to chat (uses your chat mode)">
-            Post to chat
-          </button>
+          <div className="button-row">
+            <button type="button" className="small" onClick={post} title="Post this to chat (uses your chat mode)">
+              Post to chat
+            </button>
+            <button
+              type="button"
+              className="small"
+              onClick={() =>
+                openRulesCard({
+                  kind: a.category === 'feat' ? 'feat' : 'ability',
+                  name: a.name,
+                  aonKind: a.category === 'feat' ? 'feat' : a.category === 'trait' ? 'trait' : 'search',
+                })
+              }
+              title="View full rules card & Archives of Nethys link"
+            >
+              <BookOpen size={12} /> Rules / AoN
+            </button>
+          </div>
         </div>
       )}
     </li>

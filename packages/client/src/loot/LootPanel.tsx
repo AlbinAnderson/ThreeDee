@@ -1,7 +1,23 @@
 import { useMemo, useState } from 'react';
-import { canManageCharacter, inventoryActions, isGm, lootActions, newId, type LootItem, type User } from '@vtt/shared';
-import { CheckboxField, ImageUploadButton, NumberField, SelectField, TextAreaField, TextField } from '../components/fields';
+import { Dices, Sparkles } from 'lucide-react';
+import {
+  canManageCharacter,
+  canSeeCl,
+  identifyDc,
+  inventoryActions,
+  isGm,
+  lootActions,
+  newId,
+  TREASURE_BANDS,
+  TREASURE_TYPES,
+  type LootItem,
+  type TreasureBand,
+  type TreasureType,
+  type User,
+} from '@vtt/shared';
+import { CheckboxField, ImageUploadButton, NumberField, OptionalNumberField, SelectField, TextAreaField, TextField } from '../components/fields';
 import { uploadAsset } from '../lib/assets';
+import { request } from '../net/rpc';
 import { confirmDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
@@ -20,6 +36,8 @@ export function LootPanel() {
   const [query, setQuery] = useState('');
   const [holderFilter, setHolderFilter] = useState(ALL);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [showTreasure, setShowTreasure] = useState(false);
+  const gm = isGm(self);
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -64,10 +82,16 @@ export function LootPanel() {
     <div className="panel-scroll loot-panel">
       <div className="loot-toolbar">
         <input placeholder="Search loot…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {gm && (
+          <button type="button" className={`small${showTreasure ? ' active' : ' gold'}`} title="GM Treasure Generator" onClick={() => setShowTreasure((v) => !v)}>
+            <Sparkles size={12} /> Treasure
+          </button>
+        )}
         <button type="button" className="primary" onClick={addItem}>
           + Add
         </button>
       </div>
+      {gm && showTreasure && <TreasureGenerator onDropped={(id) => { setOpenId(id); setShowTreasure(false); }} />}
       <div className="loot-toolbar">
         <select value={holderFilter} onChange={(e) => setHolderFilter(e.target.value)}>
           <option value={ALL}>Everyone</option>
@@ -180,6 +204,33 @@ function LootEditor({ item, users, self }: { item: LootItem; users: User[]; self
 
       {gm ? (
         <div className="gm-box">
+          <div className="field-row">
+            <TextField
+              label="True name (GM)"
+              value={item.trueName}
+              placeholder="Revealed on identify"
+              onCommit={(trueName) => dispatch(lootActions.setSecret.create({ id: item.id, trueName }))}
+            />
+            <TextField
+              label="True value (GM)"
+              value={item.secretValue}
+              placeholder="e.g. 2,000 gp"
+              onCommit={(secretValue) => dispatch(lootActions.setSecret.create({ id: item.id, secretValue }))}
+            />
+          </div>
+          <OptionalNumberField
+            label="Caster Level (Identify DC = 15 + CL)"
+            value={item.cl}
+            min={0}
+            max={30}
+            placeholder="None"
+            onCommit={(cl) => dispatch(lootActions.setSecret.create({ id: item.id, cl: cl === null ? null : Math.round(cl) }))}
+          />
+          {item.cl !== null && (
+            <div className="muted small-text tnum">
+              CL {item.cl} · Spellcraft Identify DC <strong>{identifyDc(item.cl)}</strong>
+            </div>
+          )}
           <TextAreaField
             label={item.identified ? 'True properties (revealed to players)' : 'True properties (GM only until identified)'}
             value={item.secretNotes}
@@ -187,20 +238,33 @@ function LootEditor({ item, users, self }: { item: LootItem; users: User[]; self
             placeholder="Actual stats, caster level, curses…"
             onCommit={(secretNotes) => dispatch(lootActions.setSecret.create({ id: item.id, secretNotes }))}
           />
+          {!item.identified && item.cl !== null && (
+            <CheckboxField
+              label="Detect Magic aura revealed (show CL & DC to players)"
+              value={item.magicDetected}
+              onCommit={(detected) => dispatch(lootActions.setDetected.create({ id: item.id, detected }))}
+            />
+          )}
           <CheckboxField
-            label="Identified (reveal true properties)"
+            label={`Identified (reveal true properties${item.cl !== null ? ` · DC ${identifyDc(item.cl)}` : ''})`}
             value={item.identified}
             onCommit={(identified) => dispatch(lootActions.setIdentified.create({ id: item.id, identified }))}
           />
         </div>
       ) : (
-        item.identified &&
-        item.secretNotes && (
-          <div className="identified-box">
-            <div className="field-label">Identified properties</div>
-            <div className="identified-text">{item.secretNotes}</div>
-          </div>
-        )
+        <>
+          {canSeeCl(self, item) && item.cl !== null && (
+            <div className="muted small-text tnum">
+              Magic aura: CL {item.cl} · Spellcraft Identify DC <strong>{identifyDc(item.cl)}</strong>
+            </div>
+          )}
+          {item.identified && item.secretNotes && (
+            <div className="identified-box">
+              <div className="field-label">Identified properties</div>
+              <div className="identified-text">{item.secretNotes}</div>
+            </div>
+          )}
+        </>
       )}
 
       <TakeIntoInventory item={item} self={self} />
@@ -262,6 +326,78 @@ function TakeIntoInventory({ item, self }: { item: LootItem; self: User }) {
       >
         → Inventory
       </button>
+    </div>
+  );
+}
+
+function TreasureGenerator({ onDropped }: { onDropped: (id: string) => void }) {
+  const [band, setBand] = useState<TreasureBand>('minor');
+  const [type, setType] = useState<TreasureType>('any');
+  const [busy, setBusy] = useState(false);
+  const [rolled, setRolled] = useState<Awaited<ReturnType<typeof request<'rules.rollTreasure'>>>['items']>([]);
+
+  async function roll() {
+    setBusy(true);
+    try {
+      const res = await request('rules.rollTreasure', { band, type, count: 3 });
+      setRolled(res.items);
+      if (res.items.length === 0) notify('No items matched that price tier and type');
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="treasure-box">
+      <div className="field-row">
+        <select value={band} onChange={(e) => setBand(e.target.value as TreasureBand)} aria-label="Treasure price band">
+          {TREASURE_BANDS.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.label}
+            </option>
+          ))}
+        </select>
+        <select value={type} onChange={(e) => setType(e.target.value as TreasureType)} aria-label="Treasure type">
+          {TREASURE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t === 'any' ? 'Any type' : t}
+            </option>
+          ))}
+        </select>
+        <button type="button" className="small gold" disabled={busy} onClick={() => void roll()}>
+          <Dices size={12} /> Roll
+        </button>
+      </div>
+      {rolled.length > 0 && (
+        <ul className="rules-hit-list" style={{ marginTop: 6 }}>
+          {rolled.map((r, i) => (
+            <li key={`${r.key}-${i}`} className="rules-saved-row small-text">
+              <span className="flex1">
+                <strong>{r.name}</strong>{' '}
+                <span className="muted">
+                  {r.cost !== null ? `${r.cost.toLocaleString('en-US')} gp` : ''}
+                  {r.cl !== null ? ` · CL ${r.cl}` : ''}
+                </span>
+              </span>
+              <button
+                type="button"
+                className="small primary"
+                onClick={() => {
+                  const id = newId();
+                  if (dispatch(lootActions.createTreasure.create({ id, item: r.loot.item, secret: r.loot.secret }))) {
+                    notify(`Dropped ${r.name} into Party Loot (unidentified)`, 'info');
+                    onDropped(id);
+                  }
+                }}
+              >
+                + Drop
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

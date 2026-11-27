@@ -7,12 +7,14 @@
  *   npm run -s vtt -- export <room> [file]     room state as JSON
  *   npm run -s vtt -- import <file> <room>     load a JSON export into a room (stop the server first!)
  *   npm run -s vtt -- pcgen <file.pcg> [out]   convert a PCGen .pcg file to JSON (stdout if no out file)
+ *   npm run -s vtt -- rules build <dir> [out]  build the PF1e rules pack from a PCGen data folder
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { migrateState, parsePcgToJson, RoomIdSchema } from '@vtt/shared';
 import { paths } from './config';
 import { SqliteRoomStore } from './persistence/SqliteRoomStore';
+import { buildRulesPack } from './rules/buildPack';
 
 /** Paths are relative to where the user ran npm, not this package. */
 const resolveUserPath = (p: string) => path.resolve(process.env.INIT_CWD ?? process.cwd(), p);
@@ -49,6 +51,29 @@ if (command === 'pcgen') {
     } else {
       console.log(json);
     }
+  } catch (e) {
+    console.error((e as Error).message);
+    process.exitCode = 1;
+  }
+  process.exit(process.exitCode ?? 0);
+}
+
+if (command === 'rules') {
+  try {
+    if (args[0] !== 'build' || !args[1]) usage();
+    const pcgenDir = resolveUserPath(args[1]);
+    let outDir = paths.rules;
+    if (args[2] === '--out' && args[3]) outDir = resolveUserPath(args[3]);
+    else if (args[2] && !args[2].startsWith('-')) outDir = resolveUserPath(args[2]);
+    const { manifest } = buildRulesPack(pcgenDir, outDir);
+    const total = Object.values(manifest.counts).reduce((a, b) => a + b, 0);
+    console.log(`Built rules pack in ${outDir}: ${total} records across ${manifest.books.length} books`);
+    console.log(
+      Object.entries(manifest.counts)
+        .map(([k, v]) => `  ${k}: ${v}`)
+        .join('\n'),
+    );
+    if (manifest.warnings.length) console.warn(`Warnings (${manifest.warnings.length}):\n  ${manifest.warnings.slice(0, 10).join('\n  ')}`);
   } catch (e) {
     console.error((e as Error).message);
     process.exitCode = 1;
