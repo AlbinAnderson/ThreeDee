@@ -11,6 +11,14 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 /** Old-style PCGen campaign names prefix the publisher and game line. */
 const PREFIXES = ['paizopathfinderroleplayinggame', 'paizopathfinderrpg', 'paizopathfinder', 'paizo', 'pathfinderroleplayinggame', 'pathfinderrpg', 'pathfinder'];
 
+/** PCGen meta-bundles that include Core Rulebook + supplements as one campaign line. */
+const MULTISET_ALIASES = new Set([
+  'pathfinderrpgcoresupplements',
+  'pathfinderrpgforplayers',
+  'pathfinderrpgforgamemasters',
+  'pathfindercore',
+]);
+
 /**
  * The pack book a .pcg CAMPAIGN line refers to. PCGen 6 writes the .pcc KEY
  * ("Core Rulebook"); older files write "Paizo - Pathfinder Roleplaying Game
@@ -23,7 +31,12 @@ export function matchCampaign(campaign: string, books: readonly Pick<RulesBook, 
   const exact = books.find((b) => norm(b.key) === n || norm(b.name) === n);
   if (exact) return exact;
   const stripped = PREFIXES.reduce((acc, p) => (acc.startsWith(p) && acc.length > p.length ? acc.slice(p.length) : acc), n);
-  return books.find((b) => norm(b.key) === stripped || norm(b.name) === stripped);
+  const byStripped = books.find((b) => norm(b.key) === stripped || norm(b.name) === stripped);
+  if (byStripped) return byStripped;
+  if (MULTISET_ALIASES.has(n) || MULTISET_ALIASES.has(stripped)) {
+    return books.find((b) => norm(b.key) === 'corerulebook' || norm(b.name) === 'corerulebook');
+  }
+  return undefined;
 }
 
 export const isSourceAllowed = (allowed: readonly string[] | null, campaign: string) => allowed === null || allowed.includes(campaign);

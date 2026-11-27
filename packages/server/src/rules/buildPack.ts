@@ -89,7 +89,7 @@ function resolvePccRef(pccDir: string, dataRoot: string, rawVal: string): string
   const ref = rawVal.split('|')[0]!.trim();
   if (!ref) return null;
   if (ref.startsWith('@/') || ref.startsWith('@\\')) {
-    const rel = ref.slice(2);
+    const rel = ref.slice(2).replace(/\\/g, '/');
     const direct = path.resolve(dataRoot, rel);
     if (fs.existsSync(direct)) return direct;
     // If dataRoot is already `.../data/pathfinder`, try its parent `.../data`.
@@ -97,7 +97,7 @@ function resolvePccRef(pccDir: string, dataRoot: string, rawVal: string): string
     if (fs.existsSync(parent)) return parent;
     return direct;
   }
-  return path.resolve(pccDir, ref);
+  return path.resolve(pccDir, ref.replace(/\\/g, '/'));
 }
 
 /** Parse one `.pcc` manifest file. */
@@ -658,11 +658,22 @@ export function buildRulesPack(pcgenDir: string, outDir: string): BuildPackResul
   const publisherKey = (p: string) => (/^paizo\b/i.test(p.trim()) ? 'paizo' : p.trim().toLowerCase());
   const publisherOf = (campaign: string) => publisherKey(bookMeta.get(campaign)?.publisher ?? '');
 
-  // Sort Core Rulebook first so `.MOD` / `.COPY` / `.FORGET` from supplements apply on top of Core.
+  // Sort Core Rulebook first, then regular standalone books, then PFS / Player-Options variants,
+  // and MultiSet meta-bundles last so meta-bundles (e.g. "Pathfinder RPG Core Supplements")
+  // never steal .lst ownership from Ultimate Combat / Equipment / Campaign / Intrigue / Magic.
+  const tierOf = (p: ParsedPcc): number => {
+    const isMulti = /^multiset$/i.test(p.bookType);
+    const isVariant = /^pfs\s*~/i.test(p.key) || /~\s*player options only$/i.test(p.key);
+    const isCore = !isMulti && !isVariant && (/^core rulebook$/i.test(p.key) || /^core rulebook$/i.test(p.name));
+    if (isCore) return 0;
+    if (!isMulti && !isVariant) return 1;
+    if (!isMulti) return 2;
+    return 3;
+  };
   const ordered = [...parsedPccs.values()].sort((a, b) => {
-    const aCore = /core rulebook/i.test(a.key) || /core rulebook/i.test(a.name) ? 0 : 1;
-    const bCore = /core rulebook/i.test(b.key) || /core rulebook/i.test(b.name) ? 0 : 1;
-    if (aCore !== bCore) return aCore - bCore;
+    const ta = tierOf(a);
+    const tb = tierOf(b);
+    if (ta !== tb) return ta - tb;
     return a.key.localeCompare(b.key);
   });
 

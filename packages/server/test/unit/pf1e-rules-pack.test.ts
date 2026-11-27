@@ -268,4 +268,44 @@ describe('unit: [Epic 11] PCGen rules pack builder & helpers', () => {
     assert.equal(tok.hp?.max, 6);
     assert.equal(tok.darkvision, 12);
   });
+
+  test('MultiSet meta-bundles do not steal book ownership from standalone supplements', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vtt-multiset-'));
+    try {
+      const pf = path.join(tmp, 'pathfinder');
+      const ucDir = path.join(pf, 'paizo', 'ultimate_combat');
+      fs.mkdirSync(ucDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(pf, 'paizo', 'pathfinder_rpg_core.pcc'),
+        [
+          'CAMPAIGN:Pathfinder RPG Core Supplements',
+          'KEY:Pathfinder RPG Core Supplements',
+          'BOOKTYPE:MultiSet',
+          'PUBNAMELONG:Paizo Inc.',
+          'SOURCELONG:Pathfinder Core',
+          'SOURCESHORT:PC',
+          'PCC:@/paizo/ultimate_combat/ultimate_combat.pcc',
+        ].join('\n'),
+      );
+      fs.writeFileSync(
+        path.join(ucDir, 'ultimate_combat.pcc'),
+        [
+          'CAMPAIGN:Ultimate Combat',
+          'BOOKTYPE:Supplement',
+          'PUBNAMELONG:Paizo Inc.',
+          'SOURCELONG:Ultimate Combat',
+          'SOURCESHORT:UC',
+          'EQUIPMENT:uc_equip.lst',
+        ].join('\n'),
+      );
+      fs.writeFileSync(path.join(ucDir, 'uc_equip.lst'), 'Katana\tTYPE:Weapon.Melee.Exotic\tCOST:50\tWT:6\tDAMAGE:1d8\n');
+
+      const out = path.join(tmp, 'out');
+      const { manifest } = buildRulesPack(pf, out);
+      assert.ok(manifest.books.some((b) => b.key === 'Ultimate Combat' && b.records === 1));
+      assert.ok(!manifest.books.some((b) => b.key === 'Pathfinder RPG Core Supplements'));
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
