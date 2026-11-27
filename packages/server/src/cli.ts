@@ -8,6 +8,9 @@
  *   npm run -s vtt -- import <file> <room>     load a JSON export into a room (stop the server first!)
  *   npm run -s vtt -- pcgen <file.pcg> [out]   convert a PCGen .pcg file to JSON (stdout if no out file)
  *   npm run -s vtt -- rules build <dir> [out]  build the PF1e rules pack from a PCGen data folder
+ *   npm run -s vtt -- rules install <tgz> [out] validate & atomically install a rules pack archive
+ *   npm run -s vtt -- rules rollback [out]     restore the previous rules pack backup
+ *   npm run -s vtt -- rules status [out]       print the installed rules pack summary
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +18,7 @@ import { migrateState, parsePcgToJson, RoomIdSchema } from '@vtt/shared';
 import { paths } from './config';
 import { SqliteRoomStore } from './persistence/SqliteRoomStore';
 import { buildRulesPack } from './rules/buildPack';
+import { installRulesPack, rollbackRulesPack, validateRulesDir } from './rules/installPack';
 
 /** Paths are relative to where the user ran npm, not this package. */
 const resolveUserPath = (p: string) => path.resolve(process.env.INIT_CWD ?? process.cwd(), p);
@@ -60,20 +64,46 @@ if (command === 'pcgen') {
 
 if (command === 'rules') {
   try {
-    if (args[0] !== 'build' || !args[1]) usage();
-    const pcgenDir = resolveUserPath(args[1]);
-    let outDir = paths.rules;
-    if (args[2] === '--out' && args[3]) outDir = resolveUserPath(args[3]);
-    else if (args[2] && !args[2].startsWith('-')) outDir = resolveUserPath(args[2]);
-    const { manifest } = buildRulesPack(pcgenDir, outDir);
-    const total = Object.values(manifest.counts).reduce((a, b) => a + b, 0);
-    console.log(`Built rules pack in ${outDir}: ${total} records across ${manifest.books.length} books`);
-    console.log(
-      Object.entries(manifest.counts)
-        .map(([k, v]) => `  ${k}: ${v}`)
-        .join('\n'),
-    );
-    if (manifest.warnings.length) console.warn(`Warnings (${manifest.warnings.length}):\n  ${manifest.warnings.slice(0, 10).join('\n  ')}`);
+    const sub = args[0];
+    if (sub === 'build') {
+      if (!args[1]) usage();
+      const pcgenDir = resolveUserPath(args[1]);
+      let outDir = paths.rules;
+      if (args[2] === '--out' && args[3]) outDir = resolveUserPath(args[3]);
+      else if (args[2] && !args[2].startsWith('-')) outDir = resolveUserPath(args[2]);
+      const { manifest } = buildRulesPack(pcgenDir, outDir);
+      const total = Object.values(manifest.counts).reduce((a, b) => a + b, 0);
+      console.log(`Built rules pack in ${outDir}: ${total} records across ${manifest.books.length} books`);
+      console.log(
+        Object.entries(manifest.counts)
+          .map(([k, v]) => `  ${k}: ${v}`)
+          .join('\n'),
+      );
+      if (manifest.warnings.length) console.warn(`Warnings (${manifest.warnings.length}):\n  ${manifest.warnings.slice(0, 10).join('\n  ')}`);
+    } else if (sub === 'install') {
+      if (!args[1]) usage();
+      const tarball = resolveUserPath(args[1]);
+      const outDir = args[2] ? resolveUserPath(args[2]) : paths.rules;
+      const { manifest } = installRulesPack(tarball, outDir);
+      const total = Object.values(manifest.counts).reduce((a, b) => a + b, 0);
+      console.log(`Installed rules pack in ${outDir}: ${total} records across ${manifest.books.length} books`);
+    } else if (sub === 'rollback') {
+      const outDir = args[1] ? resolveUserPath(args[1]) : paths.rules;
+      const manifest = rollbackRulesPack(outDir);
+      const total = Object.values(manifest.counts).reduce((a, b) => a + b, 0);
+      console.log(`Rolled back rules pack in ${outDir}: ${total} records across ${manifest.books.length} books`);
+    } else if (sub === 'status') {
+      const outDir = args[1] ? resolveUserPath(args[1]) : paths.rules;
+      if (!fs.existsSync(path.join(outDir, 'manifest.json'))) {
+        console.log(`No rules pack installed in ${outDir}`);
+      } else {
+        const manifest = validateRulesDir(outDir);
+        const total = Object.values(manifest.counts).reduce((a, b) => a + b, 0);
+        console.log(`Rules pack in ${outDir}: ${total} records across ${manifest.books.length} books (built ${fmtDate(manifest.builtAt)})`);
+      }
+    } else {
+      usage();
+    }
   } catch (e) {
     console.error((e as Error).message);
     process.exitCode = 1;
