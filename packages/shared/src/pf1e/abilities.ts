@@ -7,7 +7,7 @@
  * filled in from the VTT's own rules tables, marked `source: 'rules'`.
  */
 import type { Character } from '../entities/pf1e';
-import { classActionSetsFor, COST_LABEL } from './actions';
+import { actionCostFor, classActionSetsFor, COST_LABEL } from './actions';
 import { lookupRace, STAT_KEYS } from './rules';
 
 export type AbilityCategory = 'feat' | 'trait' | 'class' | 'racial' | 'proficiency';
@@ -115,7 +115,7 @@ export function characterAbilities(c: Character): AbilityEntry[] {
         group: `${set.className} ${level}`,
         nature: 'AUTOMATIC',
         appliedTo: [],
-        description: `${a.costLabel ?? COST_LABEL[a.cost]}. ${a.notes}`,
+        description: `${a.costLabel ?? COST_LABEL[actionCostFor(a, level)]}. ${a.notes}`,
         source: 'rules',
       });
     }

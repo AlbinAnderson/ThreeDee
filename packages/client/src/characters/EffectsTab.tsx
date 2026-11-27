@@ -291,6 +291,7 @@ const TARGET_LABEL: Record<BuffEffect['target'], string> = {
   attackRanged: 'Ranged attack rolls',
   damage: 'Weapon damage',
   damageMelee: 'Melee damage',
+  damageThrown: 'Thrown damage',
   damageRanged: 'Ranged damage',
   ac: 'AC',
   cmb: 'CMB',

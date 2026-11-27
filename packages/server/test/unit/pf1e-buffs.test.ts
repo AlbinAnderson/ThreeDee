@@ -188,12 +188,15 @@ describe('[Epic 8] buff presets in the engine', () => {
 
   test('describeEffects and PCGen TEMPBONUS suggestions', () => {
     assert.equal(describeEffects(lookupPreset('haste')!.effects(makePcgCharacter(), '', NO_MOD)), '+1 attack, +1 dodge AC, +1 dodge Ref, +30 enhancement ft. speed, +1 attack on full attacks');
-    const c = makePcgCharacter(withPcgLines(SAMPLE_PCG, 'TEMPBONUS:SPELL=Bless|TBTARGET:PC', 'TEMPBONUS:SPELL=Divine Power|TBTARGET:PC', 'TEMPBONUS:SPELL=Bless|TBTARGET:PC'));
+    const c = makePcgCharacter(
+      withPcgLines(SAMPLE_PCG, 'TEMPBONUS:SPELL=Bless|TBTARGET:PC', 'TEMPBONUS:SPELL=Divine Power|TBTARGET:PC', 'TEMPBONUS:SPELL=Righteous Might|TBTARGET:PC', 'TEMPBONUS:SPELL=Bless|TBTARGET:PC'),
+    );
     const s = tempBonusSuggestions(c);
     // The fixture's own TEMPBONUS is Power Attack: a combat toggle, so not suggested as a buff.
     assert.deepEqual(s.map((x) => [x.name, x.preset?.id ?? null]), [
       ['Bless', 'bless'],
-      ['Divine Power', null],
+      ['Divine Power', 'divinePower'],
+      ['Righteous Might', null],
     ]);
   });
 });
