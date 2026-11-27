@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
-import { gunzipSync, gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { gunzipSync, gzip } from 'node:zlib';
 import { migrateState, type GameState, type SnapshotInfo, type SnapshotReason } from '@vtt/shared';
 import type { RoomStore } from './RoomStore';
+
+const gzipAsync = promisify(gzip);
 
 /**
  * Database schema migrations, applied in order and tracked with
@@ -124,12 +127,13 @@ export class SqliteRoomStore implements RoomStore {
   }
 
   async createSnapshot(roomId: string, state: GameState, reason: SnapshotReason, label: string | null) {
-    const blob = gzipSync(JSON.stringify(state));
+    const json = JSON.stringify(state);
+    const blob = await gzipAsync(json);
     const createdAt = Date.now();
     const id = this.transaction(() => {
       // Snapshots reference the room row; make sure it exists.
       if (!this.stmt.load.get(roomId)) {
-        this.stmt.upsert.run(roomId, state.schemaVersion, JSON.stringify(state), createdAt, createdAt);
+        this.stmt.upsert.run(roomId, state.schemaVersion, json, createdAt, createdAt);
       }
       return Number(this.stmt.snapInsert.run(roomId, createdAt, reason, label, state.schemaVersion, blob).lastInsertRowid);
     });

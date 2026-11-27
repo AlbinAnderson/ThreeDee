@@ -13,18 +13,23 @@ export function TopBar() {
   const roomId = useSession((s) => s.connection?.params.roomId);
   const gm = useIsGm();
   const self = useSelf();
-  const state = useGame((s) => s);
   const scene = useCurrentScene();
-  const activeId = state.activeSceneId;
-  const activeName = activeId ? state.scenes[activeId]?.name : undefined;
+  const activeId = useGame((s) => s.activeSceneId);
+  const activeName = useGame((s) => (s.activeSceneId ? s.scenes[s.activeSceneId]?.name : undefined));
+  const users = useGame((s) => s.users);
+  const combatActive = useGame((s) => s.combat.active);
+  const combatRound = useGame((s) => s.combat.round);
+  const myTurn = useGame((s) => {
+    const cb = s.combat.active ? s.combat.combatants.find((c) => c.id === s.combat.currentId) : undefined;
+    return !!cb && canControlCombatant(s, self, cb);
+  });
+  const currentName = useGame((s) => {
+    const cb = s.combat.active ? s.combat.combatants.find((c) => c.id === s.combat.currentId) : undefined;
+    return cb ? combatantName(s, cb) : null;
+  });
   const viewingOther = gm && scene && scene.id !== activeId;
 
   const sidebarCollapsed = useUi((s) => s.sidebarCollapsed);
-
-  const combat = state.combat;
-  const currentCb = combat.active ? combat.combatants.find((c) => c.id === combat.currentId) : undefined;
-  const myTurn = !!currentCb && canControlCombatant(state, self, currentCb);
-  const currentName = currentCb ? combatantName(state, currentCb) : null;
 
 
   return (
@@ -48,7 +53,7 @@ export function TopBar() {
       </span>
 
       <div className="topbar-pills">
-        {combat.active && currentName && (
+        {combatActive && currentName && (
           <button
             type="button"
             className={`turn-pill${myTurn ? ' mine' : ''}`}
@@ -57,12 +62,12 @@ export function TopBar() {
           >
             <Swords size={13} />
             <span>
-              R{combat.round} · {myTurn ? `Your turn (${currentName})` : currentName}
+              R{combatRound} · {myTurn ? `Your turn (${currentName})` : currentName}
             </span>
           </button>
         )}
 
-        <ChatModeMenu users={state.users} selfId={self.id} />
+        <ChatModeMenu users={users} selfId={self.id} />
 
         <button
           type="button"

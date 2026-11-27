@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Scene, Token } from '@vtt/shared';
 import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
@@ -82,12 +82,27 @@ export function moveCamera(target: Camera, opts: { sceneId?: string; instant?: b
   cameraAnimation = requestAnimationFrame(step);
 }
 
+/**
+ * Memoized world layers so 60–120 Hz camera pan/zoom/animation updates only mutate
+ * the outer `<g transform>` attribute without reconciling all 11 SVG layers in React.
+ */
+const BoardWorld = memo(function BoardWorld({ scene }: { scene: Scene }) {
+  return (
+    <>
+      {boardLayers.map(({ id, Component }) => (
+        <Component key={id} scene={scene} />
+      ))}
+    </>
+  );
+});
+
 export function Board() {
   const scene = useCurrentScene();
   const camera = useUi((s) => s.camera);
   const toolId = useUi((s) => s.toolId);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const svgRectRef = useRef<{ left: number; top: number }>({ left: 0, top: 0 });
   const gesture = useRef<Gesture | null>(null);
   const spaceHeld = useRef(false);
   const toolSession = useRef<{ id: string; state: unknown } | null>(null);
@@ -128,15 +143,21 @@ export function Board() {
     };
   }, [tool, buildContext]);
 
-  // Track viewport size.
+  // Track viewport size and cached SVG origin so pointermove never forces getBoundingClientRect().
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const syncRect = () => {
+      const r = svgRef.current?.getBoundingClientRect();
+      if (r) svgRectRef.current = { left: r.left, top: r.top };
+    };
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry!.contentRect;
       useUi.getState().setViewport({ width, height });
+      syncRect();
     });
     ro.observe(el);
+    syncRect();
     return () => ro.disconnect();
   }, []);
 
@@ -190,19 +211,42 @@ export function Board() {
     };
   }, []);
 
-  function toBoardPointer(e: ReactPointerEvent): BoardPointer {
-    const rect = svgRef.current!.getBoundingClientRect();
-    // Hit-test by position: with pointer capture, e.target is always the svg.
-    const hit = document.elementFromPoint(e.clientX, e.clientY);
-    const tokenId = hit?.closest('[data-token-id]')?.getAttribute('data-token-id') ?? null;
-    const drawingId = tokenId ? null : (hit?.closest('[data-drawing-id]')?.getAttribute('data-drawing-id') ?? null);
-    const templateId =
-      tokenId || drawingId ? null : (hit?.closest('[data-template-id]')?.getAttribute('data-template-id') ?? null);
+  function toBoardPointer(e: ReactPointerEvent, refreshRect = false): BoardPointer {
+    if (refreshRect) {
+      const r = svgRef.current!.getBoundingClientRect();
+      svgRectRef.current = { left: r.left, top: r.top };
+    }
+    const { left, top } = svgRectRef.current;
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    // Lazy DOM hit-test: tools like select/draw/fog/wall/ruler never read tokenId/drawingId/templateId
+    // on pointermove, so deferring document.elementFromPoint avoids synchronous reflows at 60-120 Hz.
+    let hitDone = false;
+    let tokenId: string | null = null;
+    let drawingId: string | null = null;
+    let templateId: string | null = null;
+    const resolveHit = () => {
+      if (hitDone) return;
+      hitDone = true;
+      const hit = document.elementFromPoint(clientX, clientY);
+      tokenId = hit?.closest('[data-token-id]')?.getAttribute('data-token-id') ?? null;
+      drawingId = tokenId ? null : (hit?.closest('[data-drawing-id]')?.getAttribute('data-drawing-id') ?? null);
+      templateId = tokenId || drawingId ? null : (hit?.closest('[data-template-id]')?.getAttribute('data-template-id') ?? null);
+    };
     return {
-      world: screenToWorld(useUi.getState().camera, e.clientX - rect.left, e.clientY - rect.top),
-      tokenId,
-      drawingId,
-      templateId,
+      world: screenToWorld(useUi.getState().camera, clientX - left, clientY - top),
+      get tokenId() {
+        resolveHit();
+        return tokenId;
+      },
+      get drawingId() {
+        resolveHit();
+        return drawingId;
+      },
+      get templateId() {
+        resolveHit();
+        return templateId;
+      },
       shift: e.shiftKey,
       alt: e.altKey,
       ctrl: e.ctrlKey || e.metaKey,
@@ -220,7 +264,7 @@ export function Board() {
     if (e.button !== 0) return;
     const ctx = buildContext();
     if (!ctx) return;
-    const result = tool.onPointerDown?.(toBoardPointer(e), ctx, getToolState());
+    const result = tool.onPointerDown?.(toBoardPointer(e, true), ctx, getToolState());
     if (result === 'pan') startPan(e);
     else gesture.current = { kind: 'tool', pointerId: e.pointerId };
   }
@@ -271,9 +315,7 @@ export function Board() {
       >
         {scene && (
           <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`}>
-            {boardLayers.map(({ id, Component }) => (
-              <Component key={id} scene={scene} />
-            ))}
+            <BoardWorld scene={scene} />
           </g>
         )}
       </svg>

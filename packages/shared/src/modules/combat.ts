@@ -73,19 +73,19 @@ onTurnStart((draft, { combatantId, meta }) => {
   });
 });
 
-export function canControlCombatant(state: GameState, user: User, c: Combatant): boolean {
+export function canControlCombatant(state: Pick<GameState, 'tokens'>, user: User, c: Combatant): boolean {
   if (isGm(user)) return true;
   const token = c.tokenId ? state.tokens[c.tokenId] : undefined;
   return !!token && canControlToken(user, token);
 }
 
 /** Hidden if the GM hid the entry, or if its token is hidden. */
-export function isCombatantHidden(state: GameState, c: Combatant): boolean {
+export function isCombatantHidden(state: Pick<GameState, 'tokens'>, c: Combatant): boolean {
   return c.hidden || (!!c.tokenId && !!state.tokens[c.tokenId]?.hidden);
 }
 
 /** Display name: the linked token's current name, falling back to the stored one. */
-export function combatantName(state: GameState, c: Combatant): string {
+export function combatantName(state: Pick<GameState, 'tokens'>, c: Combatant): string {
   const token = c.tokenId ? state.tokens[c.tokenId] : undefined;
   return token?.name.trim() || c.name;
 }
