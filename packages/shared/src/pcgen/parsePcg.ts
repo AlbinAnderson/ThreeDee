@@ -1408,3 +1408,8 @@ export function parsePcgToJson(content: string, pretty = true): string {
   const parsed = parsePcg(content);
   return JSON.stringify(parsed, null, pretty ? 2 : undefined);
 }
+
+/** An empty build (for characters made in the VTT, e.g. monsters imported from Archives of Nethys). */
+export function emptyPcgenBuild(): PcgenCharacter {
+  return createEmptyCharacter();
+}

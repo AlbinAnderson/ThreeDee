@@ -16,10 +16,13 @@ import { lootActions, redactLoot } from './loot';
 import { macroActions } from './macros';
 import { notesActions, redactNotes } from './notes';
 import { characterActions, characterSheetActions, redactCharacters } from './pf1e/characters';
+import { characterBioActions } from './pf1e/bio';
 import { inventoryActions } from './pf1e/inventory';
 import { buffActions } from './pf1e/buffs';
+import { companionActions } from './pf1e/companions';
 import { spellActions } from './pf1e/spells';
 import { pf1eTurnActions, redactPf1eTurns } from './pf1e/turns';
+import { redactCustomRules, rulesActions } from './rules';
 import { sceneActions } from './scenes';
 import { redactTables, tableActions } from './tables';
 import { templateActions } from './templates';
@@ -48,10 +51,13 @@ export const gameModules = {
   // ---- PF1e
   characters: { actions: characterActions, redact: redactCharacters },
   characterSheets: { actions: characterSheetActions },
+  characterBio: { actions: characterBioActions },
   pf1eTurns: { actions: pf1eTurnActions, redact: redactPf1eTurns },
   inventory: { actions: inventoryActions },
   spells: { actions: spellActions },
   buffs: { actions: buffActions },
+  companions: { actions: companionActions },
+  rules: { actions: rulesActions, redact: redactCustomRules },
 } satisfies Record<string, GameModule>;
 
 type Modules = typeof gameModules;
@@ -59,12 +65,16 @@ type Modules = typeof gameModules;
 /** Union of every action the game understands. */
 export type GameAction = { [K in keyof Modules]: ModuleActions<Modules[K]['actions']> }[keyof Modules];
 
-export { audioActions, buffActions, spellActions, characterActions, characterSheetActions, pf1eTurnActions, inventoryActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
+export { characterBioActions, rulesActions };
+export { canSeeCl, identifyDc } from './loot';
+export { appendedNote } from './notes';
+export { audioActions, buffActions, companionActions, spellActions, characterActions, characterSheetActions, pf1eTurnActions, inventoryActions, chatActions, combatActions, deckActions, tableActions, drawingActions, fogActions, handoutActions, lightActions, macroActions, templateActions, wallActions, lootActions, notesActions, sceneActions, tokenActions, userActions };
 export { canDeleteDrawing } from './drawings';
 export { canSeeMessage, chatAudience, pushMessage, validateWhisper } from './chat';
 export { canControlCombatant, combatantName, compareCombatants, isCombatantHidden, onTurnStart, type TurnStart, type TurnStartHook } from './combat';
 export { canDeleteTemplate, templateCells, templateContains } from './templates';
 export { canSeeHandout } from './handouts';
 export { canManageCharacter, canSeeCharacter } from './pf1e/characters';
+export { manifestPlacement } from './pf1e/companions';
 export { characterPools, characterResources, type ResourcePool } from './pf1e/turns';
 export { formatGpValue, isUnidentifiedLoot, parseGpValue } from './pf1e/inventory';

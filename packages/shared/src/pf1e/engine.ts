@@ -518,6 +518,38 @@ export function computeCharacterStats(c: Character): CharacterStats {
     }
   }
 
+  // Stat-block attacks (Epic 11 AoN monster imports): fixed bonuses plus active buffs/conditions.
+  for (const sa of sheet.statAttacks) {
+    const melee = sa.mode === 'melee';
+    const baseBonus = sa.bonuses[0] ?? 0;
+    const attackMods: Modifier[] = [
+      { value: baseBonus, type: 'base', source: 'Stat block' },
+      ...fx.mods.attack,
+      ...(melee ? fx.mods.attackMelee : fx.mods.attackRanged),
+    ];
+    const attack = sumModifiers(attackMods);
+    const delta = attack.total - baseBonus;
+    let fullAttack = sa.bonuses.map((b) => b + delta);
+    if (fx.mods.extraAttack.some((m) => m.value > 0)) fullAttack = [fullAttack[0]!, ...fullAttack];
+    const damage = sumModifiers([
+      ...(sa.damageBonus ? [{ value: sa.damageBonus, type: 'base' as const, source: 'Stat block' }] : []),
+      ...fx.mods.damage,
+      ...(melee ? fx.mods.damageMelee : fx.mods.damageRanged),
+    ]);
+    attacks.push({
+      itemId: `stat:${sa.id}`,
+      name: sa.note ? `${sa.name} (${sa.note})` : sa.name,
+      mode: sa.mode,
+      hand: 'primary',
+      attack,
+      fullAttack,
+      dice: sa.dice,
+      damage,
+      crit: critText(sa.critRange, sa.critMult),
+      range: 0,
+    });
+  }
+
   // Two-weapon fighting: a melee weapon in each hand.
   const main = attacks.find((a) => a.hand === 'primary' && a.mode === 'melee');
   const off = attacks.find((a) => a.hand === 'offHand' && a.mode === 'melee');

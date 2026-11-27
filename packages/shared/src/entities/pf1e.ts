@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import { PcgenCharacterSchema } from '../pcgen/schema';
-import { AssetUrlSchema, IdSchema } from '../primitives';
+import { AssetUrlSchema, ColorSchema, IdSchema } from '../primitives';
 
 export const CharacterSourceSchema = z.object({
   kind: z.literal('pcgen'),
@@ -213,6 +213,28 @@ export const SpellcastingOverrideSchema = z.object({
 });
 export type SpellcastingOverride = z.infer<typeof SpellcastingOverrideSchema>;
 
+/**
+ * An attack typed in from a stat block (monsters imported from Archives of
+ * Nethys, natural attacks): fixed bonuses instead of BAB + ability + weapon.
+ */
+export const StatAttackSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(60),
+  mode: z.enum(['melee', 'ranged']),
+  /** Attack bonuses in order ("+6/+1" -> [6, 1]). */
+  bonuses: z.array(z.number().int().min(-50).max(100)).min(1).max(8),
+  /** Damage dice, e.g. "1d6" (sized already). */
+  dice: z.string().regex(/^[1-9]\d?d[1-9]\d{0,2}$/, 'Dice like 1d8'),
+  damageBonus: z.number().int().min(-50).max(200),
+  /** Lowest natural roll that threatens. */
+  critRange: z.number().int().min(2).max(20),
+  critMult: z.number().int().min(2).max(6),
+  /** Extra effects ("plus grab", "plus 1d6 fire"). */
+  note: z.string().max(120),
+});
+export type StatAttack = z.infer<typeof StatAttackSchema>;
+export const MAX_STAT_ATTACKS = 20;
+
 /** Sheet-side changes to one skill (kept on re-import). */
 export const SkillOverrideSchema = z.object({
   /** null = ranks from the .pcg file. */
@@ -261,6 +283,11 @@ export const CharacterSheetSchema = z.object({
   spellcasting: z
     .record(z.string().trim().min(1).max(80), SpellcastingOverrideSchema)
     .refine((r) => Object.keys(r).length <= MAX_CASTING_CLASSES, 'Too many casting classes'),
+  /** Stat-block attacks (Epic 11 monster imports), shown and rolled with the weapon attacks. */
+  statAttacks: z
+    .array(StatAttackSchema)
+    .max(MAX_STAT_ATTACKS)
+    .refine((arr) => new Set(arr.map((a) => a.id)).size === arr.length, 'Duplicate attack id'),
 });
 export type CharacterSheet = z.infer<typeof CharacterSheetSchema>;
 
@@ -277,6 +304,7 @@ export const EMPTY_SHEET: CharacterSheet = {
   skills: {},
   customPools: [],
   spellcasting: {},
+  statAttacks: [],
 };
 
 // ------------------------------------------------------------------ inventory
@@ -377,6 +405,10 @@ export const InventoryItemSchema = z.object({
   /** Party-loot record this came from; it keeps the GM's true properties (see modules/loot). */
   lootId: IdSchema.nullable(),
   imageUrl: AssetUrlSchema.nullable(),
+  /** Gems, art objects and trade goods: sold at full value instead of half (Epic 11). */
+  tradeGood: z.boolean(),
+  /** Rules-pack equipment KEY this item came from (exact stats, rules card), or null. */
+  ruleKey: z.string().max(120).nullable(),
 });
 export type InventoryItem = z.infer<typeof InventoryItemSchema>;
 
@@ -408,6 +440,181 @@ export const InventorySchema = z.object({
 });
 export type Inventory = z.infer<typeof InventorySchema>;
 
+// ------------------------------------------------------------------ companions (Epic 9)
+
+export const CompanionTypeSchema = z.enum(['familiar', 'animalCompanion', 'mount', 'eidolon', 'phantom', 'cohort', 'other']);
+export type CompanionType = z.infer<typeof CompanionTypeSchema>;
+export const TrickNameSchema = z.string().trim().min(1).max(40);
+export const MAX_KNOWN_TRICKS = 40;
+export const MAX_COMPANIONS_PER_MASTER = 20;
+
+/**
+ * Where a harbored/dismissed companion's token was and what it looked like, so
+ * manifesting brings back the same token. Live HP and conditions are kept on
+ * the character (like any unlinked character), not here.
+ */
+export const CompanionStashSchema = z.object({
+  sceneId: IdSchema,
+  x: z.number().min(-100000).max(100000),
+  y: z.number().min(-100000).max(100000),
+  name: z.string().trim().max(60),
+  imageUrl: AssetUrlSchema.nullable(),
+  color: ColorSchema,
+  size: z.number().min(0.25).max(20),
+  ownerIds: z.array(IdSchema).max(50),
+  hidden: z.boolean(),
+  showName: z.boolean(),
+  hpVisible: z.boolean(),
+  conditionRounds: z
+    .record(z.string().trim().min(1).max(40), z.number().int().min(1).max(10000))
+    .refine((r) => Object.keys(r).length <= 30, 'Too many condition timers'),
+});
+export type CompanionStash = z.infer<typeof CompanionStashSchema>;
+
+/**
+ * This character is a companion of another (its master). Lives on the
+ * companion: a companion has one master, a master any number of companions.
+ */
+export const CompanionLinkSchema = z.object({
+  masterId: IdSchema,
+  type: CompanionTypeSchema,
+  /** Tricks an animal knows (Handle Animal). */
+  knownTricks: z
+    .array(TrickNameSchema)
+    .max(MAX_KNOWN_TRICKS)
+    .refine((arr) => new Set(arr.map((t) => t.toLowerCase())).size === arr.length, 'Duplicate trick'),
+  /** The master has the Link class feature (animal companions, special mounts): handle as a free action, push as a move action, +4 on Handle Animal. */
+  link: z.boolean(),
+  /** Harbored / dismissed / in its satchel: not on the map. */
+  harbored: z.boolean(),
+  /** The token put away when the companion was harbored (null = it had none). */
+  stash: CompanionStashSchema.nullable(),
+});
+export type CompanionLink = z.infer<typeof CompanionLinkSchema>;
+
+// ------------------------------------------------------------------ bio, notes & chronicle (Epic 10)
+
+export const MAX_CHARACTER_NOTES = 200;
+export const MAX_CHRONICLES = 200;
+export const BIO_FIELD_MAX = 200;
+export const BIO_TEXT_MAX = 10000;
+export const NOTE_TITLE_MAX = 120;
+export const NOTE_BODY_MAX = 8000;
+
+/** Short free-text bio fields, in display order. */
+export const BIO_FIELD_KEYS = [
+  'gender',
+  'age',
+  'height',
+  'weight',
+  'eyes',
+  'hair',
+  'skin',
+  'handedness',
+  'deity',
+  'homeland',
+  'birthplace',
+  'birthday',
+  'location',
+  'traits',
+  'speechPattern',
+  'phobias',
+  'interests',
+  'catchPhrase',
+] as const;
+export type BioFieldKey = (typeof BIO_FIELD_KEYS)[number];
+
+/** One entry of the character's notes tree. `parentId` null = a root note. */
+export const CharacterNoteSchema = z.object({
+  id: IdSchema,
+  parentId: IdSchema.nullable(),
+  title: z.string().trim().min(1).max(NOTE_TITLE_MAX),
+  body: z.string().max(NOTE_BODY_MAX),
+});
+export type CharacterNote = z.infer<typeof CharacterNoteSchema>;
+
+/** True if every parent exists and following parents always reaches a root (no cycles). */
+export function isNoteForest(notes: readonly { id: string; parentId: string | null }[]): boolean {
+  const parent = new Map(notes.map((n) => [n.id, n.parentId]));
+  for (const n of notes) {
+    let cur: string | null = n.parentId;
+    for (let steps = 0; cur !== null; steps++) {
+      if (steps > notes.length || !parent.has(cur)) return false;
+      cur = parent.get(cur)!;
+    }
+  }
+  return true;
+}
+
+export const CharacterNotesSchema = z
+  .array(CharacterNoteSchema)
+  .max(MAX_CHARACTER_NOTES)
+  .refine((arr) => new Set(arr.map((n) => n.id)).size === arr.length, 'Duplicate note id')
+  .refine(isNoteForest, 'Notes must form a tree (missing parent or cycle)');
+
+/** A campaign / Pathfinder Society chronicle sheet entry. */
+export const ChronicleEntrySchema = z.object({
+  id: IdSchema,
+  /** Campaign or organized-play season. */
+  campaign: z.string().max(120),
+  /** Adventure / scenario name. */
+  scenario: z.string().max(120),
+  date: z.string().max(40),
+  gm: z.string().max(80),
+  party: z.string().max(200),
+  xp: z.number().int().min(0).max(10_000_000),
+  /** Gold gained (negative = spent), gp. */
+  gold: z.number().min(-1e9).max(1e9),
+  fame: z.number().int().min(-100000).max(100000),
+  notes: z.string().max(4000),
+});
+export type ChronicleEntry = z.infer<typeof ChronicleEntrySchema>;
+
+export const ChronicleListSchema = z
+  .array(ChronicleEntrySchema)
+  .max(MAX_CHRONICLES)
+  .refine((arr) => new Set(arr.map((n) => n.id)).size === arr.length, 'Duplicate chronicle id');
+
+export const BioFieldsSchema = z.object(
+  Object.fromEntries(BIO_FIELD_KEYS.map((k) => [k, z.string().max(BIO_FIELD_MAX)])) as Record<BioFieldKey, z.ZodString>,
+);
+export type BioFields = z.infer<typeof BioFieldsSchema>;
+
+/**
+ * VTT-owned biography: seeded from the .pcg on first import and kept on
+ * re-import (unless the user asks to replace it), like the inventory.
+ * `dmNotes` is GM-only: it is blanked for everyone else in snapshots and
+ * never travels in a payload to a non-GM.
+ */
+export const CharacterBioSchema = z.object({
+  /** Uploaded portrait (VTT asset or http(s) URL). */
+  portraitUrl: AssetUrlSchema.nullable(),
+  /** PORTRAIT path from the .pcg (usually a local file the browser can't read); informational only. */
+  pcgPortrait: z.string().max(1000).nullable(),
+  fields: BioFieldsSchema,
+  /** Appearance / physical description. */
+  description: z.string().max(BIO_TEXT_MAX),
+  /** Background story. */
+  biography: z.string().max(BIO_TEXT_MAX),
+  /** GM-only notes. */
+  dmNotes: z.string().max(BIO_TEXT_MAX),
+  notes: CharacterNotesSchema,
+  chronicles: ChronicleListSchema,
+});
+export type CharacterBio = z.infer<typeof CharacterBioSchema>;
+
+export const EMPTY_BIO_FIELDS: BioFields = Object.fromEntries(BIO_FIELD_KEYS.map((k) => [k, ''])) as BioFields;
+export const EMPTY_BIO: CharacterBio = {
+  portraitUrl: null,
+  pcgPortrait: null,
+  fields: EMPTY_BIO_FIELDS,
+  description: '',
+  biography: '',
+  dmNotes: '',
+  notes: [],
+  chronicles: [],
+};
+
 export const CharacterSchema = z.object({
   id: IdSchema,
   name: z.string().trim().min(1).max(80),
@@ -422,6 +629,10 @@ export const CharacterSchema = z.object({
   sheet: CharacterSheetSchema,
   runtime: CharacterRuntimeSchema,
   inventory: InventorySchema,
+  /** Companion link to a master character (Epic 9); null = not a companion. */
+  companion: CompanionLinkSchema.nullable(),
+  /** Biography, portrait, notes tree, chronicle and GM notes (Epic 10). */
+  bio: CharacterBioSchema,
   createdAt: z.number(),
   updatedAt: z.number(),
 });

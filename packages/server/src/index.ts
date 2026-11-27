@@ -7,10 +7,16 @@ import { attachWebSocket } from './net/socket';
 import { importLegacyRooms } from './persistence/importLegacy';
 import { SqliteRoomStore } from './persistence/SqliteRoomStore';
 import { RoomManager } from './rooms/RoomManager';
+import { setRpcServices } from './rpc';
+import { AonFetcher } from './rules/aon';
+import { createRulesPackStore } from './rules/packStore';
 
 const store = new SqliteRoomStore(paths.db);
 await importLegacyRooms(store, paths.legacyRooms);
-const rooms = new RoomManager(store);
+const rulesStore = createRulesPackStore(paths.rules);
+const aonFetcher = new AonFetcher({ cacheDir: paths.aonCache });
+setRpcServices({ rulesStore, aonFetcher });
+const rooms = new RoomManager(store, () => rulesStore);
 
 const app = express();
 app.disable('x-powered-by');

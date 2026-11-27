@@ -19,15 +19,17 @@ import {
 } from './entities/play';
 import { CharacterSchema, Pf1TurnStateSchema } from './entities/pf1e';
 import { FogSchema, LightEmissionSchema, LightSchema, VisionSettingsSchema, WallSchema } from './entities/vision';
+import { CustomRulesSchema, DEFAULT_RULES_SETTINGS, RulesSettingsSchema } from './entities/rules';
 import { AssetUrlSchema, ColorSchema, IdSchema } from './primitives';
 
 export * from './primitives';
 export * from './entities/play';
 export * from './entities/vision';
 export * from './entities/pf1e';
+export * from './entities/rules';
 
 /** Bump when the shape changes, and add a step in migrations.ts. */
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 // ---------------------------------------------------------------- users
 
@@ -203,6 +205,14 @@ export const LootItemSchema = z.object({
   secretNotes: z.string().max(10000),
   /** Moved whole into a character's inventory: hidden from the Loot list, kept for the GM's true properties. */
   stowed: z.boolean(),
+  /** GM-only true name (Epic 11 treasure). Becomes the name when identified; '' = same as name. */
+  trueName: z.string().trim().max(120),
+  /** GM-only true value ("2,000 gp"). Becomes the value when identified. */
+  secretValue: z.string().trim().max(60),
+  /** Caster level of a magic item (identify DC 15 + CL). GM-only until identified or detected. */
+  cl: z.number().int().min(0).max(30).nullable(),
+  /** The GM revealed its aura (detect magic): players see the CL and Spellcraft DC. */
+  magicDetected: z.boolean(),
   createdBy: IdSchema,
   createdAt: z.number(),
 });
@@ -251,6 +261,10 @@ export const GameStateSchema = z.object({
   characters: z.record(IdSchema, CharacterSchema),
   /** PF1e action economy per combatant id. */
   pf1eTurns: z.record(IdSchema, Pf1TurnStateSchema),
+  /** Allowed books for catalog searches and import checks (Epic 11). */
+  rules: RulesSettingsSchema,
+  /** GM-added rules records (Archives of Nethys imports, homebrew). */
+  customRules: CustomRulesSchema,
 });
 export type GameState = z.infer<typeof GameStateSchema>;
 
@@ -305,5 +319,7 @@ export function createInitialState(firstSceneId: string): GameState {
     decks: {},
     characters: {},
     pf1eTurns: {},
+    rules: structuredClone(DEFAULT_RULES_SETTINGS),
+    customRules: {},
   };
 }

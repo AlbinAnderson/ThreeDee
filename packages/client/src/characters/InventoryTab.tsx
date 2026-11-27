@@ -3,7 +3,7 @@
  * a container tree of items with quick steppers, slots and per-item rules data.
  */
 import { useMemo, useState } from 'react';
-import { Flame, Package } from 'lucide-react';
+import { BookOpen, Coins as CoinsIcon, Flame, Package, ShoppingBag } from 'lucide-react';
 import {
   activeLoadout,
   canControlToken,
@@ -12,6 +12,7 @@ import {
   computeCharacterStats,
   containerContentsWeight,
   detectGear,
+  formatCp,
   inventoryActions,
   isGm,
   isUnidentifiedLoot,
@@ -20,6 +21,7 @@ import {
   makeItem,
   newId,
   payFromPurse,
+  sellValueCp,
   SLOT_LABELS,
   slotOf,
   tokenActions,
@@ -33,6 +35,8 @@ import {
   type ItemWeapon,
 } from '@vtt/shared';
 import { CheckboxField, NumberField, OptionalNumberField, SelectField, TextAreaField, TextField } from '../components/fields';
+import { CatalogBuyDialog } from '../rules/CatalogBuyDialog';
+import { openRulesCard } from '../rules/store';
 import { confirmDialog, promptDialog } from '../state/dialogs';
 import { dispatch } from '../state/dispatch';
 import { getSelf, useGameStore } from '../state/gameStore';
@@ -87,6 +91,7 @@ export function InventoryTab({ character: c }: { character: Character }) {
   const act = useInventoryDispatch(c);
   const [openId, setOpenId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   const children = useMemo(() => {
     const map = new Map<string | null, InventoryItem[]>();
@@ -133,6 +138,11 @@ export function InventoryTab({ character: c }: { character: Character }) {
         <div className="section-header">
           <h3>Gear</h3>
           <span className="muted small-text">{inv.items.length} items · worth {gp(inv.items.reduce((s, i) => s + i.value * i.quantity, 0))}</span>
+          {manage && (
+            <button type="button" className="small gold" onClick={() => setCatalogOpen(true)} title="Search rules catalog, add mods & buy from purse">
+              <ShoppingBag size={12} /> Catalog / Shop
+            </button>
+          )}
         </div>
         {inv.items.length === 0 && <p className="muted">Nothing yet.</p>}
         <ul className="inv-list">{renderItems(null, 0)}</ul>
@@ -155,6 +165,7 @@ export function InventoryTab({ character: c }: { character: Character }) {
           containers fill in their stats automatically; open an item to adjust them.
         </p>
       </section>
+      {catalogOpen && <CatalogBuyDialog character={c} onClose={() => setCatalogOpen(false)} />}
     </div>
   );
 }
@@ -521,6 +532,43 @@ function ItemEditor({ character: c, item, manage, act }: { character: Character;
           onClick={() => act(inventoryActions.giveToLoot.create({ characterId: c.id, itemId: item.id, quantity: Math.max(1, Math.min(giveQty, item.quantity)), newLootId: newId() }))}
         >
           → Party loot
+        </button>
+        {(!lootRecord || lootRecord.identified) && item.quantity > 0 && item.value > 0 && (
+          <button
+            type="button"
+            className="small gold"
+            title={item.tradeGood ? 'Sell trade good at full value (100%)' : 'Sell item at half price (50%)'}
+            onClick={async () => {
+              const q = Math.max(1, Math.min(giveQty, item.quantity));
+              const payout = sellValueCp(item, q);
+              if (
+                await confirmDialog({
+                  title: `Sell ${q > 1 ? `${q}× ` : ''}${item.name}?`,
+                  message: `Sell for ${formatCp(payout)} (${item.tradeGood ? '100% trade good' : '50% market value'}) and add the coins to ${c.name}’s purse?`,
+                  confirmLabel: `Sell (${formatCp(payout)})`,
+                })
+              ) {
+                act(inventoryActions.sellItem.create({ characterId: c.id, itemId: item.id, quantity: q }));
+              }
+            }}
+          >
+            <CoinsIcon size={12} /> Sell
+          </button>
+        )}
+        <button
+          type="button"
+          className="small"
+          title="Open rules card & Archives of Nethys link"
+          onClick={() =>
+            openRulesCard({
+              kind: 'equipment',
+              key: item.ruleKey && !item.ruleKey.startsWith('custom:') ? item.ruleKey : undefined,
+              customId: item.ruleKey?.startsWith('custom:') ? item.ruleKey.slice(7) : undefined,
+              name: item.name,
+            })
+          }
+        >
+          <BookOpen size={12} /> Rules / AoN
         </button>
         <button
           type="button"

@@ -3,6 +3,7 @@
  * bump CURRENT_SCHEMA_VERSION in state.ts and add a step here that upgrades
  * the previous version's raw JSON. Steps run in order on load.
  */
+import { seedBio, splitDmNotes } from './pf1e/bio';
 import { seedInventory } from './pf1e/inventory';
 import { PcgenCharacterSchema } from './pcgen/schema';
 import { CURRENT_SCHEMA_VERSION, GameStateSchema, type GameState } from './state';
@@ -126,6 +127,57 @@ const migrations: Record<number, Migration> = {
           const token = typeof c.tokenId === 'string' ? tokens[c.tokenId] : undefined;
           const conditions = Array.isArray(token?.conditions) ? token.conditions : [];
           return [id, { ...c, runtime: { buffs: [], conditions, ...(c.runtime as object) } }];
+        }),
+      ),
+    };
+  },
+  // Epic 9: companion links (MASTER/FOLLOWER) between characters.
+  11: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 12,
+      characters: Object.fromEntries(Object.entries(characters).map(([id, c]) => [id, { companion: null, ...c }])),
+    };
+  },
+  // Epic 10: VTT-owned bio seeded from the .pcg; GM-only notes move out of the shared build into bio.dmNotes.
+  12: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 13,
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => {
+          const { build, dmNotes } = splitDmNotes(PcgenCharacterSchema.parse(c.build));
+          return [id, { ...c, build, bio: seedBio(build, dmNotes) }];
+        }),
+      ),
+    };
+  },
+  // Epic 11: allowed books, custom rules catalog, treasure true properties, item trade-good/rule keys, stat-block attacks.
+  13: (raw) => {
+    const characters = (raw.characters ?? {}) as Record<string, Record<string, unknown>>;
+    const loot = (raw.loot ?? {}) as Record<string, Record<string, unknown>>;
+    return {
+      ...raw,
+      schemaVersion: 14,
+      rules: { allowedSources: null },
+      customRules: {},
+      loot: Object.fromEntries(
+        Object.entries(loot).map(([id, l]) => [id, { trueName: '', secretValue: '', cl: null, magicDetected: false, ...l }]),
+      ),
+      characters: Object.fromEntries(
+        Object.entries(characters).map(([id, c]) => {
+          const inv = (c.inventory ?? {}) as Record<string, unknown>;
+          const items = Array.isArray(inv.items) ? (inv.items as Record<string, unknown>[]) : [];
+          return [
+            id,
+            {
+              ...c,
+              sheet: { statAttacks: [], ...(c.sheet as object) },
+              inventory: { ...inv, items: items.map((i) => ({ tradeGood: false, ruleKey: null, ...i })) },
+            },
+          ];
         }),
       ),
     };

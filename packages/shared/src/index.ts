@@ -27,3 +27,6 @@ export * from './pf1e/abilities';
 export * from './pf1e/spellData';
 export * from './pf1e/spells';
 export * from './pf1e/buffs';
+export * from './pf1e/companions';
+export * from './pf1e/bio';
+export * from './rules';

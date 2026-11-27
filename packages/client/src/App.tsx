@@ -2,6 +2,8 @@ import { DialogHost } from './components/Dialogs';
 import { JoinScreen } from './components/JoinScreen';
 import { TableView } from './components/TableView';
 import { Toasts } from './components/Toasts';
+import { RulesCardModal } from './rules/RulesCardModal';
+import { RulesCompendiumModal } from './rules/RulesCompendiumModal';
 import { useGameStore } from './state/gameStore';
 import { leaveRoom, useSession } from './state/session';
 
@@ -27,6 +29,8 @@ export function App() {
   return (
     <>
       {content}
+      {ready && <RulesCompendiumModal />}
+      {ready && <RulesCardModal />}
       <Toasts />
       <DialogHost />
     </>

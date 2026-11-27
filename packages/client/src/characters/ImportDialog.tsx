@@ -2,17 +2,23 @@
  * Import (or re-import) a PCGen .pcg file: parse in the browser, preview,
  * then save. Re-import shows what changed and what is kept.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  buildHasDmNotes,
   buildName,
   characterActions,
+  checkCampaigns,
   createCharacterFromPcg,
+  describeSourceWarning,
   diffCharacterBuild,
   isGm,
   newId,
   parsePcg,
+  splitDmNotes,
   type BuildChange,
+  type RulesBook,
 } from '@vtt/shared';
+import { request } from '../net/rpc';
 import { dispatch } from '../state/dispatch';
 import { useGame, useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
@@ -68,12 +74,23 @@ function ImportDialogBody({ state }: { state: ImportState }) {
   const self = useSelf();
   const gm = isGm(self);
   const users = useGame((s) => s.users);
+  const allowedSources = useGame((s) => s.rules.allowedSources);
   const isReimport = !!state.targetId;
   const target = useGame((s) => (state.targetId ? s.characters[state.targetId] : undefined));
   const targetMissing = isReimport && !target;
+  const [books, setBooks] = useState<RulesBook[]>([]);
+  useEffect(() => {
+    request('rules.books', {})
+      .then(setBooks)
+      .catch(() => setBooks([]));
+  }, []);
+  const sourceWarnings = useMemo(() => checkCampaigns(state.build.system.campaigns, books, allowedSources), [state.build.system.campaigns, books, allowedSources]);
   const players = useMemo(() => Object.values(users).filter((u) => u.role !== 'gm'), [users]);
   const [ownerId, setOwnerId] = useState<string | null>(gm ? null : self.id);
   const [replaceInventory, setReplaceInventory] = useState(false);
+  const [replaceBio, setReplaceBio] = useState(false);
+  // GM-only notes never travel inside the (shared) build; only a GM import keeps them, in bio.dmNotes.
+  const hasDmNotes = useMemo(() => buildHasDmNotes(state.build), [state.build]);
   const changes = useMemo(() => (target ? diffCharacterBuild(target.build, state.build) : null), [target, state.build]);
 
   function save() {
@@ -83,7 +100,13 @@ function ImportDialogBody({ state }: { state: ImportState }) {
         close();
         return;
       }
-      const action = characterActions.reimport.create({ id: target.id, build: state.build, fileName: state.fileName, replaceInventory });
+      const action = characterActions.reimport.create({
+        id: target.id,
+        build: splitDmNotes(state.build).build,
+        fileName: state.fileName,
+        replaceInventory,
+        replaceBio,
+      });
       if (JSON.stringify(action).length > MAX_PAYLOAD_CHARS) return notify('This character is too large to upload');
       if (dispatch(action)) {
         syncLinkedToken(target);
@@ -92,13 +115,14 @@ function ImportDialogBody({ state }: { state: ImportState }) {
       }
       return;
     }
-    const character = createCharacterFromPcg(state.build, {
+    const created = createCharacterFromPcg(state.build, {
       id: newId(),
       ownerId,
       fileName: state.fileName,
       importedBy: self.id,
       now: Date.now(),
     });
+    const character = gm ? created : { ...created, bio: { ...created.bio, dmNotes: '' } };
     const action = characterActions.import.create({ character });
     if (JSON.stringify(action).length > MAX_PAYLOAD_CHARS) return notify('This character is too large to upload');
     if (dispatch(action)) {
@@ -130,6 +154,10 @@ function ImportDialogBody({ state }: { state: ImportState }) {
               <input type="checkbox" checked={replaceInventory} onChange={(e) => setReplaceInventory(e.target.checked)} /> Replace the inventory with
               this file’s gear and money (discards changes made here)
             </label>
+            <label className="checkbox-row" title="The bio, notes and chronicle are kept by default, since they’re edited here">
+              <input type="checkbox" checked={replaceBio} onChange={(e) => setReplaceBio(e.target.checked)} /> Replace the bio, notes and chronicle with
+              this file’s (keeps the portrait and GM notes)
+            </label>
           </>
         ) : (
           <div className="field">
@@ -147,6 +175,26 @@ function ImportDialogBody({ state }: { state: ImportState }) {
               <span>You</span>
             )}
           </div>
+        )}
+
+        {!targetMissing && sourceWarnings.length > 0 && (
+          <div className="import-warnings">
+            {sourceWarnings.map((w) => (
+              <div key={w.campaign} className="warn-text small-text">
+                ⚠ {describeSourceWarning(w)}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!targetMissing && hasDmNotes && (
+          <p className="muted small-text">
+            {gm && !isReimport
+              ? 'This file’s DM notes go into the GM-only notes on the Bio tab; players never see them.'
+              : isReimport
+                ? 'This file’s DM notes are not imported (GM notes are kept as edited in the VTT).'
+                : 'This file’s DM notes are not imported: only the GM can see GM notes.'}
+          </p>
         )}
 
         {!targetMissing && <CharacterSummary build={state.build} compact={isReimport} />}
@@ -173,8 +221,8 @@ function ReimportChanges({ changes }: { changes: BuildChange[] }) {
   return (
     <div className="reimport-diff">
       <p className="small-text">
-        Kept as-is: who plays it, its token link, party sharing, a name you changed here, the inventory, and table state such as
-        current HP and spent uses.
+        Kept as-is: who plays it, its token link, party sharing, a name you changed here, the inventory, the bio, portrait, notes and
+        chronicle, and table state such as current HP and spent uses.
       </p>
       {changes.length === 0 ? (
         <p className="muted">No differences in the build data.</p>

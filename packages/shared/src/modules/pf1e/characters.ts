@@ -11,22 +11,47 @@ import type { Draft } from 'immer';
 import { defineAction, type AuthContext, type AuthResult, type Redactor } from '../../actions/define';
 import { canControlToken, isGm } from '../../actions/auth';
 import { PcgenCharacterSchema } from '../../pcgen/schema';
+import { buildHasDmNotes } from '../../pf1e/bio';
 import { mergeReimport } from '../../pf1e/characters';
 import { computeCharacterStats } from '../../pf1e/engine';
+import { seedInventory } from '../../pf1e/inventory';
 import { tokenSyncFor } from '../../pf1e/tokenSync';
+import { applyRecordToItem } from '../../rules/pricing';
+import type { RulesProvider } from '../../rules/types';
 import {
   CharacterRuntimeSchema,
   CharacterSchema,
   CharacterSheetSchema,
   IdSchema,
+  InventorySchema,
   MAX_CHARACTERS_PER_ROOM,
   TokenSchema,
   type Character,
   type GameState,
+  type Inventory,
   type User,
 } from '../../state';
 
 const MAX_TOKEN_OWNERS = 50;
+
+/** Enrich PCGen-imported items with exact rules-pack equipment records (matched by BASEITEM/KEY/name). */
+function enrichInventoryFromRules(inv: Inventory, build: Character['build'], rules?: RulesProvider): Inventory {
+  if (!rules) return inv;
+  let changed = false;
+  const items = inv.items.map((item, idx) => {
+    const eq = build.equipment[idx];
+    const keys = [eq?.customization?.baseItem, eq?.name, item.name].filter((k): k is string => !!k);
+    let rec = undefined;
+    for (const k of keys) {
+      rec = rules.get('equipment', k) ?? rules.byName('equipment', k);
+      if (rec) break;
+    }
+    if (!rec) return item;
+    changed = true;
+    return applyRecordToItem(item, rec);
+  });
+  return changed ? { ...inv, items } : inv;
+}
 
 export function canSeeCharacter(user: User, c: Character): boolean {
   return isGm(user) || c.ownerId === user.id || c.shared;
@@ -37,20 +62,68 @@ export function canManageCharacter(user: User, c: Character): boolean {
   return isGm(user) || (c.ownerId !== null && c.ownerId === user.id);
 }
 
-function requireManage(ctx: AuthContext, id: string): AuthResult {
+export function requireManage(ctx: AuthContext, id: string): AuthResult {
   const c = ctx.state.characters[id];
   if (!c) return 'Character not found';
   return canManageCharacter(ctx.user, c) || "You don't control that character";
 }
 
 /** Deliver to anyone who could see the character before or after the change. */
-function beforeOrAfter(viewer: User, id: string, full: Character | undefined, state: GameState) {
+export function beforeOrAfter(viewer: User, id: string, full: Character | undefined, state: GameState) {
   const before = state.characters[id];
   return (!!before && canSeeCharacter(viewer, before)) || (!!full && canSeeCharacter(viewer, full));
 }
 
+/** A character as a non-GM may receive it: GM-only notes blanked. */
+export function withoutDmNotes(c: Character): Character {
+  return c.bio.dmNotes ? { ...c, bio: { ...c.bio, dmNotes: '' } } : c;
+}
+
+/**
+ * Store a full character carried for newly-allowed viewers. Full payloads
+ * never carry GM notes (see withoutDmNotes in prepare), so keep the GM notes
+ * of a copy that already has them (the server's and the GMs').
+ */
 function putFull(draft: Draft<GameState>, id: string, full: Character | undefined) {
-  if (full) draft.characters[id] = full;
+  if (!full) return;
+  const dmNotes = draft.characters[id]?.bio.dmNotes ?? '';
+  draft.characters[id] = { ...full, bio: { ...full.bio, dmNotes } };
+}
+
+/** Characters linked to `id` as its master or companions (Epic 9). */
+function linkedTo(state: GameState, id: string): Character[] {
+  const c = state.characters[id];
+  const master = c?.companion ? state.characters[c.companion.masterId] : undefined;
+  return [...(master ? [master] : []), ...Object.values(state.characters).filter((o) => o.companion?.masterId === id)];
+}
+
+/** Also deliver to anyone who sees a character whose companion link the change may drop. */
+function beforeOrAfterOrLinked(viewer: User, id: string, full: Character | undefined, state: GameState) {
+  return beforeOrAfter(viewer, id, full, state) || linkedTo(state, id).some((o) => canSeeCharacter(viewer, o));
+}
+
+/**
+ * A companion belongs to its master's player: drop links between `id` and
+ * characters with a different owner (after setOwner), or all its companions'
+ * links (when it is deleted).
+ */
+function dropBrokenLinks(draft: Draft<GameState>, id: string, ts: number, deleted = false, newOwnerId?: string | null) {
+  const c = draft.characters[id];
+  if (c?.companion) {
+    const master = draft.characters[c.companion.masterId];
+    if (!master || master.ownerId !== c.ownerId) {
+      c.companion = null;
+      c.updatedAt = ts;
+    }
+  }
+  const targetOwner = newOwnerId !== undefined ? newOwnerId : c?.ownerId;
+  for (const o of Object.values(draft.characters)) {
+    if (o.companion?.masterId !== id) continue;
+    if (deleted || targetOwner === undefined || o.ownerId !== targetOwner) {
+      o.companion = null;
+      o.updatedAt = ts;
+    }
+  }
 }
 
 const CharacterChangesSchema = CharacterSchema.pick({ name: true, shared: true }).partial();
@@ -91,6 +164,9 @@ export const characterActions = {
       if (c.inventory.items.some((i) => i.lootId !== null)) return 'Imported items cannot reference party loot';
       if (!c.inventory.loadouts.some((l) => l.id === c.inventory.activeLoadoutId)) return 'Invalid active loadout';
       if (Object.keys(c.runtime.prepared).length > 0) return 'Prepare spells after importing';
+      if (c.companion !== null) return 'Link companions after importing';
+      if (buildHasDmNotes(c.build)) return 'GM notes must be moved out of the imported build';
+      if (c.bio.dmNotes && !isGm(ctx.user)) return 'Only the GM can add GM notes';
       return true;
     },
     prepare(ctx, { character }) {
@@ -98,6 +174,7 @@ export const characterActions = {
       return {
         character: {
           ...character,
+          inventory: enrichInventoryFromRules(character.inventory, character.build, ctx.rules),
           source: { ...character.source, importedBy: ctx.user.id, importedAt: now },
           createdAt: now,
           updatedAt: now,
@@ -105,6 +182,7 @@ export const characterActions = {
       };
     },
     audience: (viewer, { character }) => canSeeCharacter(viewer, character),
+    redactPayload: (viewer, p) => (isGm(viewer) ? p : { character: withoutDmNotes(p.character) }),
     apply(draft, { character }) {
       if (!draft.characters[character.id]) draft.characters[character.id] = character;
     },
@@ -119,7 +197,7 @@ export const characterActions = {
       prepare(ctx, { id, changes }) {
         const before = ctx.state.characters[id]!;
         // Only attach the full character when sharing turns on (so newly-allowed viewers receive it).
-        const full = changes.shared === true && !before.shared ? { ...before, ...changes, updatedAt: Date.now() } : undefined;
+        const full = changes.shared === true && !before.shared ? withoutDmNotes({ ...before, ...changes, updatedAt: Date.now() }) : undefined;
         return { id, changes, full };
       },
       audience: (viewer, { id, full }, { state }) => beforeOrAfter(viewer, id, full, state),
@@ -133,8 +211,10 @@ export const characterActions = {
 
   remove: defineAction('character/delete', z.object({ id: IdSchema }), {
     authorize: (ctx, { id }) => requireManage(ctx, id),
-    audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
-    apply(draft, { id }) {
+    // Viewers of its companions also need to drop their links.
+    audience: (viewer, { id }, { state }) => beforeOrAfterOrLinked(viewer, id, undefined, state),
+    apply(draft, { id }, meta) {
+      dropBrokenLinks(draft, id, meta.ts, true);
       delete draft.characters[id];
     },
   }),
@@ -153,17 +233,20 @@ export const characterActions = {
       prepare(ctx, { id, ownerId }) {
         const before = ctx.state.characters[id]!;
         // Only attach the full character when handing to a new player who didn't already see it.
-        const full = ownerId !== null && !before.shared && before.ownerId !== ownerId ? { ...before, ownerId, updatedAt: Date.now() } : undefined;
+        const full = ownerId !== null && !before.shared && before.ownerId !== ownerId ? withoutDmNotes({ ...before, ownerId, updatedAt: Date.now() }) : undefined;
         return { id, ownerId, full };
       },
-      audience: (viewer, { id, full }, { state }) => beforeOrAfter(viewer, id, full, state),
+      // Viewers of linked characters get it too (links to a different owner are dropped), but only allowed viewers get the full character.
+      audience: (viewer, { id, full }, { state }) => beforeOrAfterOrLinked(viewer, id, full, state),
+      redactPayload: (viewer, p) => (p.full && !canSeeCharacter(viewer, p.full) ? { id: p.id, ownerId: p.ownerId } : p),
       apply(draft, { id, ownerId, full }, meta) {
-        if (full) return putFull(draft, id, full);
+        if (full) putFull(draft, id, full);
         const c = draft.characters[id];
         if (c) {
           c.ownerId = ownerId;
           c.updatedAt = meta.ts;
         }
+        dropBrokenLinks(draft, id, meta.ts, false, ownerId);
       },
     },
   ),
@@ -188,6 +271,7 @@ export const characterActions = {
       authorize(ctx, { id, tokenId }) {
         const ok = requireManage(ctx, id);
         if (ok !== true || tokenId === null) return ok;
+        if (ctx.state.characters[id]!.companion?.harbored) return 'Manifest the companion before linking a token';
         const token = ctx.state.tokens[tokenId];
         if (!token) return 'Token not found';
         if (!canControlToken(ctx.user, token)) return "You don't control that token";
@@ -242,13 +326,42 @@ export const characterActions = {
   /** Replace the build with a newer .pcg export, keeping owner, token link, sharing and runtime state. */
   reimport: defineAction(
     'character/reimport',
-    z.object({ id: IdSchema, build: PcgenCharacterSchema, fileName: z.string().max(255), replaceInventory: z.boolean().optional() }),
+    z.object({
+      id: IdSchema,
+      build: PcgenCharacterSchema,
+      fileName: z.string().max(255),
+      replaceInventory: z.boolean().optional(),
+      /** Reseed the bio text, notes and chronicle from the file (portrait and GM notes are kept). */
+      replaceBio: z.boolean().optional(),
+      /** Filled in by the server when replaceInventory uses the rules pack. */
+      enrichedInventory: InventorySchema.optional(),
+    }),
     {
-      authorize: (ctx, { id }) => requireManage(ctx, id),
+      authorize(ctx, { id, build }) {
+        const ok = requireManage(ctx, id);
+        if (ok !== true) return ok;
+        return !buildHasDmNotes(build) || 'GM notes must be moved out of the imported build';
+      },
+      prepare(ctx, p) {
+        if (!p.replaceInventory || !ctx.rules) return { id: p.id, build: p.build, fileName: p.fileName, replaceInventory: p.replaceInventory, replaceBio: p.replaceBio };
+        const seeded = seedInventory(p.build);
+        const enriched = enrichInventoryFromRules(seeded, p.build, ctx.rules);
+        return {
+          id: p.id,
+          build: p.build,
+          fileName: p.fileName,
+          replaceInventory: p.replaceInventory,
+          replaceBio: p.replaceBio,
+          ...(enriched !== seeded ? { enrichedInventory: enriched } : {}),
+        };
+      },
       audience: (viewer, { id }, { state }) => beforeOrAfter(viewer, id, undefined, state),
-      apply(draft, { id, build, fileName, replaceInventory }, meta) {
+      apply(draft, { id, build, fileName, replaceInventory, replaceBio, enrichedInventory }, meta) {
         const c = draft.characters[id];
-        if (c) Object.assign(c, mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts, replaceInventory }));
+        if (!c) return;
+        const merged = mergeReimport(c as Character, build, { fileName, importedBy: meta.userId, now: meta.ts, replaceInventory, replaceBio });
+        if (replaceInventory && enrichedInventory) merged.inventory = enrichedInventory;
+        Object.assign(c, merged);
       },
     },
   ),
@@ -320,7 +433,10 @@ export const characterSheetActions = {
 
 export const redactCharacters: Redactor = (draft, viewer) => {
   if (isGm(viewer)) return;
-  for (const c of Object.values(draft.characters)) if (!canSeeCharacter(viewer, c as Character)) delete draft.characters[c.id];
+  for (const c of Object.values(draft.characters)) {
+    if (!canSeeCharacter(viewer, c as Character)) delete draft.characters[c.id];
+    else c.bio.dmNotes = '';
+  }
 };
 
 /** Copy a token's conditions onto the characters linked to it (their condition effects follow the map markers). */

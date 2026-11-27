@@ -1,6 +1,7 @@
 /** Pure helpers for PF1e characters (shared by client UI and server tests). */
 import { EMPTY_RUNTIME, EMPTY_SHEET, type Character } from '../entities/pf1e';
 import type { PcgenCharacter } from '../pcgen/schema';
+import { seedBio, splitDmNotes } from './bio';
 import { seedInventory } from './inventory';
 
 /** Character name from a parsed file, with a sensible fallback. */
@@ -22,11 +23,16 @@ function fileFallbackName(fileName: string): string {
   return fileName.replace(/\.pcg$/i, '').trim() || 'Unnamed character';
 }
 
-/** A new character from a freshly parsed .pcg file. */
+/**
+ * A new character from a freshly parsed .pcg file. GM-only notes are moved
+ * out of the build into `bio.dmNotes` (the importing client blanks that for
+ * non-GM imports, which the server requires).
+ */
 export function createCharacterFromPcg(
-  build: PcgenCharacter,
+  raw: PcgenCharacter,
   opts: { id: string; ownerId: string | null; fileName: string; importedBy: string; now: number },
 ): Character {
+  const { build, dmNotes } = splitDmNotes(raw);
   return {
     id: opts.id,
     name: buildName(build, fileFallbackName(opts.fileName)),
@@ -38,6 +44,8 @@ export function createCharacterFromPcg(
     sheet: structuredClone(EMPTY_SHEET),
     runtime: structuredClone(EMPTY_RUNTIME),
     inventory: seedInventory(build),
+    companion: null,
+    bio: seedBio(build, dmNotes),
     createdAt: opts.now,
     updatedAt: opts.now,
   };
@@ -48,12 +56,16 @@ export function createCharacterFromPcg(
  * id, owner, token link, sharing and runtime state are kept. A name the user
  * customized in the VTT is kept too. The inventory is VTT-owned (it changes
  * in play) and is kept unless `replaceInventory` asks to reseed it from the file.
+ * The bio is VTT-owned too: kept unless `replaceBio` reseeds its text, notes
+ * and chronicle from the file (the portrait and GM notes are always kept).
  */
 export function mergeReimport(
   existing: Character,
-  build: PcgenCharacter,
-  opts: { fileName: string; importedBy: string; now: number; replaceInventory?: boolean },
+  raw: PcgenCharacter,
+  opts: { fileName: string; importedBy: string; now: number; replaceInventory?: boolean; replaceBio?: boolean },
 ): Character {
+  const build = splitDmNotes(raw).build;
+  const seeded = opts.replaceBio ? seedBio(build) : null;
   const prevImportedName = buildName(existing.build, fileFallbackName(existing.source.fileName));
   const nameWasImported = existing.name === prevImportedName;
   return {
@@ -61,6 +73,9 @@ export function mergeReimport(
     name: nameWasImported ? buildName(build, existing.name) : existing.name,
     build,
     inventory: opts.replaceInventory ? seedInventory(build) : existing.inventory,
+    bio: seeded
+      ? { ...seeded, portraitUrl: existing.bio.portraitUrl ?? seeded.portraitUrl, dmNotes: existing.bio.dmNotes }
+      : existing.bio,
     source: { kind: 'pcgen', fileName: opts.fileName.slice(0, 255), importedAt: opts.now, importedBy: opts.importedBy },
     updatedAt: opts.now,
   };

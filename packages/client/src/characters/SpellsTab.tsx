@@ -4,7 +4,7 @@
  * template), spontaneous conversion, Rest & prepare, and casting settings.
  */
 import { useMemo, useState } from 'react';
-import { Compass, Moon, Settings, X } from 'lucide-react';
+import { BookOpen, Compass, Moon, Settings, X } from 'lucide-react';
 import {
   canManageCharacter,
   characterSheetActions,
@@ -48,6 +48,7 @@ import { useSelf } from '../state/hooks';
 import { notify } from '../state/notifications';
 import { currentWhisper } from '../state/uiStore';
 import { armTemplate } from '../tools/templateTool';
+import { openRulesCard } from '../rules/store';
 import { rollCheck } from './characterActions';
 
 const MODEL_LABEL = { prepared: 'prepared', spontaneous: 'spontaneous', hybrid: 'prepared + spontaneous' } as const;
@@ -229,7 +230,12 @@ function SpellName({ c, info, name, slotLevel, metamagic }: { c: Character; info
     : `Save DC ${dc} (if a save applies)`;
   return (
     <InfoTip title={name} body={body}>
-      <span className="spell-name">
+      <button
+        type="button"
+        className="spell-name link-button"
+        onClick={() => openRulesCard({ kind: 'spell', name, aonKind: 'spell' })}
+        title="Open spell rules card & AoN link"
+      >
         {name}
         {metamagic.map((m) => (
           <span key={m} className="badge subtle">
@@ -237,7 +243,8 @@ function SpellName({ c, info, name, slotLevel, metamagic }: { c: Character; info
           </span>
         ))}
         {ref?.area && <Compass size={12} className="muted" />}
-      </span>
+        <BookOpen size={11} className="muted" />
+      </button>
     </InfoTip>
   );
 }
