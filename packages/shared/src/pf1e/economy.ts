@@ -10,8 +10,9 @@ import type { Draft } from 'immer';
 import type { Pf1TurnState } from '../entities/pf1e';
 import type { GameState } from '../state';
 import type { ActionCost } from './actions';
+import { effectiveConditions } from './buffs';
 import { computeCharacterStats } from './engine';
-import { featKey, normalizeName } from './rules';
+import { featKey, normalizeName, resolveClassName } from './rules';
 
 export interface EffectiveTurn {
   /** Turn state for the current window (fresh if nothing recorded yet). */
@@ -24,6 +25,10 @@ export interface EffectiveTurn {
   swiftLocked: boolean;
   aooMax: number;
   combatReflexes: boolean;
+  /** Active normalized effective conditions (for action restrictions). */
+  conditions?: string[];
+  /** Total Defense toggle is active (blocks attacks of opportunity per CRB p.186). */
+  totalDefense?: boolean;
 }
 
 export const freshTurn = (window: number): Pf1TurnState => ({
@@ -70,46 +75,78 @@ export function effectiveTurn(state: GameState, combatantId: string): EffectiveT
   let combatReflexes = false;
   let aooMax = 1;
   let hasUncannyDodge = false;
+  let totalDefense = false;
   if (character) {
     const allFeats = [...character.build.abilities.map((a) => a.key), ...character.build.legacyFeats, ...character.build.virtualFeats];
     combatReflexes = allFeats.some((n) => featKey(n) === 'combatreflexes');
     if (combatReflexes) aooMax = Math.max(1, 1 + computeCharacterStats(character).abilities.DEX.mod);
     const classLvl = (...keys: string[]) =>
-      character.build.classes.filter((k) => keys.includes(normalizeName(k.name))).reduce((s, k) => s + k.level, 0);
+      character.build.classes.filter((k) => keys.includes(normalizeName(resolveClassName(character, k.name)))).reduce((s, k) => s + k.level, 0);
     hasUncannyDodge =
       classLvl('barbarian', 'barbarianunchained', 'unchainedbarbarian', 'bloodrager') >= 2 ||
-      classLvl('rogue', 'rogueunchained', 'unchainedrogue', 'skald') >= 4 ||
+      classLvl('rogue', 'rogueunchained', 'unchainedrogue', 'ninja', 'skald') >= 4 ||
       allFeats.some((n) => /uncanny\s*dodge/i.test(n));
+    totalDefense = !!character.runtime.toggles.totalDefense;
+  }
+  const rawConditions = token ? token.conditions : (character?.runtime.conditions ?? []);
+  const conditions = effectiveConditions(rawConditions);
+  if (character?.runtime.buffs.some((b) => b.active && b.presetId === 'slow') && !conditions.includes('slowed')) {
+    conditions.push('slowed');
   }
   const swiftLocked = inheritsLock;
 
   return {
     turn,
     isTurn: combat.active && combat.currentId === combatantId,
-    flatFooted: (combat.active && window === 0 && !hasUncannyDodge) || !!token?.conditions.some((c) => c.toLowerCase() === 'flat-footed'),
+    flatFooted: (combat.active && window === 0 && !hasUncannyDodge) || (!hasUncannyDodge && conditions.includes('flatfooted')),
     swiftLocked,
     aooMax,
     combatReflexes,
+    conditions,
+    totalDefense,
   };
 }
 
+const NO_ACTION_CONDITIONS = new Set(['dazed', 'stunned', 'cowering', 'paralyzed', 'unconscious', 'dying', 'helpless']);
+
 /** Why an action with this cost can't be taken now, or true if it can. */
-export function canSpend(e: EffectiveTurn, cost: ActionCost, movement = false): true | string {
+export function canSpend(e: EffectiveTurn, cost: ActionCost, movement = false, offTurn = false): true | string {
   const t = e.turn;
+  const conds = e.conditions ?? [];
+  const blockedBy = conds.find((c) => NO_ACTION_CONDITIONS.has(c));
+  if (blockedBy && cost !== 'none' && cost !== 'other') {
+    return `Cannot take actions while ${blockedBy}`;
+  }
+  const nauseated = conds.includes('nauseated');
+  const staggered = conds.includes('staggered') || conds.includes('slowed');
+  const grappled = conds.includes('grappled') || conds.includes('pinned');
+  if (nauseated && cost !== 'move' && cost !== 'none' && cost !== 'other') {
+    return 'Nauseated: only a single move action each turn';
+  }
+  if (grappled && (movement || cost === 'fiveFoot')) {
+    return 'Cannot move while grappled or pinned';
+  }
+  if (grappled && cost === 'aoo') {
+    return 'Cannot make attacks of opportunity while grappled or pinned';
+  }
   const moveBlocked = movement && t.fiveFoot ? 'You already took a 5-foot step this turn' : null;
   switch (cost) {
     case 'standard':
       if (!e.isTurn) return 'Only on your turn';
       if (t.fullRound) return 'You already took a full-round action';
+      if (staggered && (t.standard || t.move)) return 'Staggered: only a single move or standard action each turn';
       if (t.standard) return 'Standard action already used';
       return moveBlocked ?? true;
     case 'move':
       if (!e.isTurn) return 'Only on your turn';
       if (t.fullRound) return 'You already took a full-round action';
+      if (nauseated && t.move) return 'Nauseated: only a single move action each turn';
+      if (staggered && (t.standard || t.move)) return 'Staggered: only a single move or standard action each turn';
       if (t.move && t.standard) return 'No move action left';
       return moveBlocked ?? true;
     case 'fullRound':
       if (!e.isTurn) return 'Only on your turn';
+      if (staggered) return 'Staggered: cannot take a full-round action';
       if (t.fullRound || t.standard || t.move) return 'A full-round action needs your whole turn';
       return moveBlocked ?? true;
     case 'swift':
@@ -126,7 +163,11 @@ export function canSpend(e: EffectiveTurn, cost: ActionCost, movement = false): 
       if (t.fiveFoot) return 'Only one 5-foot step per turn';
       if (t.moved) return 'Not after moving this turn';
       return true;
+    case 'free':
+      if (!e.isTurn && !offTurn) return 'Free actions can only be taken on your turn';
+      return true;
     case 'aoo':
+      if (e.totalDefense) return 'Cannot make attacks of opportunity while using total defense';
       if (e.flatFooted && !e.combatReflexes) return 'Flat-footed creatures can’t make attacks of opportunity';
       if (t.aoo >= e.aooMax) return `No attacks of opportunity left this round (${e.aooMax})`;
       return true;

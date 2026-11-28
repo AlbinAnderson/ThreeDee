@@ -103,6 +103,65 @@ export const WEAPON_TABLE: [string, W][] = (
     ['Repeating crossbow', w('1d8', '19-20/x2', 80, 'two', 'ranged')],
     ['Pistol', w('1d8', 'x4', 20, 'one', 'ranged')],
     ['Musket', w('1d12', 'x4', 40, 'two', 'ranged')],
+    // Advanced Player's Guide / Ultimate Combat / Ultimate Equipment / Advanced Race Guide (values from PCGen data).
+    ['Light flail', w('1d8', 'x2', 0, 'one')],
+    ['Dire flail', w('1d8', 'x2', 0, 'two')],
+    ['Falcata', w('1d8', '19-20/x3', 0, 'one')],
+    ['Khopesh', w('1d8', '19-20/x2', 0, 'one')],
+    ['Temple sword', w('1d8', '19-20/x2', 0, 'one')],
+    ['Rhomphaia', w('2d4', 'x3', 0, 'two')],
+    ['Gladius', w('1d6', '19-20/x2', 0, 'light')],
+    ['Kerambit', w('1d3', 'x3', 0, 'light')],
+    ['Butterfly sword', w('1d4', '19-20/x2', 0, 'light')],
+    ['Sword cane', w('1d6', 'x2', 0, 'one', 'melee', { finesse: true })],
+    ['Bayonet', w('1d6', 'x2', 0, 'two')],
+    ['Bardiche', w('1d10', '19-20/x2', 0, 'two')],
+    ['Bec de corbin', w('1d10', 'x3', 0, 'two')],
+    ['Bill', w('1d8', 'x3', 0, 'two')],
+    ['Glaive-guisarme', w('1d10', 'x3', 0, 'two')],
+    ['Lucerne hammer', w('1d12', 'x2', 0, 'two')],
+    ['Mancatcher', w('1d2', 'x2', 0, 'two')],
+    ['Naginata', w('1d8', 'x4', 0, 'two')],
+    ['Pilum', w('1d8', 'x2', 20, 'one', 'thrown')],
+    ['Boomerang', w('1d6', 'x2', 30, 'one', 'thrown')],
+    ['Chakram', w('1d8', 'x2', 30, 'one', 'thrown')],
+    ['Harpoon', w('1d8', 'x3', 10, 'one', 'thrown')],
+    ['Bo staff', w('1d6', 'x2', 0, 'two')],
+    ['Tonfa', w('1d6', 'x2', 0, 'light')],
+    ['Tetsubo', w('1d10', 'x4', 0, 'two')],
+    ["Monk's spade", w('1d6', 'x2', 0, 'two')],
+    ['Sansetsukon', w('1d10', '19-20/x2', 0, 'two')],
+    ['Jutte', w('1d6', 'x2', 0, 'light')],
+    ['Sibat', w('1d6', 'x3', 0, 'one')],
+    ['Tiger fork', w('1d8', 'x2', 0, 'two')],
+    ['Fighting fan', w('1d4', 'x3', 0, 'light')],
+    ['Emei piercer', w('1d3', '19-20/x2', 0, 'light')],
+    ['Nine-section whip', w('1d8', '19-20/x2', 0, 'one')],
+    ['Scorpion whip', w('1d4', 'x2', 0, 'one')],
+    ['Urumi', w('1d8', '18-20/x2', 0, 'one')],
+    ['Meteor hammer', w('1d8', 'x2', 0, 'two')],
+    ['Chain spear', w('1d6', 'x2', 0, 'two')],
+    ['Wushu dart', w('1d3', 'x2', 10, 'light', 'thrown')],
+    ['Battle aspergillum', w('1d6', 'x2', 0, 'light')],
+    ['Wooden stake', w('1d4', 'x2', 10, 'light')],
+    ['Hooked axe', w('1d8', 'x3', 0, 'one')],
+    ['Knuckle axe', w('1d6', 'x3', 0, 'light')],
+    ['Mattock', w('2d4', 'x4', 0, 'two')],
+    ['Aklys', w('1d8', 'x2', 20, 'light')],
+    ['Dogslicer', w('1d4', '19-20/x2', 0, 'one')],
+    ['Dwarven longaxe', w('1d12', 'x3', 0, 'two')],
+    ['Dwarven longhammer', w('2d6', 'x3', 0, 'two')],
+    ['Double crossbow', w('1d8', '19-20/x2', 80, 'two', 'ranged')],
+    ['Halfling sling staff', w('1d6', 'x3', 80, 'one', 'ranged', { strDamage: 'full' })],
+    // Firearms (Ultimate Combat): no Strength to damage.
+    ['Blunderbuss', w('1d8', 'x2', 10, 'two', 'ranged')],
+    ['Rifle', w('1d10', 'x4', 80, 'two', 'ranged')],
+    ['Revolver', w('1d8', 'x4', 20, 'one', 'ranged')],
+    ['Pepperbox', w('1d8', 'x4', 20, 'one', 'ranged')],
+    ['Shotgun', w('1d8', 'x2', 20, 'two', 'ranged')],
+    ['Dragon pistol', w('1d6', 'x4', 20, 'one', 'ranged')],
+    ['Coat pistol', w('1d4', 'x3', 10, 'one', 'ranged')],
+    ['Axe musket', w('1d8', 'x4', 30, 'two', 'ranged')],
     // Splash weapons: no Strength to damage.
     ["Alchemist's fire", w('1d6', 'x2', 10, 'light', 'thrown', { strDamage: 'none', finesse: false })],
     ['Acid flask', w('1d6', 'x2', 10, 'light', 'thrown', { strDamage: 'none', finesse: false })],
@@ -154,9 +213,15 @@ function pcgenWeaponAlias(name: string): string {
   );
 }
 
+/** PCGen "Longhammer, Dwarven" -> "Dwarven Longhammer" (two-part comma names only). */
+function commaAlias(name: string): string {
+  const m = /^([^,]+),\s*([^,]+)$/.exec(name.trim());
+  return m ? `${m[2]} ${m[1]}` : name;
+}
+
 /** "+1 Masterwork Longsword (Cold Iron)" -> "longsword" */
 export function baseGearName(name: string): string {
-  return pcgenWeaponAlias(name)
+  return pcgenWeaponAlias(commaAlias(name))
     .replace(/\(([^)]*)\)/g, ' $1 ')
     .replace(MATERIAL_WORDS, ' ')
     .replace(/[,()]/g, ' ')
@@ -172,35 +237,58 @@ const CANONICAL_WEAPON_KEY: Record<string, string> = {
 };
 
 /**
+ * Words that may surround a known weapon name without making it a different
+ * weapon: weapon special abilities and a few fillers. Anything else
+ * ("Chain Spear", "Coat Pistol", "Nine-Section Whip") is a different weapon
+ * and must not borrow the table entry's stats.
+ */
+const WEAPON_QUALITY_WORDS = new Set([
+  'flaming', 'burst', 'keen', 'frost', 'icy', 'shock', 'shocking', 'thundering', 'holy', 'unholy', 'axiomatic', 'anarchic',
+  'ghost', 'touch', 'defending', 'speed', 'vorpal', 'wounding', 'bane', 'brilliant', 'energy', 'merciful', 'returning',
+  'distance', 'seeking', 'spell', 'storing', 'throwing', 'corrosive', 'furious', 'agile', 'called', 'conductive', 'cunning',
+  'dueling', 'ki', 'focus', 'mighty', 'cleaving', 'impact', 'dancing', 'disruption', 'menacing', 'allying', 'training',
+  'heartseeker', 'flask', 'weapon',
+]);
+
+/** Weapon table keys normalized like item names (built lazily: baseGearName's regexes are declared below the table). */
+let normalizedWeaponKeys: [string[], [string, W]][] | null = null;
+function weaponKeys(): [string[], [string, W]][] {
+  normalizedWeaponKeys ??= WEAPON_TABLE.map((entry): [string[], [string, W]] => [baseGearName(entry[0]).split(' ').filter(Boolean), entry]).filter(([k]) => k.length > 0);
+  return normalizedWeaponKeys;
+}
+
+/** Table entry whose name appears in the item name with only quality words, numbers or punctuation around it. */
+function matchWeapon(name: string): [string, W] | undefined {
+  if (NON_WEAPON_PREFIX.test(name)) return undefined;
+  const words = baseGearName(name)
+    .split(' ')
+    .filter((t) => /[a-z0-9]/.test(t));
+  if (!words.length) return undefined;
+  for (const [key, entry] of weaponKeys()) {
+    for (let i = 0; i + key.length <= words.length; i++) {
+      if (!key.every((k, j) => words[i + j] === k)) continue;
+      const rest = [...words.slice(0, i), ...words.slice(i + key.length)];
+      if (rest.every((t) => WEAPON_QUALITY_WORDS.has(t) || /^\d+$/.test(t))) return entry;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Canonical weapon key for matching weapon feats (Weapon Focus / Specialization).
- * Resolves known weapons longest-name-first so "Punching Dagger" won't match "Dagger"
+ * Resolves known weapons strictly, so "Punching Dagger" won't match "Dagger"
  * and "Sword (Short)" / "Shortsword" or "Composite Longbow" / "Longbow" match cleanly.
  */
 export function weaponKey(name: string): string {
   const base = baseGearName(name);
   if (!base) return '';
-  const padded = ` ${base} `;
-  const hit = WEAPON_TABLE.find(([n]) => {
-    const key = n.toLowerCase();
-    if (!padded.includes(` ${key} `)) return false;
-    if (key === 'acid' && base !== 'acid') return false;
-    return true;
-  });
+  const hit = matchWeapon(name);
   const key = hit ? hit[0].toLowerCase() : base;
   return CANONICAL_WEAPON_KEY[key] ?? key;
 }
 
 export function lookupWeapon(name: string): W | undefined {
-  if (NON_WEAPON_PREFIX.test(name)) return undefined;
-  const base = ` ${baseGearName(name)} `;
-  const hit = WEAPON_TABLE.find(([n]) => {
-    const key = n.toLowerCase();
-    if (!base.includes(` ${key} `)) return false;
-    // Bare "Acid" is only the splash weapon flask, not "Acid Arrow" or "Acid Resistance".
-    if (key === 'acid' && base.trim() !== 'acid') return false;
-    return true;
-  });
-  return hit?.[1];
+  return matchWeapon(name)?.[1];
 }
 
 /** Enhancement bonus from "+2 Longsword", "Longsword +2" or a PCGen EQMOD like PLUS2W. Ignores composite bow "(+2 Str)" ratings. */
@@ -211,30 +299,53 @@ export function enhancementFrom(name: string, eqmods = ''): number {
   return fromMod ? Math.min(10, Number(fromMod[1])) : 0;
 }
 
+/** Masterwork, or made of a material that is always masterwork (mithral, adamantine, darkwood, dragonhide). */
 export function masterworkFrom(name: string, eqmods = ''): boolean {
-  return /masterwork|\bmwk\b/i.test(name) || /MWORK|masterwork/i.test(eqmods);
+  return /masterwork|\bmwk\b|\b(mithr[ai]l|darkwood|adamantine|dragonhide)\b/i.test(name) || /MWORK|masterwork|MITHR[AI]L|DARKWOOD|ADAMANT|DRAGONHIDE/i.test(eqmods);
 }
 
 /** Rules data an item of this name probably has. Every field stays editable on the item. */
 export function detectGear(name: string, baseItem?: string | null, eqmods = ''): Pick<InventoryItem, 'armor' | 'weapon' | 'light' | 'container' | 'charges'> {
   const names = [baseItem?.replace(/\(base\)/i, '').trim(), name].filter((n): n is string => !!n);
   const enhancement = enhancementFrom(name, eqmods);
-  const masterwork = enhancement > 0 || masterworkFrom(name, eqmods);
+  const combined = `${name} ${baseItem ?? ''} ${eqmods}`;
+  const isMithral = /\bmithr[ai]l\b|\belven chain\b/i.test(combined);
+  const isDarkwood = /\bdarkwood\b/i.test(combined);
+  const isAdamantine = /\badamantine\b|\bdwarven plate\b|ADAMANT/i.test(combined);
+  const isDragonhide = /\bdragonhide\b/i.test(combined);
+  const masterwork = enhancement > 0 || isMithral || isDarkwood || isAdamantine || isDragonhide || masterworkFrom(name, eqmods);
 
   let armor: ItemArmor | null = null;
   for (const n of names) {
     const hit = lookupArmor(n);
     if (!hit) continue;
     const a = hit.armor;
+    let category = a.category;
+    let maxDex = a.maxDex;
+    let acp = a.acp;
+    let asf = a.asf;
+    if (isMithral) {
+      // CRB p.154 (and PCGen cr_equipmods.lst REPLACES Masterwork): Mithral reduces ACP by 3 total (incl. masterwork), +2 max Dex, -10% ASF, armor 1 category lighter.
+      acp = Math.min(0, acp + 3);
+      if (maxDex !== null) maxDex = Math.min(20, maxDex + 2);
+      asf = Math.max(0, asf - 10);
+      if (category === 'heavy') category = 'medium';
+      else if (category === 'medium') category = 'light';
+    } else if (isDarkwood && a.kind === 'shield') {
+      // CRB p.154: Darkwood shields reduce ACP by 2 total (incl. masterwork).
+      acp = Math.min(0, acp + 2);
+    } else if (masterwork && acp < 0) {
+      // Masterwork armor has 1 less armor check penalty.
+      acp = Math.min(0, acp + 1);
+    }
     armor = {
       kind: a.kind,
-      category: a.category,
+      category,
       bonus: a.bonus,
       enhancement: Math.max(enhancement, hit.enhancement),
-      maxDex: a.maxDex,
-      // Masterwork armor has 1 less armor check penalty.
-      acp: Math.min(0, a.acp + (masterwork && a.acp < 0 ? 1 : 0)),
-      asf: a.asf,
+      maxDex,
+      acp,
+      asf,
     };
     break;
   }
@@ -260,23 +371,29 @@ export function detectGear(name: string, baseItem?: string | null, eqmods = ''):
 // ------------------------------------------------------------------ weapon size
 
 const STEPS = ['1d1', '1d2', '1d3', '1d4', '1d6', '1d8', '1d10', '2d6', '2d8', '3d6', '3d8', '4d6', '4d8', '6d6', '6d8', '8d6', '8d8', '12d6', '12d8', '16d6'];
-const ALIASES: Record<string, string> = { '2d4': '1d8', '1d12': '2d6', '2d10': '2d8' };
+const ALIASES: Record<string, string> = { '2d4': '1d8', '1d12': '2d6' };
 const SIZE_STEP: Partial<Record<SizeName, number>> = { Fine: -4, Diminutive: -3, Tiny: -2, Small: -1, Medium: 0, Large: 1, Huge: 2, Gargantuan: 3, Colossal: 4 };
 
 /**
  * Damage dice of a Medium weapon made for a creature of another size, following
- * the PF1e weapon size progression FAQ (1 step while <= 1d6 going up or <= 2d8
- * going down from Medium; 2 steps thereafter).
+ * the Paizo 2015 weapon size progression FAQ (growing: 1 step if <= 1d6, else 2;
+ * shrinking from Medium: always 1 step; `2d10` -> `4d8` up / `2d8` down).
  */
 export function sizedDamage(medium: string, size: SizeName): string {
   const shift = SIZE_STEP[size] ?? 0;
   if (!shift) return medium;
+  if (medium === '2d10') {
+    let idx = shift > 0 ? STEPS.indexOf('4d8') : STEPS.indexOf('2d8');
+    const rem = Math.abs(shift) - 1;
+    for (let s = 0; s < rem; s++) idx += shift > 0 ? 2 : -1;
+    return STEPS[Math.max(0, Math.min(STEPS.length - 1, idx))]!;
+  }
   let idx = STEPS.indexOf(ALIASES[medium] ?? medium);
   if (idx === -1) return medium;
   if (shift > 0) {
     for (let s = 0; s < shift; s++) idx += idx <= 4 ? 1 : 2;
   } else {
-    for (let s = 0; s < -shift; s++) idx -= idx <= 8 ? 1 : 2;
+    for (let s = 0; s < -shift; s++) idx -= 1;
   }
   return STEPS[Math.max(0, Math.min(STEPS.length - 1, idx))]!;
 }

@@ -281,7 +281,7 @@ describe('[Epic 7] casting and preparing rules', () => {
     const e = (id: string, name: string, lvl: number) => ({ id, name, level: lvl, metamagic: [] as string[], slot: 'normal' as const });
     assert.equal(checkPrepared(c, 'Arcanist', [e('1', 'Magic Missile', 1), e('2', 'Grease', 1), e('3', 'Light', 0)]), true);
     assert.match(checkPrepared(c, 'Arcanist', [e('1', 'Magic Missile', 1), e('2', 'Grease', 1), e('3', 'Color Spray', 1)]) as string, /Too many 1st-level/);
-    assert.match(checkPrepared(c, 'Arcanist', [{ ...e('1', 'Magic Missile', 1), metamagic: ['Silent Spell'] }]) as string, /when casting/);
+    assert.match(checkPrepared(c, 'Arcanist', [{ ...e('1', 'Magic Missile', 1), metamagic: ['Silent Spell'] }]) as string, /at least a 2nd-level slot/);
     c.runtime.prepared.Arcanist = [{ ...e('1', 'Magic Missile', 1), cast: false }];
     assert.equal(plan(planCast(c, { className: 'Arcanist', spellName: 'Magic Missile', level: 1 })).slotKey, spellSlotKey('Arcanist', 1));
     assert.match(planCast(c, { className: 'Arcanist', spellName: 'Grease', level: 1 }) as string, /isn't prepared today/);

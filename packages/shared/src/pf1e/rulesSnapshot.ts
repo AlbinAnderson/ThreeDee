@@ -13,7 +13,7 @@ import {
 } from '../entities/pf1e';
 import type { PcgenCharacter } from '../pcgen/schema';
 import type { RulesProvider } from '../rules/types';
-import { featKey, MODELED_FEAT_KEYS, normalizeName } from './rules';
+import { featKey, MODELED_FEAT_KEYS, normalizeName, resolveClassName, STAT_KEYS } from './rules';
 import { MODELED_SKILL_FEAT_KEYS } from './skills';
 
 /**
@@ -42,6 +42,8 @@ const EXTRA_MODELED_KEYS = [
   'greaterspellfocus',
   'spellpenetration',
   'greaterspellpenetration',
+  'druidnaturesense',
+  'naturesense',
 ];
 
 export const ENGINE_MODELED_FEAT_KEYS: ReadonlySet<string> = new Set(
@@ -61,7 +63,7 @@ export function isRulesDataEmpty(d: CharacterRulesData): boolean {
 /** True when a PCGen ability record represents racial default stats/skills already modeled by RaceData. */
 function isRacialDefaultRecord(key: string, types: string[]): boolean {
   if (/~\s*ability\s+scores$/i.test(key)) return true;
-  return types.some((t) => /^(racial\s*traits|racial\s+ability\s+scores)$/i.test(t) || /\s+racial\s+(default|trait)$/i.test(t));
+  return types.some((t) => /^racial\s+ability\s+scores$/i.test(t) || /\s+racial\s+default$/i.test(t));
 }
 
 /**
@@ -74,7 +76,8 @@ export function buildCharacterRulesData(build: PcgenCharacter, rules?: RulesProv
   const classes: Record<string, ClassSnapshot> = {};
   for (const cls of build.classes) {
     if (Object.keys(classes).length >= 20) break;
-    const rec = rules.byName('class', cls.name);
+    const resolvedName = resolveClassName({ build }, cls.name);
+    const rec = rules.byName('class', resolvedName) ?? rules.byName('class', cls.name);
     if (!rec || rec.hd === null || rec.bab === null) continue;
     const norm = normalizeName(cls.name).slice(0, 60);
     if (!norm) continue;
@@ -112,11 +115,19 @@ export function buildCharacterRulesData(build: PcgenCharacter, rules?: RulesProv
   const bonuses: CharacterRulesBonus[] = [];
   const seenFeatKeys = new Set<string>();
   const seenIds = new Set<string>();
+  // Count repeated stackable abilities (e.g. Favored Class Bonus ~ Hit Point taken multiple levels).
+  const abilityCounts = new Map<string, number>();
+  for (const a of build.abilities) {
+    const fk = featKey(a.key);
+    if (!fk) continue;
+    abilityCounts.set(fk, (abilityCounts.get(fk) ?? 0) + Math.max(1, a.appliedTo.length));
+  }
   const abilityKeys = [
     ...build.abilities.map((a) => a.key),
     ...build.legacyFeats,
     ...build.virtualFeats,
   ];
+  const isStackableRulesAbility = (key: string) => /favored\s*class\s*bonus\s*~\s*hit\s*point/i.test(key);
   for (const rawKey of abilityKeys) {
     if (bonuses.length >= 100) break;
     const fk = featKey(rawKey);
@@ -128,15 +139,19 @@ export function buildCharacterRulesData(build: PcgenCharacter, rules?: RulesProv
       rules.byName('feat', rawKey) ??
       rules.byName('ability', rawKey);
     if (!rec?.bonuses?.length) continue;
-    // Never emit racial default ability mods or skill bonuses here; RaceData owns them cleanly.
-    if (isRacialDefaultRecord(rec.key, rec.types)) continue;
+    // Skip ONLY stat/skill bonuses from racial default records; preserve non-stat/non-skill racial bonuses
+    // (saves, initiative, speed, AC) and all alternate racial traits.
+    const skipRacialDefaultStatSkill = isRacialDefaultRecord(rec.key, rec.types);
+    const mult = isStackableRulesAbility(rec.key) || isStackableRulesAbility(rawKey) ? Math.max(1, abilityCounts.get(fk) ?? 1) : 1;
     const source = rec.name.replace(/^trait\s*~\s*/i, '').trim().slice(0, 80) || rawKey.slice(0, 80);
     rec.bonuses.forEach((b, idx) => {
       if (bonuses.length >= 100) return;
+      if (skipRacialDefaultStatSkill && ((STAT_KEYS as string[]).includes(b.target) || b.target === 'skill')) return;
       const id = `${fk.slice(0, 80)}:${idx}`;
       if (seenIds.has(id)) return;
       seenIds.add(id);
-      bonuses.push({ ...b, id, source });
+      const value = Math.max(-50, Math.min(50, b.value * mult));
+      bonuses.push({ ...b, value, id, source: mult > 1 ? `${source} ×${mult}`.slice(0, 80) : source });
     });
   }
 

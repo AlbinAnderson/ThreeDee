@@ -8,7 +8,7 @@
  */
 import type { Character } from '../entities/pf1e';
 import { actionCostFor, classActionSetsFor, COST_LABEL } from './actions';
-import { lookupRace, STAT_KEYS } from './rules';
+import { lookupRace, raceDataFromSnapshot, STAT_KEYS } from './rules';
 
 export type AbilityCategory = 'feat' | 'trait' | 'class' | 'racial' | 'proficiency';
 
@@ -121,9 +121,9 @@ export function characterAbilities(c: Character): AbilityEntry[] {
     }
   }
 
-  // Racial traits from the race table.
+  // Racial traits from the race table (or rules-pack snapshot).
   const raceName = c.build.attributes.race;
-  const race = lookupRace(raceName);
+  const race = lookupRace(raceName) ?? raceDataFromSnapshot(c.rulesData.race);
   if (race && raceName) {
     const racial = (name: string, description: string) =>
       add({ category: 'racial', name, group: raceName, nature: 'AUTOMATIC', appliedTo: [], description, source: 'rules' });

@@ -11,16 +11,16 @@
  */
 import type { Buff, BuffEffect, BuffTarget, Character } from '../entities/pf1e';
 import type { BonusType, Modifier } from './modifiers';
-import { normalizeName, type StatKey } from './rules';
+import { normalizeName, resolveClassName, type StatKey } from './rules';
 import { TOGGLES } from './toggles';
 
 type T = BonusType;
 const e = (target: BuffTarget, value: number, type: T = 'untyped'): BuffEffect => ({ target, value, type: type as BuffEffect['type'] });
 
-/** Levels in a class (by normalized name, e.g. "barbarian" also matches "Barbarian (Unchained)" only if listed). */
+/** Levels in a class (by normalized name, respecting PCGen `<Class> ~ Unchained Class` markers). */
 export function classLevelOf(c: Character, ...names: string[]): number {
   const keys = names.map(normalizeName);
-  return c.build.classes.filter((k) => keys.includes(normalizeName(k.name))).reduce((s, k) => s + k.level, 0);
+  return c.build.classes.filter((k) => keys.includes(normalizeName(resolveClassName(c, k.name)))).reduce((s, k) => s + k.level, 0);
 }
 
 // ------------------------------------------------------------------ presets
@@ -64,13 +64,23 @@ const ABILITY_SPELLS: [string, string, StatKey][] = [
 
 const MUTAGEN_PAIR: Record<string, StatKey> = { STR: 'INT', DEX: 'WIS', CON: 'CHA' };
 
-/** Best caster-class level on the character (for scaling spell buff preset defaults). */
+const FULL_CASTERS = new Set(['cleric', 'druid', 'oracle', 'shaman', 'wizard', 'sorcerer', 'witch', 'arcanist', 'psychic', 'adept']);
+const SIX_CASTERS = new Set(['bard', 'skald', 'inquisitor', 'magus', 'warpriest', 'alchemist', 'investigator', 'summoner', 'summonerunchained', 'unchainedsummoner', 'hunter', 'mesmerist', 'occultist', 'spiritualist']);
+const FOUR_OFFSET_CASTERS = new Set(['paladin', 'antipaladin', 'ranger']);
+
+/** Best single-class caster level on the character (CRB p.30: multiclass caster levels never stack). */
 function bestCasterLevel(c: Character): number {
-  const full = classLevelOf(c, 'cleric', 'druid', 'oracle', 'shaman', 'wizard', 'sorcerer', 'witch', 'arcanist', 'psychic');
-  const six = classLevelOf(c, 'bard', 'skald', 'inquisitor', 'magus', 'warpriest', 'alchemist', 'investigator', 'summoner', 'summonerunchained', 'unchainedsummoner', 'hunter', 'mesmerist', 'occultist', 'spiritualist');
-  const four = Math.max(0, classLevelOf(c, 'paladin', 'antipaladin', 'ranger') - 3);
-  const br = classLevelOf(c, 'bloodrager');
-  return Math.max(1, full, six, four, br >= 4 ? br : 0);
+  let best = 1;
+  for (const k of c.build.classes) {
+    const n = normalizeName(resolveClassName(c, k.name));
+    let cl = 0;
+    if (FULL_CASTERS.has(n) || SIX_CASTERS.has(n)) cl = k.level;
+    else if (FOUR_OFFSET_CASTERS.has(n)) cl = k.level >= 4 ? k.level - 3 : 0;
+    else if (n === 'bloodrager') cl = k.level >= 4 ? k.level : 0;
+    else if (n === 'medium') cl = k.level;
+    if (cl > best) best = cl;
+  }
+  return best;
 }
 
 export const BUFF_PRESETS: BuffPreset[] = [
@@ -338,10 +348,10 @@ export const BUFF_PRESETS: BuffPreset[] = [
     name: 'Arcane Pool weapon',
     group: 'Class abilities',
     classes: ['magus'],
-    note: 'Adds to the weapon’s own enhancement bonus (max +5 total), or buys weapon special abilities instead.',
+    note: 'Adds to any held weapon’s enhancement bonus (max +5 total; does not stack with Masterwork +1 attack), or buys weapon special abilities instead.',
     effects: (c) => {
       const b = 1 + Math.floor((Math.max(1, classLevelOf(c, 'magus')) - 1) / 4);
-      return [e('attackMelee', b), e('damageMelee', b)];
+      return [e('attack', b), e('damage', b)];
     },
   },
   // ---- combat situations
@@ -396,38 +406,45 @@ export function tempBonusSuggestions(c: Character): { name: string; description:
 interface ConditionRule {
   effects: BuffEffect[];
   loseDexToAc?: boolean;
+  /** True only for flat-footed (negated by Uncanny Dodge). */
+  flatFootedOnly?: boolean;
+  /** Halves movement speed (entangled, exhausted, slow). */
+  halfSpeed?: boolean;
+  /** Prevents movement / 0 ft speed (grappled, pinned, paralyzed, helpless, unconscious). */
+  zeroSpeed?: boolean;
   /** Ability treated as a score of 0 (helpless, paralyzed). */
   zero?: StatKey[];
   note?: string;
   /** Conditions of a group don't stack: only the worst (highest rank) applies. */
   group?: { id: 'fear' | 'fatigue' | 'grapple'; rank: number };
-  /** Implies another condition (unconscious -> helpless). */
+  /** Implies another condition (dying -> unconscious -> helpless). */
   implies?: string[];
 }
 
-const FEAR = [e('attack', -2), e('saves', -2), e('skills', -2)];
+const FEAR = [e('attack', -2), e('saves', -2), e('skills', -2), e('initiative', -2)];
 
 /** PF1e Core Rulebook Appendix 2 conditions with numeric effects (keys normalized). */
 const CONDITIONS: Record<string, ConditionRule> = {
-  blinded: { effects: [e('ac', -2)], loseDexToAc: true, note: 'Blinded: everything has total concealment (50% miss chance); −4 on Str- and Dex-based skill checks and opposed Perception; half speed.' },
+  blinded: { effects: [e('ac', -2)], loseDexToAc: true, note: 'Blinded: everything has total concealment (50% miss chance); −4 on Str- and Dex-based skill checks and opposed Perception; half speed without Acrobatics.' },
   cowering: { effects: [e('ac', -2)], loseDexToAc: true, note: 'Cowering: can take no actions.' },
   dazzled: { effects: [e('attack', -1)], note: 'Dazzled: −1 on sight-based Perception checks.' },
   deafened: { effects: [e('initiative', -4)], note: 'Deafened: 20% spell failure with verbal components; fails sound-based Perception.' },
-  entangled: { effects: [e('attack', -2), e('DEX', -4)], note: 'Entangled: half speed; concentration check to cast.' },
+  entangled: { effects: [e('attack', -2), e('DEX', -4)], halfSpeed: true, note: 'Entangled: half speed; concentration check to cast.' },
   fatigued: { effects: [e('STR', -2), e('DEX', -2)], group: { id: 'fatigue', rank: 1 }, note: 'Fatigued: can’t run or charge.' },
-  exhausted: { effects: [e('STR', -6), e('DEX', -6)], group: { id: 'fatigue', rank: 2 }, note: 'Exhausted: half speed, can’t run or charge.' },
-  flatfooted: { effects: [], loseDexToAc: true, note: 'Flat-footed: no attacks of opportunity.' },
-  shaken: { effects: FEAR, group: { id: 'fear', rank: 1 } },
-  frightened: { effects: FEAR, group: { id: 'fear', rank: 2 }, note: 'Frightened: flees from the source of fear.' },
-  panicked: { effects: FEAR, group: { id: 'fear', rank: 3 }, note: 'Panicked: drops held items and flees.' },
-  grappled: { effects: [e('attack', -2), e('DEX', -4)], group: { id: 'grapple', rank: 1 }, note: 'Grappled: −2 on attack rolls and CMB (not to grapple or escape); can’t move; concentration check to cast.' },
-  pinned: { effects: [e('ac', -4)], loseDexToAc: true, group: { id: 'grapple', rank: 2 }, note: 'Pinned: supersedes grappled (does not stack); can only try to escape.' },
-  helpless: { effects: [], loseDexToAc: true, zero: ['DEX'], note: 'Helpless: melee attacks against you get +4; coup de grace possible.' },
+  exhausted: { effects: [e('STR', -6), e('DEX', -6)], halfSpeed: true, group: { id: 'fatigue', rank: 2 }, note: 'Exhausted: half speed, can’t run or charge.' },
+  flatfooted: { effects: [], loseDexToAc: true, flatFootedOnly: true, note: 'Flat-footed: no attacks of opportunity (unless Combat Reflexes); Uncanny Dodge retains Dex to AC.' },
+  shaken: { effects: FEAR, group: { id: 'fear', rank: 1 }, note: 'Shaken: −2 on attack rolls, saving throws, skill checks and ability checks.' },
+  frightened: { effects: FEAR, group: { id: 'fear', rank: 2 }, note: 'Frightened: flees from the source of fear; −2 on attack rolls, saves, skills and ability checks.' },
+  panicked: { effects: FEAR, group: { id: 'fear', rank: 3 }, note: 'Panicked: drops held items and flees; −2 on attack rolls, saves, skills and ability checks.' },
+  grappled: { effects: [e('attack', -2), e('DEX', -4)], zeroSpeed: true, group: { id: 'grapple', rank: 1 }, note: 'Grappled: −2 on attack rolls and CMB (not to grapple or escape); can’t move; concentration check to cast.' },
+  pinned: { effects: [e('ac', -4)], loseDexToAc: true, zeroSpeed: true, group: { id: 'grapple', rank: 2 }, note: 'Pinned: supersedes grappled (does not stack); can’t move; can only try to escape.' },
+  helpless: { effects: [], loseDexToAc: true, zeroSpeed: true, zero: ['DEX'], note: 'Helpless: melee attacks against you get +4; coup de grace possible.' },
   paralyzed: { effects: [], zero: ['STR', 'DEX'], implies: ['helpless'] },
   unconscious: { effects: [], implies: ['helpless'] },
+  dying: { effects: [], implies: ['unconscious'], note: 'Dying: unconscious and helpless; stabilization check (DC 10) each round or lose 1 HP.' },
   prone: { effects: [e('attackMelee', -4)], note: 'Prone: −4 AC against melee, +4 AC against ranged; only crossbows and firearms for ranged attacks.' },
-  sickened: { effects: [e('attack', -2), e('damage', -2), e('saves', -2), e('skills', -2)] },
-  stunned: { effects: [e('ac', -2)], loseDexToAc: true, note: 'Stunned: drops everything held, can take no actions.' },
+  sickened: { effects: [e('attack', -2), e('damage', -2), e('saves', -2), e('skills', -2), e('initiative', -2)], note: 'Sickened: −2 on attack rolls, weapon damage, saves, skills and ability checks.' },
+  stunned: { effects: [e('ac', -2)], loseDexToAc: true, note: 'Stunned: drops everything held, can take no actions; attackers gain +4 on combat maneuver checks against you.' },
   staggered: { effects: [], note: 'Staggered: a single move or standard action each turn.' },
   nauseated: { effects: [], note: 'Nauseated: only a single move action each turn.' },
   dazed: { effects: [], note: 'Dazed: can take no actions.' },
@@ -452,6 +469,14 @@ export interface CharacterEffects {
   /** Typed modifiers per target, ready for sumModifiers. */
   mods: Record<BuffTarget, Modifier[]>;
   loseDexToAc: boolean;
+  /** True when losing Dex to AC from a non-flat-footed condition (blinded, stunned, pinned, cowering, helpless, paralyzed). */
+  loseDexOther: boolean;
+  /** True when speed is halved by a condition or Slow. */
+  halfSpeed: boolean;
+  /** True when immobilized (0 ft speed). */
+  zeroSpeed: boolean;
+  /** True when the Magus Arcane Pool weapon enhancement buff is active (does not stack with Masterwork +1 attack). */
+  arcanePoolActive: boolean;
   zero: StatKey[];
   /** Reminders the numbers don't cover. */
   notes: string[];
@@ -463,10 +488,21 @@ const TARGETS: BuffTarget[] = [
   'ac', 'cmb', 'cmd', 'initiative', 'saves', 'fort', 'ref', 'will', 'skills', 'speed', 'casterLevel', 'sizeSteps', 'extraAttack',
 ];
 
-/** The character's conditions with implied ones added, the worst of each non-stacking group kept. */
+/** The character's conditions with implied ones added transitively, the worst of each non-stacking group kept. */
 export function effectiveConditions(names: string[]): string[] {
   const keys = new Set(names.map(normalizeName));
-  for (const k of [...keys]) for (const i of CONDITIONS[k]?.implies ?? []) keys.add(i);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const k of [...keys]) {
+      for (const i of CONDITIONS[k]?.implies ?? []) {
+        if (!keys.has(i)) {
+          keys.add(i);
+          grew = true;
+        }
+      }
+    }
+  }
   const best = new Map<string, [string, number]>();
   for (const k of keys) {
     const g = CONDITIONS[k]?.group;
@@ -487,7 +523,17 @@ const titleCase = (k: string, names: string[]) => names.find((n) => normalizeNam
  */
 export function characterEffects(c: Character): CharacterEffects {
   const mods = Object.fromEntries(TARGETS.map((t) => [t, [] as Modifier[]])) as Record<BuffTarget, Modifier[]>;
-  const out: CharacterEffects = { mods, loseDexToAc: false, zero: [], notes: [], sources: [] };
+  const out: CharacterEffects = {
+    mods,
+    loseDexToAc: false,
+    loseDexOther: false,
+    halfSpeed: false,
+    zeroSpeed: false,
+    arcanePoolActive: false,
+    zero: [],
+    notes: [],
+    sources: [],
+  };
   const add = (effects: BuffEffect[], source: string) => {
     for (const fx of effects) mods[fx.target].push({ value: fx.value, type: fx.type as BonusType, source });
   };
@@ -495,6 +541,8 @@ export function characterEffects(c: Character): CharacterEffects {
   const active = c.runtime.buffs.filter((b) => b.active);
   for (const b of active) {
     add(b.effects, b.name);
+    if (b.presetId === 'slow') out.halfSpeed = true;
+    if (b.presetId === 'arcanePool') out.arcanePoolActive = true;
     if (b.note.trim()) out.notes.push(`${b.name}: ${b.note.trim()}`);
     out.sources.push({ name: b.name, kind: 'buff', roundsLeft: b.roundsLeft });
   }
@@ -508,6 +556,7 @@ export function characterEffects(c: Character): CharacterEffects {
       classPresets.find((p) => p.condition && normalizeName(p.condition) === k) ??
       BUFF_PRESETS.find((p) => p.condition && normalizeName(p.condition) === k);
     if (preset) {
+      if (preset.id === 'slow') out.halfSpeed = true;
       if (active.some((b) => b.presetId === preset.id || (b.presetId && lookupPreset(b.presetId)?.condition === preset.condition))) continue;
       // Ability-free presets only (conditions can't ask for an option): use the default choice.
       add(preset.effects(c, preset.option?.initial(c) ?? '', { mod: () => 0 }), label);
@@ -517,7 +566,12 @@ export function characterEffects(c: Character): CharacterEffects {
     const rule = CONDITIONS[k];
     if (!rule) continue;
     add(rule.effects, label);
-    if (rule.loseDexToAc) out.loseDexToAc = true;
+    if (rule.loseDexToAc) {
+      out.loseDexToAc = true;
+      if (!rule.flatFootedOnly) out.loseDexOther = true;
+    }
+    if (rule.halfSpeed) out.halfSpeed = true;
+    if (rule.zeroSpeed) out.zeroSpeed = true;
     for (const z of rule.zero ?? []) if (!out.zero.includes(z)) out.zero.push(z);
     if (rule.note) out.notes.push(rule.note);
     out.sources.push({ name: label, kind: 'condition', roundsLeft: null });

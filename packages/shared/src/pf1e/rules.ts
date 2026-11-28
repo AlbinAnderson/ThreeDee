@@ -106,6 +106,26 @@ export function lookupClass(name: string): ClassChassis | undefined {
   return CLASSES[normalizeName(name)];
 }
 
+/**
+ * PCGen 6 encodes Pathfinder Unchained classes as base `CLASS:Monk`/`Barbarian`/`Rogue`/`Summoner`
+ * plus an ability `KEY:<Class> ~ Unchained Class`. Resolve to the Unchained class name when present.
+ */
+const UNCHAINED_BASES: Record<string, string> = {
+  barbarian: 'Barbarian (Unchained)',
+  monk: 'Monk (Unchained)',
+  rogue: 'Rogue (Unchained)',
+  summoner: 'Summoner (Unchained)',
+};
+
+export function resolveClassName(c: { build: { abilities: { key: string }[] } }, className: string): string {
+  const norm = normalizeName(className);
+  const unchainedName = UNCHAINED_BASES[norm];
+  if (!unchainedName) return className;
+  const target = `${norm}unchainedclass`;
+  const hasMarker = c.build.abilities.some((a) => normalizeName(a.key) === target);
+  return hasMarker ? unchainedName : className;
+}
+
 export function babFor(progression: BabProgression, level: number): number {
   if (progression === 'full') return level;
   if (progression === 'threeQuarter') return Math.floor((level * 3) / 4);
@@ -176,6 +196,8 @@ export interface RaceData {
   lowLight: boolean;
   /** Always-on racial skill bonuses (situational ones, like stonecunning, are left out). */
   skills?: Record<string, number>;
+  /** Always-on racial bonus on all saving throws (e.g. Halfling Luck +1). */
+  saves?: number;
 }
 
 const r = (
@@ -195,7 +217,7 @@ const RACES: Record<string, RaceData> = {
   gnome: r({ CON: 2, CHA: 2, STR: -2 }, 'Small', 20, 0, true, { skills: { Perception: 2 } }),
   halfelf: r({}, 'Medium', 30, 0, true, { anyPlusTwo: true, skills: { Perception: 2 } }),
   halforc: r({}, 'Medium', 30, 60, false, { anyPlusTwo: true, skills: { Intimidate: 2 } }),
-  halfling: r({ DEX: 2, CHA: 2, STR: -2 }, 'Small', 20, 0, false, { skills: { Perception: 2, Acrobatics: 2, Climb: 2 } }),
+  halfling: r({ DEX: 2, CHA: 2, STR: -2 }, 'Small', 20, 0, false, { skills: { Perception: 2, Acrobatics: 2, Climb: 2 }, saves: 1 }),
   // Featured & uncommon
   aasimar: r({ WIS: 2, CHA: 2 }, 'Medium', 30, 60, false, { skills: { Diplomacy: 2, Perception: 2 } }),
   android: r({ DEX: 2, INT: 2, CHA: -2 }, 'Medium', 30, 60, true, { skills: { Perception: 2, 'Sense Motive': -4 } }),
@@ -242,7 +264,8 @@ export function raceDataFromSnapshot(r: RaceSnapshot | null | undefined): RaceDa
     stats: r.abilityMods,
     anyPlusTwo: r.anyPlusTwo,
     size: r.size,
-    speed: r.speed,
+    // A 0 ft land speed means an older rules pack couldn't read it (PCGen sets some races' speed via a trait): fall back by size.
+    speed: r.speed > 0 ? r.speed : SIZES.indexOf(r.size) <= SIZES.indexOf('Small') ? 20 : 30,
     steady: r.steady,
     darkvision: r.darkvision,
     lowLight: r.lowLight,
@@ -290,7 +313,7 @@ export const ARMOR_TABLE: ArmorData[] = [
   a('Chain mail', 'armor', 'medium', 6, 2, -5, 30),
   a('Breastplate', 'armor', 'medium', 6, 3, -4, 25),
   a('Mountain pattern', 'armor', 'medium', 6, 3, -4, 30),
-  a('Kikko', 'armor', 'medium', 5, 4, -3, 25),
+  a('Kikko', 'armor', 'medium', 5, 4, -3, 20),
   a('Do-maru', 'armor', 'medium', 5, 4, -4, 25),
   a('Splint mail', 'armor', 'heavy', 7, 0, -7, 40),
   a('Banded mail', 'armor', 'heavy', 7, 1, -6, 35),
@@ -303,7 +326,19 @@ export const ARMOR_TABLE: ArmorData[] = [
   a('Heavy wooden shield', 'shield', 'shield', 2, null, -2, 15),
   a('Light steel shield', 'shield', 'shield', 1, null, -1, 5),
   a('Light wooden shield', 'shield', 'shield', 1, null, -1, 5),
-  a('Madu', 'shield', 'shield', 1, null, -2, 10),
+  a('Madu', 'shield', 'shield', 1, null, -2, 5),
+  // Ultimate Combat / Advanced Player's Guide (values from PCGen data).
+  a('Steel lamellar', 'armor', 'medium', 6, 3, -5, 25),
+  a('Horn lamellar', 'armor', 'medium', 5, 3, -4, 25),
+  a('Iron lamellar', 'armor', 'heavy', 7, 0, -7, 40),
+  a('Stone lamellar', 'armor', 'heavy', 8, 0, -7, 40),
+  a('Lamellar cuirass', 'armor', 'light', 2, 4, 0, 5),
+  a('Silken ceremonial armor', 'armor', 'light', 1, null, 0, 0),
+  a('Four-mirror armor', 'armor', 'medium', 6, 2, -5, 30),
+  a('Tatami-do', 'armor', 'heavy', 7, 3, -6, 35),
+  a('Kusari gusoku', 'armor', 'heavy', 7, 1, -7, 35),
+  a('Light wooden quickdraw shield', 'shield', 'shield', 1, null, -2, 5),
+  a('Light steel quickdraw shield', 'shield', 'shield', 1, null, -2, 5),
   a('Buckler', 'shield', 'shield', 1, null, -1, 5),
 ].sort((x, y) => y.name.length - x.name.length);
 
@@ -326,16 +361,46 @@ function shieldAlias(name: string): string {
   return name.replace(m[0], `${weight} ${material} shield`);
 }
 
+/**
+ * Core Rulebook special-material armors that PCGen names on their own: the base
+ * armor they're made from (the material itself is applied by detectGear).
+ */
+const NAMED_ARMOR: [RegExp, string][] = [
+  [/\bmithr[ai]l shirt\b/i, 'Chain shirt'],
+  [/\belven chain\b/i, 'Chainmail'],
+  [/\bdwarven plate\b/i, 'Full plate'],
+  [/\bmithr[ai]l heavy shield\b/i, 'Heavy steel shield'],
+  [/\bmithr[ai]l light shield\b/i, 'Light steel shield'],
+  [/\bdarkwood shield\b/i, 'Heavy wooden shield'],
+  [/\bdarkwood buckler\b/i, 'Buckler'],
+];
+
+/** "Lamellar (Leather)" -> "Leather Lamellar"; "Quickdraw Shield, Light Wooden" -> "Light Wooden Quickdraw Shield". */
+function armorNameVariants(name: string): string[] {
+  const out = [name];
+  const paren = /^(.*?)\s*\(([^()]+)\)\s*$/.exec(name.trim());
+  if (paren && paren[1]) out.push(`${paren[2]} ${paren[1]}`);
+  const comma = /^([^,]+),\s*([^,]+)$/.exec(name.trim());
+  if (comma) out.push(`${comma[2]} ${comma[1]}`);
+  return out;
+}
+
 export function lookupArmor(rawName: string): { armor: ArmorData; enhancement: number } | undefined {
-  const itemName = shieldAlias(rawName);
-  const armor = ARMOR_TABLE.find((x) => {
-    if (!matchesArmorName(itemName, x.name)) return false;
-    // Bare material names ("Leather", "Hide", "Padded") shouldn't match "Leather Boots" or "Hide Shirt".
-    if (!x.name.includes(' ') && !x.name.includes('-') && NON_ARMOR_GEAR.test(itemName)) return false;
-    return true;
-  });
+  const named = NAMED_ARMOR.find(([re]) => re.test(rawName));
+  const candidates = named ? [named[1]] : armorNameVariants(shieldAlias(rawName));
+  // Most specific (longest) table name across every name form wins: "Lamellar (Leather)" is Leather lamellar, not Leather.
+  let armor: ArmorData | undefined;
+  for (const itemName of candidates) {
+    const hit = ARMOR_TABLE.find((x) => {
+      if (!matchesArmorName(itemName, x.name)) return false;
+      // Bare material names ("Leather", "Hide", "Padded") shouldn't match "Leather Boots" or "Hide Shirt".
+      if (!x.name.includes(' ') && !x.name.includes('-') && NON_ARMOR_GEAR.test(itemName)) return false;
+      return true;
+    });
+    if (hit && (!armor || hit.name.length > armor.name.length)) armor = hit;
+  }
   if (!armor) return undefined;
-  const enh = /\+\s*(\d)/.exec(itemName);
+  const enh = /\+\s*(\d)/.exec(rawName);
   return { armor, enhancement: enh ? Number(enh[1]) : 0 };
 }
 
