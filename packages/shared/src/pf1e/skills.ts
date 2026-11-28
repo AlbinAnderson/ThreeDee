@@ -7,7 +7,7 @@ import type { Character, SkillOverride } from '../entities/pf1e';
 import type { CharacterStats } from './engine';
 import { equippedItemBonuses } from './inventory';
 import { sumModifiers, type Modifier, type StatLine } from './modifiers';
-import { featKey, lookupRace, normalizeName, raceDataFromSnapshot, type SizeName, type StatKey } from './rules';
+import { featKey, lookupRace, normalizeName, raceDataFromSnapshot, resolveClassName, type SizeName, type StatKey } from './rules';
 
 export interface SkillDef {
   name: string;
@@ -97,7 +97,7 @@ const PAIR_FEATS: Record<string, [string, string]> = {
 export const MODELED_SKILL_FEAT_KEYS: readonly string[] = [...Object.keys(PAIR_FEATS), 'skillfocus'];
 
 const classLevel = (c: Character, ...keys: string[]) =>
-  c.build.classes.filter((k) => keys.includes(normalizeName(k.name))).reduce((sum, k) => sum + k.level, 0);
+  c.build.classes.filter((k) => keys.includes(normalizeName(resolveClassName(c, k.name)))).reduce((sum, k) => sum + k.level, 0);
 const halfLevel = (lvl: number) => Math.max(1, Math.floor(lvl / 2));
 
 /** Always-on class features that change skill totals. */
@@ -109,6 +109,9 @@ function classSkillBonuses(c: Character, skill: string): Modifier[] {
   if (bard && base.toLowerCase() === 'knowledge') out.push({ value: halfLevel(bard), type: 'untyped', source: 'Bardic knowledge' });
   const druid = classLevel(c, 'druid');
   if (druid && (lower === 'knowledge (nature)' || lower === 'survival')) out.push({ value: 2, type: 'untyped', source: 'Nature sense' });
+  // CRB p.68 (Rogue) / ACG p.30 (Investigator): Trapfinding adds ½ level (min +1) to ALL Disable Device checks (always-on).
+  const trap = classLevel(c, 'rogue', 'rogueunchained', 'unchainedrogue', 'investigator');
+  if (trap && lower === 'disable device') out.push({ value: halfLevel(trap), type: 'untyped', source: 'Trapfinding' });
   const inquisitor = classLevel(c, 'inquisitor');
   if (inquisitor && (lower === 'intimidate' || lower === 'sense motive')) out.push({ value: halfLevel(inquisitor), type: 'morale', source: 'Stern gaze' });
   const mesmerist = classLevel(c, 'mesmerist');
@@ -316,10 +319,10 @@ export function situationalFor(c: Character, stats: CharacterStats, row: SkillRo
   const out: Situational[] = [];
   const name = row.def?.name ?? row.name;
   const trap = classLevel(c, 'rogue', 'rogueunchained', 'unchainedrogue', 'investigator');
-  if (trap && (name === 'Perception' || name === 'Disable Device')) {
+  if (trap && name === 'Perception') {
     out.push({ id: 'trapfinding', label: 'Trapfinding (traps)', bonus: halfLevel(trap), spendActionId: null });
   }
-  const alchemist = classLevel(c, 'alchemist');
+  const alchemist = classLevel(c, 'alchemist', 'investigator');
   if (alchemist && row.name.toLowerCase() === 'craft (alchemy)') {
     out.push({ id: 'alchemy', label: 'Alchemy (creating an alchemical item)', bonus: alchemist, spendActionId: null });
   }
@@ -330,9 +333,17 @@ export function situationalFor(c: Character, stats: CharacterStats, row: SkillRo
   if (classLevel(c, 'inquisitor') && name === 'Knowledge' && stats.abilities.WIS.mod > 0) {
     out.push({ id: 'monsterlore', label: 'Monster lore (identify creatures)', bonus: stats.abilities.WIS.mod, spendActionId: null });
   }
-  if (classLevel(c, 'investigator')) {
-    const free = row.ranks > 0 && (name === 'Knowledge' || name === 'Linguistics' || name === 'Spellcraft');
-    out.push({ id: 'inspiration', label: free ? 'Inspiration (free: trained)' : 'Inspiration (1 point)', bonus: '1d6', spendActionId: free ? null : 'c.investigator.inspire' });
+  const invLevel = classLevel(c, 'investigator');
+  if (invLevel) {
+    // ACG p.34 (True Inspiration): at 20th level, rolls 2d6 and applies free to all skills.
+    const trueInsp = invLevel >= 20;
+    const free = trueInsp || (row.ranks > 0 && (name === 'Knowledge' || name === 'Linguistics' || name === 'Spellcraft'));
+    out.push({
+      id: 'inspiration',
+      label: trueInsp ? 'True Inspiration (free: 2d6)' : free ? 'Inspiration (free: trained)' : 'Inspiration (1 point)',
+      bonus: trueInsp ? '2d6' : '1d6',
+      spendActionId: free ? null : 'c.investigator.inspire',
+    });
   }
   if (/dwarf|duergar/i.test(c.build.attributes.race ?? '') && name === 'Perception') {
     out.push({ id: 'stonecunning', label: 'Stonecunning (unusual stonework)', bonus: 2, spendActionId: null });

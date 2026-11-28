@@ -32,7 +32,7 @@ export type BonusType =
   | 'trait';
 
 /** Types whose bonuses add together. ('base' and 'ability' are structural parts, not real bonus types.) */
-const STACKS = new Set<BonusType>(['base', 'ability', 'untyped', 'dodge', 'circumstance']);
+const STACKS = new Set<BonusType>(['base', 'ability', 'untyped', 'dodge', 'circumstance', 'racial']);
 
 export interface Modifier {
   value: number;

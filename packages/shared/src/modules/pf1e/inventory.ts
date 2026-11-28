@@ -86,6 +86,7 @@ function conflictingSlots(slot: InventorySlot): InventorySlot[] {
   switch (slot) {
     case 'carried':
     case 'notCarried':
+    case 'slotless':
     case 'ring':
       return [];
     case 'primary':
@@ -482,6 +483,8 @@ export const inventoryActions = {
       /** Custom room rule id (when buying an AoN/homebrew item). */
       customRuleId: IdSchema.optional(),
       mods: ItemModsSchema.optional(),
+      /** Add without deducting coins from the character's purse (Catalog "Add free"). */
+      free: z.boolean().optional(),
       /** Filled in by the server; ignored from clients. */
       item: InventoryItemSchema.optional(),
       nextCoins: CoinsSchema.optional(),
@@ -531,17 +534,18 @@ export const inventoryActions = {
             throw new ActionRejection(`${rec.name} is from "${rec.source.long}", which isn't allowed in this campaign`);
           }
           const mods: ItemMods = p.mods ? { masterwork: p.mods.masterwork, material: p.mods.material, enhancement: p.mods.enhancement } : NO_MODS;
-          const res = itemFromRecord(rec, p.itemId, mods, p.quantity);
+          const res = itemFromRecord(rec, p.itemId, mods, p.quantity, { allowUnpriced: !!p.free });
           if (typeof res === 'string') throw new ActionRejection(res);
           built = res;
         }
-        const totalCp = priceCp(built.value, p.quantity);
-        const nextCoins = payFromPurse(inv.coins, totalCp);
+        const totalCp = p.free ? 0 : priceCp(built.value, p.quantity);
+        const nextCoins = p.free ? { ...inv.coins } : payFromPurse(inv.coins, totalCp);
         if (!nextCoins) throw new ActionRejection(`Not enough coin (needs ${Math.round(totalCp) / 100} gp)`);
         return {
           characterId: p.characterId,
           itemId: p.itemId,
           quantity: p.quantity,
+          ...(p.free ? { free: true } : {}),
           ...(p.ruleKey ? { ruleKey: p.ruleKey } : {}),
           ...(p.customRuleId ? { customRuleId: p.customRuleId } : {}),
           ...(p.mods ? { mods: p.mods } : {}),

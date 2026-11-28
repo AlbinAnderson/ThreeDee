@@ -23,6 +23,8 @@ export interface Pf1Action {
   group?: ActionGroup;
   /** Counts as moving (no 5-foot step that turn). */
   movement?: boolean;
+  /** Free actions explicitly permitted off-turn (e.g. speaking, Mesmerist Painful Stare). */
+  offTurn?: boolean;
   /** Spends uses of this resource id (default 1; see resourceCost). */
   resource?: string;
   /** Uses of `resource` spent per activation (default 1). */
@@ -122,7 +124,7 @@ export const GENERIC_ACTIONS: Pf1Action[] = [
   g('fivefoot', '5-Foot Step', 'other', 'fiveFoot', 'no', 'Move 5 feet without provoking. Once per turn, and only if you don’t otherwise move.', { movement: false }),
   g('aoo', 'Attack of Opportunity', 'other', 'aoo', 'no', 'A melee attack when a foe in your threatened area provokes. Once per round (more with Combat Reflexes); not while flat-footed.', { roll: 'melee' }),
   g('delay', 'Delay', 'other', 'none', 'no', 'Act later in the round (use ↑/↓ in the Combat panel).'),
-  g('drop', 'Drop an Item / Drop Prone / Speak', 'other', 'free', 'no', 'Free actions; don’t provoke.'),
+  g('drop', 'Drop an Item / Drop Prone / Speak', 'other', 'free', 'no', 'Free actions; don’t provoke (speaking is also allowed off-turn).', { offTurn: true }),
   g('cease', 'Cease Concentration', 'other', 'free', 'no', 'End a concentration-duration spell.'),
 ];
 
@@ -143,6 +145,8 @@ export interface ResourceDef {
   name: string;
   unit: 'uses' | 'rounds' | 'points' | 'minutes';
   max: (ctx: ResourceCtx) => number;
+  /** Starting pool after rest if lower than max (e.g. Arcanist Arcane Reservoir: 3 + floor(level/2)). */
+  start?: (ctx: ResourceCtx) => number;
 }
 
 export interface ClassActionSet {
@@ -153,7 +157,8 @@ export interface ClassActionSet {
   actions: Pf1Action[];
 }
 
-const res = (id: string, name: string, unit: ResourceDef['unit'], max: ResourceDef['max']): ResourceDef => ({ id, name, unit, max });
+const res = (id: string, name: string, unit: ResourceDef['unit'], max: ResourceDef['max'], start?: ResourceDef['start']): ResourceDef =>
+  start ? { id, name, unit, max, start } : { id, name, unit, max };
 const ca = (cls: string, id: string, name: string, cost: ActionCost, provokes: Provokes, notes: string, extra: Partial<Pf1Action> = {}): Pf1Action => ({
   id: `c.${cls}.${id}`,
   name,
@@ -195,7 +200,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     className: 'Bard',
     keys: ['bard'],
     resources: [
-      res('performance', 'Bardic Performance', 'rounds', ({ level, mod, featCount }) => 4 + mod('CHA') + 2 * (level - 1) + 6 * (featCount?.('extraperformance') ?? 0)),
+      res('performance', 'Bardic Performance', 'rounds', ({ level, mod, permanentMod, featCount }) => 4 + (permanentMod ?? mod)('CHA') + 2 * (level - 1) + 6 * (featCount?.('extraperformance') ?? 0)),
     ],
     actions: [
       ca('bard', 'perform', 'Start Bardic Performance', 'standard', 'no', 'Countersong, Distraction, Fascinate, Inspire Courage (+1; +2 at 5th, +3 at 11th, +4 at 17th), Competence (3rd+), Greatness (9th+), Heroics (15th+). Move action at 7th, swift at 13th. Spends 1 round.', {
@@ -210,8 +215,8 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     className: 'Cleric',
     keys: ['cleric'],
     resources: [
-      res('channel', 'Channel Energy', 'uses', ({ mod, featCount }) => 3 + mod('CHA') + 2 * (featCount?.('extrachannel') ?? 0)),
-      res('domain', 'Domain powers', 'uses', ({ mod }) => 3 + mod('WIS')),
+      res('channel', 'Channel Energy', 'uses', ({ mod, permanentMod, featCount }) => 3 + (permanentMod ?? mod)('CHA') + 2 * (featCount?.('extrachannel') ?? 0)),
+      res('domain', 'Domain powers', 'uses', ({ mod, permanentMod }) => 3 + (permanentMod ?? mod)('WIS')),
     ],
     actions: [
       ca('cleric', 'channel', 'Channel Energy', 'standard', 'no', '30-ft burst: heal or harm 1d6 (+1d6 per two cleric levels after 1st); Will half DC 10 + ½ cleric level + Cha.', { resource: 'channel' }),
@@ -252,7 +257,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     keys: ['paladin'],
     resources: [res('smite', 'Smite Evil', 'uses', ({ level }) => every3(level))],
     actions: [
-      ca('paladin', 'detect', 'Detect Evil', 'move', 'no', 'At will. Move action to study one target, or standard action as the spell.', { costLabel: 'Move (one target) / Standard' }),
+      ca('paladin', 'detect', 'Detect Evil', 'move', 'yes', 'At will (Sp). Move action to study one target, or standard action as the spell.', { costLabel: 'Move (one target) / Standard' }),
       ca('paladin', 'smite', 'Smite Evil', 'swift', 'no', '+Cha to attack and deflection AC, +level damage vs one evil target; bypasses DR. Double damage on first hit vs evil outsiders, dragons, undead.', { resource: 'smite' }),
     ],
   },
@@ -260,7 +265,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Sorcerer',
     keys: ['sorcerer'],
-    resources: [res('bloodline', 'Bloodline power', 'uses', ({ mod }) => 3 + mod('CHA'))],
+    resources: [res('bloodline', 'Bloodline power', 'uses', ({ mod, permanentMod }) => 3 + (permanentMod ?? mod)('CHA'))],
     actions: [
       ca('sorcerer', 'bloodline', 'Bloodline Power', 'standard', 'varies', 'Your 1st-level bloodline power (usually a standard action).', { costLabel: 'Usually Standard', resource: 'bloodline' }),
       castSpell('sorcerer', 'Spontaneous arcane (cantrips, 1st level).'),
@@ -269,7 +274,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Wizard',
     keys: ['wizard'],
-    resources: [res('bond', 'Arcane Bond', 'uses', () => 1), res('school', 'School power', 'uses', ({ mod }) => 3 + mod('INT'))],
+    resources: [res('bond', 'Arcane Bond', 'uses', () => 1), res('school', 'School power', 'uses', ({ mod, permanentMod }) => 3 + (permanentMod ?? mod)('INT'))],
     actions: [
       ca('wizard', 'bond', 'Arcane Bond (bonded object)', 'other', 'varies', 'Cast any spell from your spellbook without preparing it (no metamagic, no opposition schools).', { costLabel: 'Spell’s casting time', resource: 'bond' }),
       ca('wizard', 'school', 'Arcane School Power', 'standard', 'varies', 'Your 1st-level school power (usually a standard action).', { costLabel: 'Usually Standard', resource: 'school' }),
@@ -280,7 +285,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Alchemist',
     keys: ['alchemist'],
-    resources: [res('bombs', 'Bombs', 'uses', ({ level, mod }) => level + mod('INT'))],
+    resources: [res('bombs', 'Bombs', 'uses', ({ level, mod, permanentMod, featCount }) => level + (permanentMod ?? mod)('INT') + 2 * (featCount?.('extrabombs') ?? 0))],
     actions: [
       ca('alchemist', 'bomb', 'Throw Bomb', 'standard', 'yes', 'Ranged touch: 1d6 + Int fire damage (+1d6 per two levels after 1st) plus splash.', { resource: 'bombs', roll: 'ranged' }),
       ca('alchemist', 'mutagen', 'Drink Mutagen', 'standard', 'yes', '+4 alchemical to one physical ability, −2 to its mental pair, +2 natural armor for 10 min/level. Takes 1 hour to brew.'),
@@ -290,17 +295,23 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Cavalier',
     keys: ['cavalier'],
-    resources: [res('challenge', 'Challenge', 'uses', ({ level }) => every3(level)), res('tactician', 'Tactician', 'uses', ({ level }) => 1 + Math.floor(level / 5))],
+    resources: [
+      res('challenge', 'Challenge', 'uses', ({ level }) => every3(level)),
+      res('tactician', 'Tactician', 'uses', ({ level, featCount }) => 1 + Math.floor(level / 5) + (featCount?.('practicedtactician') ?? 0)),
+    ],
     actions: [
       ca('cavalier', 'challenge', 'Challenge', 'swift', 'no', '+level damage vs the challenged foe; −2 AC against everyone else.', { resource: 'challenge' }),
-      ca('cavalier', 'tactician', 'Tactician', 'standard', 'no', 'Allies within 30 ft gain your teamwork feat for 3 rounds + 1 round per two levels.', { resource: 'tactician' }),
-      ca('cavalier', 'mount', 'Handle Mount', 'move', 'no', 'Handle Animal to direct or push your combat-trained mount.', { costLabel: 'Move (push)' }),
+      ca('cavalier', 'tactician', 'Tactician', 'standard', 'no', 'Allies within 30 ft gain your teamwork feat for 3 rounds + 1 round per two levels (swift action at 9th via Greater Tactician).', {
+        resource: 'tactician',
+        costForLevel: (l) => (l >= 9 ? 'swift' : 'standard'),
+      }),
+      ca('cavalier', 'mount', 'Handle Mount', 'free', 'no', 'Link (Ex): free action for a known trick; move action to push.', { costLabel: 'Free (trick) / Move (push)' }),
     ],
   },
   {
     className: 'Gunslinger',
     keys: ['gunslinger'],
-    resources: [res('grit', 'Grit', 'points', ({ mod }) => atLeast1(mod('WIS')))],
+    resources: [res('grit', 'Grit', 'points', ({ mod, permanentMod, featCount }) => atLeast1((permanentMod ?? mod)('WIS')) + 2 * (featCount?.('extragrit') ?? 0))],
     actions: [
       ca('gunslinger', 'deadeye', 'Deadeye', 'none', 'no', 'Spend 1 grit per range increment past the first to resolve a firearm attack against touch AC.', { resource: 'grit' }),
       ca('gunslinger', 'dodge', 'Gunslinger’s Dodge', 'immediate', 'varies', 'When targeted by a ranged attack: move 5 ft (+2 AC; provokes, not a 5-foot step) or drop prone (+4 AC). Light/medium armor and light load.', { resource: 'grit' }),
@@ -321,7 +332,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Magus',
     keys: ['magus'],
-    resources: [res('arcanepool', 'Arcane Pool', 'points', ({ level, mod }) => atLeast1(Math.floor(level / 2)) + mod('INT'))],
+    resources: [res('arcanepool', 'Arcane Pool', 'points', ({ level, mod, permanentMod, featCount }) => atLeast1(Math.floor(level / 2)) + (permanentMod ?? mod)('INT') + 2 * (featCount?.('extraarcanepool') ?? 0))],
     actions: [
       ca('magus', 'pool', 'Arcane Pool: Enhance Weapon', 'swift', 'no', '+1 enhancement to a held weapon for 1 minute.', { resource: 'arcanepool' }),
       ca('magus', 'spellcombat', 'Spell Combat', 'fullRound', 'varies', 'Cast a magus spell (standard-action casting time) and make melee attacks, all at −2. One hand free, light or one-handed weapon in the other.', { roll: 'melee' }),
@@ -340,12 +351,12 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Summoner',
     keys: ['summoner', 'summonerunchained', 'unchainedsummoner'],
-    resources: [res('summon', 'Summon Monster', 'uses', ({ mod }) => 3 + mod('CHA'))],
+    resources: [res('summon', 'Summon Monster', 'uses', ({ mod, permanentMod }) => 3 + (permanentMod ?? mod)('CHA'))],
     actions: [
       ca('summoner', 'eidolon', 'Summon Eidolon', 'other', 'no', 'A 1-minute ritual to call your eidolon.', { costLabel: '1 minute' }),
       ca('summoner', 'dismiss', 'Dismiss Eidolon', 'standard', 'no', 'Send the eidolon back to its home plane.'),
       ca('summoner', 'lifelink', 'Life Link', 'none', 'no', 'When the eidolon would be banished by damage, sacrifice your HP 1-for-1 to prevent it.'),
-      ca('summoner', 'summonmonster', 'Summon Monster I', 'standard', 'no', 'Lasts 1 minute/level. Not while the eidolon is summoned.', { resource: 'summon' }),
+      ca('summoner', 'summonmonster', 'Summon Monster I', 'standard', 'yes', 'Spell-like ability (Sp); lasts 1 minute/level. Not while the eidolon is summoned.', { resource: 'summon' }),
       castSpell('summoner', 'Spontaneous arcane (cantrips, 1st level).'),
     ],
   },
@@ -364,7 +375,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     keys: ['antipaladin'],
     resources: [res('smite', 'Smite Good', 'uses', ({ level }) => every3(level))],
     actions: [
-      ca('antipaladin', 'detect', 'Detect Good', 'move', 'no', 'At will. Move action to study one target, or standard action as the spell.', { costLabel: 'Move (one target) / Standard' }),
+      ca('antipaladin', 'detect', 'Detect Good', 'move', 'yes', 'At will (Sp). Move action to study one target, or standard action as the spell.', { costLabel: 'Move (one target) / Standard' }),
       ca('antipaladin', 'smite', 'Smite Good', 'swift', 'no', '+Cha to attack and deflection AC, +level damage vs one good target; bypasses DR.', { resource: 'smite' }),
     ],
   },
@@ -377,7 +388,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
       ca('samurai', 'determined', 'Resolve: Determined', 'standard', 'no', 'Remove fatigued, shaken or sickened.', { resource: 'resolve' }),
       ca('samurai', 'resolute', 'Resolve: Resolute', 'immediate', 'no', 'Before rolling a Fort or Will save: roll twice, take the better.', { resource: 'resolve' }),
       ca('samurai', 'unstoppable', 'Resolve: Unstoppable', 'immediate', 'no', 'At negative HP: stabilize automatically, stay conscious, become staggered.', { resource: 'resolve' }),
-      ca('samurai', 'mount', 'Handle Mount', 'move', 'no', 'As cavalier.', { costLabel: 'Move (push)' }),
+      ca('samurai', 'mount', 'Handle Mount', 'free', 'no', 'Link (Ex): free action for a known trick; move action to push.', { costLabel: 'Free (trick) / Move (push)' }),
     ],
   },
   // ---------------- Hybrid
@@ -385,8 +396,14 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     className: 'Arcanist',
     keys: ['arcanist'],
     resources: [
-      res('reservoir', 'Arcane Reservoir', 'points', ({ level }) => 3 + level),
-      res('consume', 'Consume Spells', 'uses', ({ mod }) => atLeast1(mod('CHA'))),
+      res(
+        'reservoir',
+        'Arcane Reservoir',
+        'points',
+        ({ level, featCount }) => 3 + level + 3 * (featCount?.('extrareservoir') ?? 0),
+        ({ level, featCount }) => 3 + Math.floor(level / 2) + 3 * (featCount?.('extrareservoir') ?? 0),
+      ),
+      res('consume', 'Consume Spells', 'uses', ({ mod, permanentMod }) => atLeast1((permanentMod ?? mod)('CHA'))),
     ],
     actions: [
       ca('arcanist', 'reservoir', 'Arcane Reservoir: Boost', 'free', 'no', 'Part of casting: +1 caster level or +1 save DC. (Starts each day with 3 + ½ level points.)', { resource: 'reservoir' }),
@@ -409,15 +426,20 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Brawler',
     keys: ['brawler'],
-    resources: [res('flex', 'Martial Flexibility', 'uses', ({ level }) => 3 + Math.floor(level / 2))],
-    actions: [ca('brawler', 'flex', 'Martial Flexibility', 'move', 'no', 'Gain one combat feat you qualify for, for 1 minute.', { resource: 'flex' })],
+    resources: [res('flex', 'Martial Flexibility', 'uses', ({ level, featCount }) => 3 + Math.floor(level / 2) + 3 * (featCount?.('extramartialflexibility') ?? 0))],
+    actions: [
+      ca('brawler', 'flex', 'Martial Flexibility', 'move', 'no', 'Gain one combat feat you qualify for, for 1 minute (swift action at 6th, free at 10th).', {
+        resource: 'flex',
+        costForLevel: (l) => (l >= 10 ? 'free' : l >= 6 ? 'swift' : 'move'),
+      }),
+    ],
   },
   {
     className: 'Hunter',
     keys: ['hunter'],
-    resources: [],
+    resources: [res('focus', 'Animal Focus', 'minutes', ({ level }) => level)],
     actions: [
-      ca('hunter', 'focus', 'Animal Focus', 'swift', 'no', 'Take an animal aspect yourself (1 minute/level per day) and/or give one to your companion (unlimited).'),
+      ca('hunter', 'focus', 'Animal Focus', 'swift', 'no', 'Take an animal aspect yourself (1 minute/level per day) and/or give one to your companion (unlimited).', { resource: 'focus' }),
       ca('hunter', 'handle', 'Handle Animal (companion)', 'free', 'no', 'Free for a known trick; a move action to push.', { costLabel: 'Free (trick) / Move (push)' }),
       wildEmpathy('hunter'),
       castSpell('hunter', 'Spontaneous divine (orisons, 1st level).'),
@@ -426,9 +448,9 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Investigator',
     keys: ['investigator'],
-    resources: [res('inspiration', 'Inspiration', 'points', ({ level, mod }) => atLeast1(Math.floor(level / 2) + mod('INT')))],
+    resources: [res('inspiration', 'Inspiration', 'points', ({ level, mod, permanentMod, featCount }) => atLeast1(Math.floor(level / 2) + (permanentMod ?? mod)('INT')) + 3 * (featCount?.('extrainspiration') ?? 0))],
     actions: [
-      ca('investigator', 'inspire', 'Inspiration (skill/ability check)', 'free', 'no', '+1d6 to a check. Free (no point) on trained Knowledge, Linguistics, Spellcraft.', { resource: 'inspiration' }),
+      ca('investigator', 'inspire', 'Inspiration (skill/ability check)', 'free', 'no', '+1d6 to a check. Free (no point) on trained Knowledge, Linguistics, Spellcraft (2d6 free on all skills at 20th).', { resource: 'inspiration' }),
       ca('investigator', 'inspireattack', 'Inspiration (attack, 2 points)', 'free', 'no', '+1d6 to an attack roll. Spends 2 points.', { resource: 'inspiration', resourceCost: 2 }),
       ca('investigator', 'inspiresave', 'Inspiration (save, 2 points)', 'immediate', 'no', '+1d6 to a saving throw. Spends 2 points.', { resource: 'inspiration', resourceCost: 2 }),
       ca('investigator', 'extract', 'Drink Extract', 'standard', 'yes', 'As alchemist.'),
@@ -437,7 +459,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Shaman',
     keys: ['shaman'],
-    resources: [res('spirit', 'Spirit ability', 'uses', ({ mod }) => 3 + mod('CHA'))],
+    resources: [res('spirit', 'Spirit ability', 'uses', ({ mod, permanentMod }) => 3 + (permanentMod ?? mod)('CHA'))],
     actions: [
       ca('shaman', 'spirit', 'Spirit Ability', 'standard', 'varies', 'Your 1st-level spirit power (usually a standard action).', { costLabel: 'Usually Standard', resource: 'spirit' }),
       castSpell('shaman', 'Prepared divine (orisons, 1st level).'),
@@ -447,7 +469,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     className: 'Skald',
     keys: ['skald'],
     resources: [
-      res('song', 'Raging Song', 'rounds', ({ level, mod, featCount }) => 3 + mod('CHA') + 2 * (level - 1) + 6 * (featCount?.('extraperformance') ?? 0)),
+      res('song', 'Raging Song', 'rounds', ({ level, mod, permanentMod, featCount }) => 3 + (permanentMod ?? mod)('CHA') + 2 * (level - 1) + 6 * (featCount?.('extraperformance') ?? 0)),
     ],
     actions: [
       ca('skald', 'song', 'Start Raging Song', 'standard', 'no', 'Inspired Rage: willing allies get +2 Str, +2 Con, +1 Will, −1 AC (move action at 7th, swift at 13th).', {
@@ -463,13 +485,15 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
     keys: ['slayer'],
     resources: [],
     actions: [
-      ca('slayer', 'studied', 'Studied Target', 'move', 'no', '+1 to weapon attack and damage, slayer DCs, and Bluff, Knowledge, Perception, Sense Motive and Survival vs one target.'),
+      ca('slayer', 'studied', 'Studied Target', 'move', 'no', '+1 to weapon attack and damage, slayer DCs, and Bluff, Knowledge, Perception, Sense Motive and Survival vs one target (swift action at 7th).', {
+        costForLevel: (l) => (l >= 7 ? 'swift' : 'move'),
+      }),
     ],
   },
   {
     className: 'Swashbuckler',
     keys: ['swashbuckler'],
-    resources: [res('panache', 'Panache', 'points', ({ mod }) => atLeast1(mod('CHA')))],
+    resources: [res('panache', 'Panache', 'points', ({ mod, permanentMod, featCount }) => atLeast1((permanentMod ?? mod)('CHA')) + 2 * (featCount?.('extrapanache') ?? 0))],
     actions: [
       ca('swashbuckler', 'derring', 'Derring-Do', 'free', 'no', '+1d6 (exploding on 6, up to Dex times) to Acrobatics, Climb, Escape Artist, Fly, Ride or Swim.', { resource: 'panache' }),
       ca('swashbuckler', 'dodging', 'Dodging Panache', 'immediate', 'varies', 'When targeted by a melee attack: move 5 ft (not a 5-foot step) and add Cha as dodge AC vs that attack. Light/no armor, light load.', { resource: 'panache' }),
@@ -480,7 +504,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Warpriest',
     keys: ['warpriest'],
-    resources: [res('blessings', 'Blessings', 'uses', ({ level }) => 3 + Math.floor(level / 2))],
+    resources: [res('blessings', 'Blessings', 'uses', ({ level, featCount }) => 3 + Math.floor(level / 2) + 2 * (featCount?.('extrablessings') ?? 0))],
     actions: [
       ca('warpriest', 'blessing', 'Blessing', 'standard', 'no', 'One of your two 1st-level blessing powers (standard or swift).', { costLabel: 'Standard or Swift', resource: 'blessings' }),
       castSpell('warpriest', 'Prepared divine (orisons, 1st level); can spontaneously cast cure or inflict.'),
@@ -512,10 +536,10 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Mesmerist',
     keys: ['mesmerist'],
-    resources: [res('tricks', 'Mesmerist Tricks', 'uses', ({ level, mod }) => atLeast1(Math.floor(level / 2)) + mod('CHA'))],
+    resources: [res('tricks', 'Mesmerist Tricks', 'uses', ({ level, mod, permanentMod }) => atLeast1(Math.floor(level / 2)) + Math.max(0, (permanentMod ?? mod)('CHA')))],
     actions: [
       ca('mesmerist', 'stare', 'Hypnotic Stare', 'swift', 'no', 'One target within 30 ft takes −2 on Will saves.'),
-      ca('mesmerist', 'painful', 'Painful Stare', 'free', 'no', 'Once per round (even off-turn) when your stared target takes damage: +1 precision damage.'),
+      ca('mesmerist', 'painful', 'Painful Stare', 'free', 'no', 'Once per round (even off-turn) when your stared target takes damage: +1 precision damage.', { offTurn: true }),
       ca('mesmerist', 'trick', 'Implant Mesmerist Trick', 'standard', 'no', 'Implant a trick in an ally; triggering it later is free.', { resource: 'tricks' }),
       castSpell('mesmerist', 'Spontaneous psychic (knacks, 1st level).'),
     ],
@@ -523,7 +547,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Occultist',
     keys: ['occultist'],
-    resources: [res('focus', 'Mental Focus', 'points', ({ level, mod }) => level + mod('INT'))],
+    resources: [res('focus', 'Mental Focus', 'points', ({ level, mod, permanentMod, featCount }) => level + (permanentMod ?? mod)('INT') + 2 * (featCount?.('extramentalfocus') ?? 0))],
     actions: [
       ca('occultist', 'focus', 'Focus Power', 'standard', 'varies', 'One of your focus powers (usually standard or swift).', { costLabel: 'Standard or Swift', resource: 'focus' }),
       castSpell('occultist', 'Spontaneous psychic (knacks, 1st level).'),
@@ -532,7 +556,7 @@ export const CLASS_ACTIONS: ClassActionSet[] = [
   {
     className: 'Psychic',
     keys: ['psychic'],
-    resources: [res('phrenic', 'Phrenic Pool', 'points', ({ level, mod }) => Math.max(0, Math.floor(level / 2) + Math.max(mod('WIS'), mod('CHA'))))],
+    resources: [res('phrenic', 'Phrenic Pool', 'points', ({ level, mod, permanentMod, featCount }) => Math.max(0, Math.floor(level / 2) + Math.max((permanentMod ?? mod)('WIS'), (permanentMod ?? mod)('CHA'))) + 2 * (featCount?.('extraphrenicpool') ?? 0))],
     actions: [
       ca('psychic', 'amplify', 'Phrenic Amplification', 'free', 'no', 'Part of casting: spend phrenic points to modify a linked spell.', { resource: 'phrenic' }),
       ca('psychic', 'discipline', 'Discipline Power', 'other', 'varies', 'Your 1st-level discipline power.', { costLabel: 'Varies' }),

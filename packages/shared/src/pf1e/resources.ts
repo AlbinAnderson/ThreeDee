@@ -33,3 +33,17 @@ export function resourceMax(c: Character, def: ResourceDef, level: number, stats
     }),
   );
 }
+
+/** Starting pool after an 8-hour rest (defaults to `resourceMax`; Arcanist Arcane Reservoir starts at 3 + floor(level/2)). */
+export function resourceStart(c: Character, def: ResourceDef, level: number, stats?: CharacterStats): number {
+  const s = stats ?? computeCharacterStats(c);
+  const max = resourceMax(c, def, level, s);
+  if (!def.start) return max;
+  const start = def.start({
+    level,
+    mod: (k) => s.abilities[k].mod,
+    permanentMod: (k) => s.abilities[k].permanentMod,
+    featCount: (key) => countFeat(c, key),
+  });
+  return Math.max(0, Math.min(max, start));
+}

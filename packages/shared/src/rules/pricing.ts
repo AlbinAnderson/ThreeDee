@@ -65,7 +65,7 @@ export function armorCategory(rec: Pick<EquipmentRecord, 'types'>): ItemArmor['c
 function weaponHands(rec: Pick<EquipmentRecord, 'wield' | 'types'>): ItemWeapon['hands'] {
   const w = (rec.wield ?? '').toLowerCase();
   if (w === 'light' || has(rec, 'Light')) return 'light';
-  if (w === 'twohanded' || has(rec, 'TwoHanded')) return 'two';
+  if (w === 'twohanded' || w === 'twohandsonly' || has(rec, 'TwoHanded')) return 'two';
   return 'one';
 }
 
@@ -86,6 +86,7 @@ export function baseCost(rec: Pick<EquipmentRecord, 'cost' | 'types' | 'spellEff
   if (rec.cost !== null && rec.cost > 0) return rec.cost;
   const fromSpell = spellItemPrice(rec);
   if (fromSpell !== null) return fromSpell;
+  if (rec.cost !== null && rec.cost < 0) return null;
   // PCGen leaves COST:0 on magic items it prices with EQMOD formulas: the price is unknown, not free.
   if (has(rec, 'Magic')) return null;
   return rec.cost;
@@ -332,9 +333,14 @@ export function applyRecordToItem(item: InventoryItem, rec: EquipmentRecord): In
 /** Total price in copper for `quantity` items at `gpEach`. */
 export const priceCp = (gpEach: number, quantity: number) => Math.round(gpEach * 100) * Math.max(0, Math.floor(quantity));
 
-/** What a merchant pays: half the item's value, full value for gems, art and trade goods. */
-export function sellValueCp(item: Pick<InventoryItem, 'value' | 'tradeGood'>, quantity: number): number {
-  const each = Math.round(item.value * 100);
+/** What a merchant pays: half the item's value (pro-rated for non-rechargeable wands/charges), full value for gems, art and trade goods. */
+export function sellValueCp(item: Pick<InventoryItem, 'value' | 'tradeGood'> & Partial<Pick<InventoryItem, 'charges' | 'name'>>, quantity: number): number {
+  let each = Math.round(item.value * 100);
+  // CRB pp. 460, 551: partially charged wands sell at 50% of (remaining/max) value; staves are rechargeable and keep full resale value.
+  if (item.charges && item.charges.max > 0 && !/^staff\b/i.test(item.name ?? '')) {
+    const frac = Math.max(0, Math.min(1, item.charges.current / item.charges.max));
+    each = Math.round(each * frac);
+  }
   return Math.floor((item.tradeGood ? each : each / 2) * Math.max(0, Math.floor(quantity)));
 }
 

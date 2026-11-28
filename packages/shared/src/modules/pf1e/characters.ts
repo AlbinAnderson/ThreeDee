@@ -14,7 +14,7 @@ import { PcgenCharacterSchema } from '../../pcgen/schema';
 import { buildHasDmNotes } from '../../pf1e/bio';
 import { mergeReimport } from '../../pf1e/characters';
 import { computeCharacterStats } from '../../pf1e/engine';
-import { seedInventory } from '../../pf1e/inventory';
+import { HAND_SLOTS, seedInventory } from '../../pf1e/inventory';
 import { buildCharacterRulesData, isRulesDataEmpty } from '../../pf1e/rulesSnapshot';
 import { tokenSyncFor } from '../../pf1e/tokenSync';
 import { applyRecordToItem } from '../../rules/pricing';
@@ -40,6 +40,8 @@ const MAX_TOKEN_OWNERS = 50;
 function enrichInventoryFromRules(inv: Inventory, build: Character['build'], rules?: RulesProvider): Inventory {
   if (!rules) return inv;
   let changed = false;
+  const newlyTypedArmor = new Map<string, 'armor' | 'shield'>();
+  const newlySlotless = new Set<string>();
   const items = inv.items.map((item, idx) => {
     const eq = build.equipment[idx];
     const keys = [eq?.customization?.baseItem, eq?.name, item.name].filter((k): k is string => !!k);
@@ -50,9 +52,39 @@ function enrichInventoryFromRules(inv: Inventory, build: Character['build'], rul
     }
     if (!rec) return item;
     changed = true;
-    return applyRecordToItem(item, rec);
+    const prevArmor = item.armor;
+    const upgraded = applyRecordToItem(item, rec);
+    if (!prevArmor && upgraded.armor) newlyTypedArmor.set(upgraded.id, upgraded.armor.kind);
+    if (rec.slot === 'none' && upgraded.bonuses.length > 0 && !upgraded.armor && !upgraded.weapon) {
+      newlySlotless.add(upgraded.id);
+    }
+    return upgraded;
   });
-  return changed ? { ...inv, items } : inv;
+  if (!changed) return inv;
+  // Remap loadouts for newly recognized armors/shields (not in hardcoded ARMOR_TABLE) and slotless magic items.
+  if (newlyTypedArmor.size === 0 && newlySlotless.size === 0) return { ...inv, items };
+  const itemById = new Map(items.map((it) => [it.id, it]));
+  const loadouts = inv.loadouts.map((loadout, lIdx) => {
+    const set = build.equipmentSets[lIdx];
+    const slots = { ...loadout.slots };
+    for (const [id, kind] of newlyTypedArmor) {
+      const it = itemById.get(id);
+      if (!it || it.containerId !== null) continue;
+      const cur = slots[id] ?? 'carried';
+      const pcgLoc = set?.items.find((si) => si.itemName && (si.itemName.trim() || 'Item').slice(0, 120) === it.name)?.location.trim().toLowerCase() ?? '';
+      if (kind === 'armor' && (cur === 'body' || cur === 'chest' || pcgLoc === 'equipped')) slots[id] = 'armor';
+      else if (kind === 'shield' && (HAND_SLOTS.includes(cur) || pcgLoc === 'equipped')) slots[id] = 'shield';
+    }
+    for (const id of newlySlotless) {
+      const it = itemById.get(id);
+      if (!it || it.containerId !== null) continue;
+      const cur = slots[id] ?? 'carried';
+      const pcgLoc = set?.items.find((si) => si.itemName && (si.itemName.trim() || 'Item').slice(0, 120) === it.name)?.location.trim().toLowerCase() ?? '';
+      if (cur === 'carried' && (pcgLoc === 'equipped' || pcgLoc === 'carried' || pcgLoc === '')) slots[id] = 'slotless';
+    }
+    return { ...loadout, slots };
+  });
+  return { ...inv, items, loadouts };
 }
 
 export function canSeeCharacter(user: User, c: Character): boolean {

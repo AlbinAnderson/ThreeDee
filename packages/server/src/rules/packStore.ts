@@ -142,12 +142,26 @@ export class RulesPackStore implements RulesProvider {
         const arr = JSON.parse(fs.readFileSync(p, 'utf8')) as RulesRecord[];
         nextLists[k] = arr;
         const searchArr: SearchEntry[] = [];
+        const byNormScore = new Map<string, number>();
+        const recordNormScore = (rec: RulesRecord) =>
+          (rec.key === rec.name ? 4 : 0) + (rec.source.campaign === 'Core Rulebook' ? 2 : 0) + (rec.hidden ? 0 : 1);
         for (const rec of arr) {
           nextByKey[k].set(rec.key, rec);
           const isInternal = rec.kind === 'ability' && (rec as FeatRecord).category.toLowerCase() === 'internal';
           if (!isInternal) {
-            for (const v of nameVariants(rec.name)) if (!nextByNorm[k].has(v)) nextByNorm[k].set(v, rec);
-            for (const v of nameVariants(rec.key)) if (!nextByNorm[k].has(v)) nextByNorm[k].set(v, rec);
+            const sc = recordNormScore(rec);
+            for (const v of nameVariants(rec.name)) {
+              if (!nextByNorm[k].has(v) || sc > (byNormScore.get(v) ?? -1)) {
+                nextByNorm[k].set(v, rec);
+                byNormScore.set(v, sc);
+              }
+            }
+            for (const v of nameVariants(rec.key)) {
+              if (!nextByNorm[k].has(v) || sc > (byNormScore.get(v) ?? -1)) {
+                nextByNorm[k].set(v, rec);
+                byNormScore.set(v, sc);
+              }
+            }
           }
           if (!rec.hidden && !isInternal) {
             const lowerName = rec.name.toLowerCase();

@@ -109,9 +109,15 @@ describe('[Epic 6] regressions', () => {
     const ps = computeCharacterStats(c);
     const rap = ps.attacks.find((a) => a.itemId === 'rap')!;
     const dag = ps.attacks.find((a) => a.itemId === 'dag')!;
-    assert.ok(!rap.attack.parts.some((p) => p.source === 'Piranha Strike'), 'Rapier is one-handed, not light');
+    // Piranha Strike: penalty applies to all melee attacks while wielding a light weapon, bonus damage ONLY to light weapons.
+    assert.ok(rap.attack.parts.some((p) => p.source === 'Piranha Strike' && p.value === -1), 'all melee attacks take Piranha Strike penalty when dual-wielding a light weapon');
+    assert.ok(!rap.damage.parts.some((p) => p.source === 'Piranha Strike'), 'Rapier is one-handed, not light: no Piranha Strike damage');
     assert.ok(dag.attack.parts.some((p) => p.source === 'Piranha Strike'), 'Dagger is a light weapon');
     assert.ok(dag.damage.parts.some((p) => p.source === 'Piranha Strike' && p.value === 1), 'off-hand Piranha Strike +1');
+    // Without any light melee weapon wielded, Rapier takes neither penalty nor damage.
+    c.inventory.loadouts[0]!.slots = { rap: 'primary' };
+    const rapOnly = computeCharacterStats(c).attacks.find((a) => a.itemId === 'rap')!;
+    assert.ok(!rapOnly.attack.parts.some((p) => p.source === 'Piranha Strike'), 'Rapier alone is not eligible for Piranha Strike');
   });
 
   test('abilities catalog categorizes Class Feature and Racial Trait accurately and deduplicates legacy/virtual feats', () => {

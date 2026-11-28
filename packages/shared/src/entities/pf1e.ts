@@ -105,6 +105,7 @@ export const RulesBonusTargetSchema = z.enum([
   'ref',
   'will',
   'saves',
+  'skills',
   'speed',
   'hp',
   'skill',
@@ -404,6 +405,7 @@ export const EMPTY_SHEET: CharacterSheet = {
 export const InventorySlotSchema = z.enum([
   'carried',
   'notCarried',
+  'slotless',
   'primary',
   'offHand',
   'bothHands',

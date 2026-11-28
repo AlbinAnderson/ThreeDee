@@ -79,6 +79,12 @@ const FOUR_SPONTANEOUS = table([
   '-,2,1,1', '-,2,2,1', '-,3,2,1,1', '-,3,2,1,1', '-,3,2,2,1', '-,3,3,2,1',
   '-,4,3,2,1', '-,4,3,2,2', '-,4,3,3,2', '-,4,4,3,2',
 ]);
+/** Adept (CRB p.448): prepared 5-level divine NPC caster. */
+const ADEPT_PREPARED = table([
+  '3,1', '3,1', '3,2', '3,2,0', '3,2,1', '3,2,1', '3,3,2', '3,3,2,0', '3,3,2,1', '3,3,2,1',
+  '3,3,3,2', '3,3,3,2,0', '3,3,3,2,1', '3,3,3,2,1', '3,3,3,3,2', '3,3,3,3,2,0', '3,3,3,3,2,1',
+  '3,3,3,3,2,1', '3,3,3,3,3,2', '3,3,3,3,3,2',
+]);
 
 const cls = (model: CastingModel, stat: StatKey, tradition: CastingTradition, perDay: (number | null)[][], extra: Partial<CasterClass> = {}): CasterClass => ({
   model,
@@ -106,6 +112,7 @@ const CASTERS: Record<string, CasterClass> = {
   paladin: cls('prepared', 'CHA', 'divine', FOUR_LEVEL, { cantrips: false, clOffset: -3 }),
   antipaladin: cls('prepared', 'CHA', 'divine', FOUR_LEVEL, { cantrips: false, clOffset: -3 }),
   ranger: cls('prepared', 'WIS', 'divine', FOUR_LEVEL, { cantrips: false, clOffset: -3 }),
+  adept: cls('prepared', 'WIS', 'divine', ADEPT_PREPARED),
   // Spontaneous
   sorcerer: cls('spontaneous', 'CHA', 'arcane', FULL_SPONTANEOUS),
   oracle: cls('spontaneous', 'CHA', 'divine', FULL_SPONTANEOUS),
@@ -121,6 +128,7 @@ const CASTERS: Record<string, CasterClass> = {
   occultist: cls('spontaneous', 'INT', 'psychic', SIX_SPONTANEOUS),
   spiritualist: cls('spontaneous', 'WIS', 'psychic', SIX_SPONTANEOUS),
   bloodrager: cls('spontaneous', 'CHA', 'arcane', FOUR_SPONTANEOUS, { cantrips: false, minLevel: 4 }),
+  medium: cls('spontaneous', 'CHA', 'psychic', FOUR_SPONTANEOUS),
   // Hybrid: prepares spells known for the day, casts them with shared slots
   arcanist: cls('hybrid', 'INT', 'arcane', ARCANIST_SLOTS, { book: true, preparedPerDay: ARCANIST_PREPARED }),
 };
@@ -350,7 +358,7 @@ const SPELL_ROWS: Row[] = [
   ['Raise Dead', 'Conjuration (healing)', 'none (see text)', SR_HARMLESS, '', 'Restores life to a creature dead no longer than 1 day per level.'],
   ['Teleport', 'Conjuration (teleportation)', 'none and Will negates (object)', 'no and yes (object)', '', 'Instantly transports you as far as 100 miles per level.'],
   // 6th+
-  ['Chain Lightning', 'Evocation [electricity]', 'Reflex half', 'yes', '', '1d6 electricity per level (max 20d6) to the primary target, half to secondary targets.'],
+  ['Chain Lightning', 'Evocation [electricity]', 'Reflex half', 'yes', '', '1d6 electricity per level (max 20d6) to the primary and secondary targets (secondary targets get +2 on the Reflex save).'],
   ['Disintegrate', 'Transmutation', 'Fortitude partial (object)', 'yes', '', 'Ray: 2d6 per level (max 40d6); 5d6 on a save.'],
   ['Harm', 'Necromancy', 'Will half', 'yes', '', 'Touch: 10 points per level (max 150) negative energy damage.'],
   ['Heal', 'Conjuration (healing)', HARMLESS, SR_HARMLESS, '', 'Cures 10 points per level (max 150) and many conditions.'],

@@ -4,6 +4,9 @@ import {
   computeCharacterStats,
   lookupClass,
   lookupRace,
+  normalizeName,
+  raceDataFromSnapshot,
+  resolveClassName,
   saveName,
   SIZES,
   STAT_KEYS,
@@ -29,7 +32,7 @@ const MISC: { key: MiscTarget; label: string }[] = [
 
 export function CharacterSettings({ character: c }: { character: Character }) {
   const stats = useMemo(() => computeCharacterStats(c), [c]);
-  const race = lookupRace(c.build.attributes.race);
+  const race = lookupRace(c.build.attributes.race) ?? raceDataFromSnapshot(c.rulesData.race);
   const s = c.sheet;
 
   return (
@@ -120,7 +123,8 @@ export function CharacterSettings({ character: c }: { character: Character }) {
 }
 
 function ClassChassisEditor({ character: c, className }: { character: Character; className: string }) {
-  const known = lookupClass(className);
+  const resolved = resolveClassName(c, className);
+  const known = lookupClass(resolved) ?? lookupClass(className) ?? c.rulesData.classes[normalizeName(className)];
   const custom = c.sheet.classChassis[className];
   const current = custom ?? known ?? { hd: 8, bab: 'threeQuarter' as const, goodSaves: [] as SaveKey[], prestige: false };
 

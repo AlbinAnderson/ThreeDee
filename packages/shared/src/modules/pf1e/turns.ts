@@ -8,7 +8,8 @@ import { isGm } from '../../actions/auth';
 import { actionCostFor, classActionSetsFor, classSetForAction, COST_LABEL, lookupPf1Action, type Pf1Action } from '../../pf1e/actions';
 import { applySpend, canSpend, characterForCombatant, effectiveTurn, freshTurn, turnWindow } from '../../pf1e/economy';
 import { computeCharacterStats } from '../../pf1e/engine';
-import { resourceKey, resourceMax } from '../../pf1e/resources';
+import { resourceKey, resourceMax, resourceStart } from '../../pf1e/resources';
+import { resolveClassName } from '../../pf1e/rules';
 import { spellSlotPools } from '../../pf1e/spells';
 import { ChatWhisperSchema, IdSchema, type Character, type GameState } from '../../state';
 import { canSeeMessage, pushMessage } from '../chat';
@@ -17,10 +18,14 @@ import { canManageCharacter } from './characters';
 
 const PROVOKES_LABEL = { yes: 'provokes AoO', no: 'no AoO', varies: 'AoO varies', ranged: 'ranged provokes' } as const;
 
+function resolvedClasses(c: Character) {
+  return c.build.classes.map((k) => ({ name: resolveClassName(c, k.name), level: k.level }));
+}
+
 function effectiveActionCost(c: Character | undefined, action: Pf1Action) {
   if (!action.costForLevel || !c) return action.cost;
   const set = classSetForAction(action.id);
-  const entry = set ? classActionSetsFor(c.build.classes).find((x) => x.set === set) : undefined;
+  const entry = set ? classActionSetsFor(resolvedClasses(c)).find((x) => x.set === set) : undefined;
   return actionCostFor(action, entry?.level ?? 1);
 }
 
@@ -29,7 +34,7 @@ function classCheck(c: Character | undefined, action: Pf1Action): AuthResult {
   const set = classSetForAction(action.id);
   if (!set) return true;
   if (!c) return `Needs a character with the ${set.className} class`;
-  const entry = classActionSetsFor(c.build.classes).find((x) => x.set === set);
+  const entry = classActionSetsFor(resolvedClasses(c)).find((x) => x.set === set);
   if (!entry) return `${c.name} doesn’t have the ${set.className} class`;
   if (!action.resource) return true;
   const def = set.resources.find((r) => r.id === action.resource)!;
@@ -84,7 +89,7 @@ export const pf1eTurnActions = {
         const res = classCheck(character, action);
         if (res !== true) return res;
         if (combatantId && ctx.state.combat.active) {
-          const spend = canSpend(effectiveTurn(ctx.state, combatantId), effectiveActionCost(character, action), action.movement);
+          const spend = canSpend(effectiveTurn(ctx.state, combatantId), effectiveActionCost(character, action), action.movement, action.offTurn);
           if (spend !== true) return spend;
         }
         return true;
@@ -203,6 +208,15 @@ export const pf1eTurnActions = {
       const c = draft.characters[characterId];
       if (!c) return;
       c.runtime.uses = {};
+      const stats = computeCharacterStats(c as Character);
+      for (const { set, level } of classActionSetsFor(resolvedClasses(c as Character))) {
+        for (const def of set.resources) {
+          if (!def.start) continue;
+          const max = resourceMax(c as Character, def, level, stats);
+          const start = resourceStart(c as Character, def, level, stats);
+          if (start < max) c.runtime.uses[resourceKey(set, def.id)] = max - start;
+        }
+      }
       for (const list of Object.values(c.runtime.prepared)) for (const p of list) p.cast = false;
       c.updatedAt = meta.ts;
     },
@@ -222,7 +236,7 @@ export const redactPf1eTurns: Redactor = (draft, viewer) => {
 /** Exported for the UI: current max for every resource a character has. */
 export function characterResources(c: Character) {
   const stats = computeCharacterStats(c);
-  return classActionSetsFor(c.build.classes).flatMap(({ set, level }) =>
+  return classActionSetsFor(resolvedClasses(c)).flatMap(({ set, level }) =>
     set.resources.map((def) => {
       const key = resourceKey(set, def.id);
       return { key, set, def, level, used: c.runtime.uses[key] ?? 0, max: resourceMax(c, def, level, stats) };

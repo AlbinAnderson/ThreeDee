@@ -10,6 +10,7 @@ import { coinsFromGp, COINS_PER_POUND, detectGear } from './gear';
 export const SLOT_LABELS: Record<InventorySlot, string> = {
   carried: 'Carried',
   notCarried: 'Not carried',
+  slotless: 'Equipped (slotless)',
   primary: 'Main hand',
   offHand: 'Off hand',
   bothHands: 'Both hands',

@@ -9,7 +9,6 @@ import {
   baseCost,
   coinsValue,
   inventoryActions,
-  itemFromRecord,
   MATERIAL_LABELS,
   newId,
   NO_MODS,
@@ -109,10 +108,18 @@ export function CatalogBuyDialog({ character: c, onClose }: { character: Charact
 
   function addFree() {
     if (!selected?.rec) return;
-    const item = itemFromRecord(selected.rec, newId(), mods, qty, { allowUnpriced: true });
-    if (typeof item === 'string') return notify(item);
-    if (dispatch(inventoryActions.addItem.create({ characterId: c.id, item }))) {
-      notify(`Added ${item.name} to ${c.name}`, 'info');
+    const ok = dispatch(
+      inventoryActions.buyItem.create({
+        characterId: c.id,
+        itemId: newId(),
+        quantity: qty,
+        free: true,
+        ruleKey: selected.rec.key,
+        mods,
+      }),
+    );
+    if (ok) {
+      notify(`Added ${priced && typeof priced !== 'string' ? priced.name : selected.rec.name} to ${c.name}`, 'info');
       onClose();
     }
   }

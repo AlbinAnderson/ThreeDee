@@ -259,8 +259,9 @@ export function characterSpellcasting(c: Character, stats: CharacterStats = comp
     const def = lookupCasterClass(k.name) ?? null;
     const o = c.sheet.spellcasting[k.name];
     const mine = entries.filter((e) => sameClass(e.className, k.name));
+    const myLists = c.build.spells.spellLists.filter((sl) => sameClass(sl.className, k.name));
     const fileStat = STAT_KEYS.find((s) => s === k.spellBase?.toUpperCase());
-    if (!def && !o && mine.length === 0 && !fileStat) continue;
+    if (!def && !o && mine.length === 0 && myLists.length === 0 && !fileStat) continue;
 
     const warnings: string[] = [];
     const known: KnownSpell[] = [];
@@ -273,6 +274,13 @@ export function characterSpellcasting(c: Character, stats: CharacterStats = comp
         const list = bookMap.get(e.book!) ?? [];
         list.push({ name: e.spellName, level, metamagic: e.metamagic, times: e.times ?? 1 });
         bookMap.set(e.book!, list);
+      }
+    }
+    for (const sl of myLists) {
+      const level = sl.level ?? 0;
+      for (const spName of sl.spells) {
+        if (!spName.trim()) continue;
+        if (!known.some((x) => sameSpell(x.name, spName) && x.level === level)) known.push({ name: spName.trim(), level });
       }
     }
     known.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
@@ -299,8 +307,9 @@ export function characterSpellcasting(c: Character, stats: CharacterStats = comp
       const base = row?.[l] ?? null;
       const atWill = l === 0 && cantrips;
       if (base === null && !atWill) continue;
-      const castable = ability.score >= 10 + l;
-      const bonus = base !== null ? bonusSpells(ability.mod, l) : 0;
+      // CRB p.555: temporary ability bonuses and ability damage do not change bonus spells per day or minimum casting score.
+      const castable = ability.permanentScore >= 10 + l;
+      const bonus = base !== null ? bonusSpells(ability.permanentMod, l) : 0;
       const perDay = castable && base !== null ? base + bonus : 0;
       const extra = castable && bonusSlot && l >= 1 && base !== null ? 1 : 0;
       const prepareLimit = model === 'prepared' ? perDay : model === 'hybrid' && castable ? (prepRow?.[l] ?? perDay) : 0;
@@ -310,7 +319,7 @@ export function characterSpellcasting(c: Character, stats: CharacterStats = comp
     const top = levels.filter((x) => x.castable && (x.atWill || x.perDay > 0 || x.extra > 0));
     const maxLevel = top.length ? top[top.length - 1]!.level : -1;
     const lowScore = levels.find((x) => !x.castable);
-    if (lowScore) warnings.push(`${stat} ${ability.score} is too low to cast ${ordinal(lowScore.level)}-level ${k.name} spells (needs ${10 + lowScore.level}).`);
+    if (lowScore) warnings.push(`${stat} ${ability.permanentScore} is too low to cast ${ordinal(lowScore.level)}-level ${k.name} spells (needs ${10 + lowScore.level}).`);
 
     const stored = model === 'spontaneous' ? undefined : c.runtime.prepared[k.name];
     const prepared = model === 'spontaneous' ? [] : (stored ?? preparedFromBook(model, books, levels));
@@ -325,7 +334,7 @@ export function characterSpellcasting(c: Character, stats: CharacterStats = comp
       abilityMod: ability.mod,
       abilityScore: ability.score,
       casterLevel,
-      concentration: casterLevel + ability.mod + (o?.concentrationBonus ?? 0),
+      concentration: casterLevel + ability.mod + (hasFeat(c, 'uncannyconcentration') ? 2 : 0) + (o?.concentrationBonus ?? 0),
       dcBase: 10 + ability.mod + (o?.dcBonus ?? 0),
       levels,
       maxLevel,
@@ -449,19 +458,23 @@ export function planCast(c: Character, req: CastRequest, infos = characterSpellc
   const name = req.spellName;
   const level = req.level;
   const pool = info.model === 'hybrid' ? info.prepared : info.known;
-  if (!pool.some((s) => sameSpell(s.name, name) && s.level === level))
+  const matchedPrepared = info.model === 'hybrid' ? info.prepared.find((s) => sameSpell(s.name, name) && s.level === level) : undefined;
+  if (info.model === 'hybrid' ? !matchedPrepared : !pool.some((s) => sameSpell(s.name, name) && s.level === level))
     return info.model === 'hybrid' ? `${name} isn't prepared today` : `${name} isn't a ${ordinal(level)}-level spell you know`;
-  const metamagic = req.metamagic ?? [];
+  const reqMetamagic = req.metamagic ?? [];
+  const prepMetamagic = matchedPrepared?.metamagic ?? [];
+  const metamagic = [...prepMetamagic, ...reqMetamagic];
   const owned = new Set(info.metamagic.map(featKey));
-  for (const m of metamagic) {
+  for (const m of reqMetamagic) {
     if (isHeighten(m)) return 'Heighten Spell is only supported for prepared spells';
     if (!owned.has(featKey(m)) || metamagicAdjust(m) === undefined) return `You don't have ${m}`;
   }
   if (new Set(metamagic.map(featKey)).size !== metamagic.length) return 'Each metamagic feat applies once';
-  const slotLevel = level + metamagicLevels(metamagic);
+  const slotLevel = level + metamagicLevels(reqMetamagic);
   if (slotLevel > 9) return 'That would need a slot above 9th level';
   const li = levelInfo(slotLevel);
   if (!li?.castable) return `You can't cast ${ordinal(slotLevel)}-level spells yet`;
+  const dcLevel = matchedPrepared ? spellDcLevel(info, name, level, prepMetamagic) : level;
   if (slotLevel === 0 && li.atWill) {
     return { info, spellName: name, slotLevel: 0, dcLevel: 0, metamagic, preparedId: null, markCast: false, slotKey: null, convertedFrom: null };
   }
@@ -470,7 +483,7 @@ export function planCast(c: Character, req: CastRequest, infos = characterSpellc
     info,
     spellName: name,
     slotLevel,
-    dcLevel: level,
+    dcLevel,
     metamagic,
     preparedId: null,
     markCast: false,
@@ -523,10 +536,14 @@ export function spellCard(c: Character, plan: CastPlan, who = c.name, rules?: Ru
   }
   const clampBonus = (n: number) => Math.max(-100, Math.min(200, Math.round(n)));
   const rolls = [{ label: 'Concentration', bonus: clampBonus(info.concentration) }];
+  if (hasFeat(c, 'combatcasting')) {
+    rolls.push({ label: 'Concentration (defensive/grappled)', bonus: clampBonus(info.concentration + 4) });
+  }
   if (!ref || !/^no\b/i.test(ref.sr)) rolls.push({ label: 'Caster level vs. SR', bonus: clampBonus(info.casterLevel + info.spellPenetration) });
   let area: SpellCard['area'];
   if (ref?.area) {
-    const widen = plan.metamagic.some((m) => featKey(m) === 'widenspell');
+    // CRB p.137: Widen Spell only affects burst, emanation, or spread areas (cones are cone-shaped bursts/emanations; lines/squares/cylinders are excluded).
+    const widen = plan.metamagic.some((m) => featKey(m) === 'widenspell') && /\b(burst|emanation|spread|cone)\b/i.test(ref.area.label);
     const feet = ref.area.feet * (widen ? 2 : 1);
     area = { kind: ref.area.kind, feet, label: widen ? `${ref.area.label} (widened to ${feet} ft.)` : ref.area.label, ...(ref.area.kind === 'line' ? { widthFeet: 5 } : {}) };
   }
@@ -565,8 +582,8 @@ export function checkPrepared(c: Character, className: string, list: PrepareEntr
     if (new Set(p.metamagic.map(featKey)).size !== p.metamagic.length) return 'Each metamagic feat applies once';
     for (const m of p.metamagic) if (!owned.has(featKey(m))) return `You don't have ${m}`;
     if (info.model === 'hybrid') {
-      if (p.metamagic.length) return 'Arcanists apply metamagic when casting, not when preparing';
-      const hk = `${normalizeName(p.name)}|${p.level}`;
+      const mmSig = [...p.metamagic].map(featKey).sort().join(',');
+      const hk = `${normalizeName(p.name)}|${p.level}|${mmSig}`;
       if (hybridSeen.has(hk)) return `${p.name} is already prepared at ${ordinal(p.level)} level`;
       hybridSeen.add(hk);
     }
@@ -576,9 +593,8 @@ export function checkPrepared(c: Character, className: string, list: PrepareEntr
     const adj = metamagicLevels(p.metamagic);
     if (inBook) {
       const base = Math.min(...knownLevels);
-      const heighten = p.metamagic.some(isHeighten);
-      if (heighten ? p.level < base + adj : !knownLevels.some((k) => k + adj === p.level))
-        return `${p.name} goes in a ${ordinal(Math.min(9, base + adj))}-level slot${heighten ? ' or higher' : ''}`;
+      // CRB p.218: a prepared caster may fill any higher-level slot with a lower-level spell.
+      if (p.level < base + adj) return `${p.name} needs at least a ${ordinal(Math.min(9, base + adj))}-level slot`;
     } else if (p.level < adj) return `${p.name} needs a higher slot for its metamagic`;
     const key = `${p.level}|${p.slot}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
